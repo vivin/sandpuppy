@@ -1,4 +1,20 @@
 /*
+  Copyright 2015 Google LLC All rights reserved.
+
+  Licensed under the Apache License, Version 2.0 (the "License");
+  you may not use this file except in compliance with the License.
+  You may obtain a copy of the License at:
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+  Unless required by applicable law or agreed to in writing, software
+  distributed under the License is distributed on an "AS IS" BASIS,
+  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+  See the License for the specific language governing permissions and
+  limitations under the License.
+*/
+
+/*
    american fuzzy lop - LLVM-mode wrapper for clang
    ------------------------------------------------
 
@@ -7,19 +23,10 @@
 
    LLVM integration design comes from Laszlo Szekeres.
 
-   Copyright 2015, 2016 Google Inc. All rights reserved.
-
-   Licensed under the Apache License, Version 2.0 (the "License");
-   you may not use this file except in compliance with the License.
-   You may obtain a copy of the License at:
-
-     http://www.apache.org/licenses/LICENSE-2.0
-
    This program is a drop-in replacement for clang, similar in most respects
    to ../afl-gcc. It tries to figure out compilation mode, adds a bunch
    of flags, and then calls the real compiler.
-
- */
+*/
 
 #define AFL_MAIN
 
@@ -88,7 +95,7 @@ static void find_obj(u8* argv0) {
   }
 
   FATAL("Unable to find 'afl-llvm-rt.o' or 'afl-llvm-pass.so'. Please set AFL_PATH");
- 
+
 }
 
 
@@ -121,8 +128,10 @@ static void edit_params(u32 argc, char** argv) {
 
 #ifdef USE_TRACE_PC
   cc_params[cc_par_cnt++] = "-fsanitize-coverage=trace-pc-guard";
+#ifndef __ANDROID__
   cc_params[cc_par_cnt++] = "-mllvm";
   cc_params[cc_par_cnt++] = "-sanitizer-coverage-block-threshold=0";
+#endif
 #else
   if (!getenv("WAYPOINTS_DISABLE_COVERAGE")) {
     cc_params[cc_par_cnt++] = "-Xclang";
@@ -168,6 +177,7 @@ static void edit_params(u32 argc, char** argv) {
       cc_params[cc_par_cnt++] = "-mllvm";
 
     if (!strcmp(cur, "-m32")) bit_mode = 32;
+    if (!strcmp(cur, "armv7a-linux-androideabi")) bit_mode = 32;
     if (!strcmp(cur, "-m64")) bit_mode = 64;
 
     if (!strcmp(cur, "-x")) x_set = 1;
@@ -307,6 +317,7 @@ static void edit_params(u32 argc, char** argv) {
       cc_params[cc_par_cnt++] = "none";
     }
 
+#ifndef __ANDROID__
     switch (bit_mode) {
 
       case 0:
@@ -330,6 +341,7 @@ static void edit_params(u32 argc, char** argv) {
         break;
 
     }
+#endif
 
   }
 
@@ -374,7 +386,9 @@ int main(int argc, char** argv) {
   }
 
 
+#ifndef __ANDROID__
   find_obj(argv[0]);
+#endif
 
   edit_params(argc, argv);
 

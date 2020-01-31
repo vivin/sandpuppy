@@ -3,6 +3,7 @@
 *.o
 *.so
 *.gch
+.idea
 
 # don't track the actual binaries
 afl-showmax
@@ -20,3 +21,6 @@ afl-showmap
 afl-showdsf
 afl-tmin
 as
+results/
+graph/
+infantheap/infantheap
