@@ -1,0 +1,6 @@
+../afl-clang-fast infantheap.c -o infantheap # bare 
+WAYPOINTS=heap ../afl-clang-fast infantheap.c -o infantheap-heap # heap
+WAYPOINTS=heap,asan ../afl-clang-fast -fsanitize=address -fsanitize-recover=address -O1 infantheap.c -o infantheap-heap-asan # heap+asan
+WAYPOINTS=heap,asan,cmp ../afl-clang-fast -fsanitize=address -fsanitize-recover=address -O1 infantheap.c -o infantheap-heap-asan-cmp # heap+asan+cmp
+WAYPOINTS=heapasan ../afl-clang-fast -fsanitize=address -fsanitize-recover=address -O1 infantheap.c -o infantheap-heapasan # heapasan
+WAYPOINTS=heapasan,cmp ../afl-clang-fast -fsanitize=address -fsanitize-recover=address -O1 infantheap.c -o infantheap-heapasan-cmp # heapasan+cmp

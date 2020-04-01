@@ -34,6 +34,7 @@ void alloc_chunk(int size) {
 }
 
 void do_alloc_chunk() {
+    printf("Allocating chunk\n");
     int BUFFER_SIZE = 256;
     char buffer[BUFFER_SIZE];
     int size;
@@ -55,6 +56,7 @@ void do_alloc_chunk() {
 }
 
 void fill_chunk(int chunk_index) {
+    printf("Filling chunk\n");
     if (!index_allocated[chunk_index]) {
         printf("Chunk %d is not allocated.\n\n", chunk_index);
         return;
@@ -69,6 +71,9 @@ void fill_chunk(int chunk_index) {
 
     buffer[strlen(buffer) - 1] = 0; // remove \n
 
+    char* addr = chunk_table[chunk_index];
+    *addr = 'a';
+
     //printf("strcpy %s to %p\n", buffer, chunk_table[chunk_index]);
     strcpy(chunk_table[chunk_index], buffer);
     index_filled[chunk_index] = true;
@@ -82,8 +87,11 @@ void do_option(void (*option_function)(int)) {
     //printf("\n\n-- index used of chunk index %d = %s\n", chunk_index, index_allocated[chunk_index] ? "true" : "false");
     //printf("-- index allocated of chunk index %d = %s\n\n", chunk_index, index_filled[chunk_index] ? "true" : "false");
 
+    printf("Doing something with a chunk\n");
+
     printf("\nEnter chunk index: ");
     if (!fgets(buffer, BUFFER_SIZE, stdin)) {
+        printf("No chunk index given.\n");
         return;
     }
 
@@ -99,6 +107,7 @@ void do_option(void (*option_function)(int)) {
 }
 
 void dump_chunk(int chunk_index) {
+    printf("Dumping chunk\n");
     if (!index_allocated[chunk_index] || !index_filled[chunk_index]) {
         printf("Chunk %d is not allocated.\n\n", chunk_index);
         return;
@@ -113,6 +122,7 @@ void dump_chunk(int chunk_index) {
 }
 
 void free_chunk(int chunk_index) {
+    printf("Freeing chunk\n");
     if (!index_allocated[chunk_index]) {
         printf("Chunk %d is not allocated.\n\n", chunk_index);
         return;
@@ -129,16 +139,16 @@ int main(int argc, char* argv[]) {
     int BUFFER_SIZE = 256;
     char buffer[BUFFER_SIZE];
 
-    int option;
+    char option;
     bool done = false;
     while (!done) {
         printf("Options\n");
         printf("=======\n\n");
 
-        printf("1) alloc\n");
-        printf("2) fill\n");
-        printf("3) dump\n");
-        printf("4) free\n");
+        printf("a) alloc\n");
+        printf("l) fill\n");
+        printf("d) dump\n");
+        printf("f) free\n");
         printf("x) exit (anything else)\n\n");
 
         printf("Select an option: ");
@@ -146,20 +156,24 @@ int main(int argc, char* argv[]) {
             continue;
         }
 
+        if (strlen(buffer) != 2) {
+            break;
+        }
+
         buffer[strlen(buffer) - 1] = 0; // remove \n
-        option = atoi(buffer);
+        option = buffer[0];
 
         switch(option) {
-            case 1: do_alloc_chunk();
+            case 'a': do_alloc_chunk();
                 break;
 
-            case 2: do_option(&fill_chunk);
+            case 'l': do_option(&fill_chunk);
                 break;
 
-            case 3: do_option(&dump_chunk);
+            case 'd': do_option(&dump_chunk);
                 break;
 
-            case 4: do_option(&free_chunk);
+            case 'f': do_option(&free_chunk);
                 break;
 
             default: done = true;
@@ -168,5 +182,6 @@ int main(int argc, char* argv[]) {
         }
     }
 
+    printf("Exiting\n");
     return 0;
 }
