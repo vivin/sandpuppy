@@ -1,12 +1,15 @@
-#include "fuzzfactory.hpp"
+#include "basefeedback.hpp"
 
 using namespace fuzzfactory;
 
-class HeapOpFeedback : public DomainFeedback<HeapOpFeedback> {
+class HeapOpFeedback : public BaseLibFuncFeedback<HeapOpFeedback> {
 public:
-    HeapOpFeedback(Module& M) : DomainFeedback<HeapOpFeedback>(M, "__afl_heap_dsf") { }
+    HeapOpFeedback(Module& M) : BaseLibFuncFeedback<HeapOpFeedback>(M, "heap", "__afl_heap_dsf") { }
 
     void visitBasicBlock(BasicBlock& basicBlock) {
+        auto irb = insert_before(basicBlock);
+        createCreateTraceFileIfNotExistsCall(irb);
+
         for (Instruction &instruction : basicBlock) {
             if (isa<CallInst>(instruction)) {
                 auto &call = cast<CallInst>(instruction);
@@ -23,6 +26,8 @@ public:
                 if (function->getName() == "malloc" || function->getName() == "calloc" || function->getName() == "free") {
                     auto irb = insert_before(call);
                     irb.CreateCall(DsfIncrementFunction, {DsfMapVariable, getConst(0), getConst(1)});
+
+                    createAppendTraceCall(irb, function->getName());
                 }
             }
         }

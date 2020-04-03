@@ -30,6 +30,7 @@
 #include "../config.h"
 #include "../types.h"
 #include "waypoints.h"
+#include "heaptrace.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -42,6 +43,7 @@
 #include <sys/shm.h>
 #include <sys/wait.h>
 #include <sys/types.h>
+#include <sys/stat.h>
 
 /* This is a somewhat ugly hack for the experimental 'trace-pc-guard' mode.
    Basically, we need to make sure that the forkserver is initialized after
@@ -97,7 +99,7 @@ static void __afl_map_shm(void) {
        our parent doesn't give up on us. */
 
     __afl_area_ptr[0] = 1;
-    
+
     /* Set waypoints map to be after the AFL code coverage shared memory region */
     __fuzzfactory_dsf_map = (u32*) &__afl_area_ptr[MAP_SIZE];
 
@@ -158,7 +160,7 @@ static void __afl_start_forkserver(void) {
         close(FORKSRV_FD);
         close(FORKSRV_FD + 1);
         return;
-  
+
       }
 
     } else {
@@ -344,7 +346,7 @@ int __fuzzfactory_new_domain(u32 size, enum fuzzfactory_reducer reducer, u32 ini
   // Okay, populate the next config
   int start = (dsf_count == 0) ? 0 : dsf_configs[dsf_count-1].end;
   int end = start + size;
-  dsf_configs[dsf_count].start = start; 
+  dsf_configs[dsf_count].start = start;
   dsf_configs[dsf_count].end = end;
   dsf_configs[dsf_count].reducer = reducer;
   dsf_configs[dsf_count].initial = initial;
@@ -363,7 +365,7 @@ static inline int key_idx(int id, u32 key) {
 void __fuzzfactory_dsf_max(dsf_t id, u32 key, u32 value) {
   int idx = key_idx(id, key);
   int old = __fuzzfactory_dsf_map[idx];
-  __fuzzfactory_dsf_map[idx] = old > value ? old : value; 
+  __fuzzfactory_dsf_map[idx] = old > value ? old : value;
 }
 
 void __fuzzfactory_dsf_set(dsf_t id, u32 key, u32 value) {
@@ -395,4 +397,44 @@ void __fuzzfactory_dsfp_bitwise_or(dsf_t* p, u32 key, u32 value) {
 
 void __fuzzfactory_dsfp_increment(dsf_t* p, u32 key, u32 value) {
   __fuzzfactory_dsf_increment(*p, key, value);
+}
+
+void __append_trace(const char* dirname, const char* prefix, const char* text) {
+    struct stat st = {0};
+    if (stat(dirname, &st) == -1) {
+        mkdir(dirname, 0700);
+    }
+
+    int pid = getpid();
+
+    s32 len = snprintf(NULL, 0, "%s/%s-pid-%d.trace", dirname, prefix, pid);
+    u8* filename = malloc(len + 1);
+    sprintf((char*) filename, "%s/%s-pid-%d.trace", dirname, prefix, pid);
+
+    FILE *file = fopen((char *) filename, "a");
+    fprintf(file, "%s\n", text);
+
+    fclose(file);
+
+    free(filename);
+}
+
+void __create_trace_file_if_not_exists(const char* dirname, const char* prefix) {
+    struct stat st = {0};
+    if (stat(dirname, &st) == -1) {
+        mkdir(dirname, 0700);
+    }
+
+    int pid = getpid();
+
+    s32 len = snprintf(NULL, 0, "%s/%s-pid-%d.trace", dirname, prefix, pid);
+    u8* filename = malloc(len + 1);
+    sprintf((char*) filename, "%s/%s-pid-%d.trace", dirname, prefix, pid);
+
+    if (access((char *) filename, F_OK) == -1) {
+        FILE* file = fopen((char *) filename, "ab+");
+        fclose(file);
+    }
+
+    free(filename);
 }

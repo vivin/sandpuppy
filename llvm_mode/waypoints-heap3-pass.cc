@@ -1,13 +1,15 @@
-#include "fuzzfactory.hpp"
+#include <iostream>
+#include "basefeedback.hpp"
 
 using namespace fuzzfactory;
 
-class HeapOp3Feedback : public DomainFeedback<HeapOp3Feedback> {
+class HeapOp3Feedback : public BaseLibFuncFeedback<HeapOp3Feedback> {
 
     GlobalVariable* previousLocation = NULL;
+    int bbCounter = 0;
 
 public:
-    HeapOp3Feedback(Module& M) : DomainFeedback<HeapOp3Feedback>(M, "__afl_heap3_dsf") {
+    HeapOp3Feedback(Module& M) : BaseLibFuncFeedback<HeapOp3Feedback>(M, "heap3", "__afl_heap3_dsf") {
         // Create reference to previous location. __afl_heap3_prev_loc is a thread local.
         previousLocation = new GlobalVariable(
             M,
@@ -25,12 +27,12 @@ public:
 
     void visitBasicBlock(BasicBlock& basicBlock) {
         // Like heap2, but takes order into account. so bb1.alloc -> bb2.alloc is different from bb2.alloc -> bb1.alloc.
+        auto irb = insert_before(basicBlock);
+        createCreateTraceFileIfNotExistsCall(irb);
 
         // Create static random value for current location
         uint32_t currentLocationHash = generateRandom31();
         auto currentLocation = getConst(currentLocationHash);
-
-        auto irb = insert_before(basicBlock);
 
         // Load previousLocation
         LoadInst *loadPreviousLocation = irb.CreateLoad(previousLocation);
@@ -53,6 +55,9 @@ public:
 
                     // Increment map using index which is prevLoc XOR currLoc
                     functionIrb.CreateCall(DsfIncrementFunction, {DsfMapVariable, xored, getConst(1)});
+
+                    std::string text = (function->getName().str() + "." + std::to_string(bbCounter));
+                    createAppendTraceCall(irb, text);
                 }
             }
         }
@@ -64,6 +69,8 @@ public:
             previousLocation
         );
         storePreviousLocation->setMetadata(M.getMDKindID("nosanitize"), MDNode::get(C, None));
+
+        bbCounter++;
     }
 };
 

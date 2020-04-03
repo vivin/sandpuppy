@@ -176,6 +176,11 @@ static void edit_params(u32 argc, char** argv) {
     if (!strncmp(cur, "-target_locations", 17))
       cc_params[cc_par_cnt++] = "-mllvm";
 
+    if (!strncmp(cur, "-trace_directory", 16)) {
+        printf("Trace directory provided!");
+        cc_params[cc_par_cnt++] = "-mllvm";
+    }
+
     if (!strcmp(cur, "-m32")) bit_mode = 32;
     if (!strcmp(cur, "armv7a-linux-androideabi")) bit_mode = 32;
     if (!strcmp(cur, "-m64")) bit_mode = 64;
