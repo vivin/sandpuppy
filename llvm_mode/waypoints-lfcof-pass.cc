@@ -3,13 +3,13 @@
 
 using namespace fuzzfactory;
 
-class HeapOp3Feedback : public BaseLibFuncFeedback<HeapOp3Feedback> {
+class HeapOp3Feedback : public BaseLibraryFunctionFeedback<HeapOp3Feedback> {
 
     GlobalVariable* previousLocation = NULL;
     int bbCounter = 0;
 
 public:
-    HeapOp3Feedback(Module& M) : BaseLibFuncFeedback<HeapOp3Feedback>(M, "heap3", "__afl_heap3_dsf") {
+    HeapOp3Feedback(Module& M) : BaseLibraryFunctionFeedback<HeapOp3Feedback>(M, "heap3", "__afl_heap3_dsf") {
         // Create reference to previous location. __afl_heap3_prev_loc is a thread local.
         previousLocation = new GlobalVariable(
             M,
@@ -50,14 +50,14 @@ public:
                     continue;
                 }
 
-                if (function->getName() == "malloc" || function->getName() == "calloc" || function->getName() == "free") {
-                    auto functionIrb = insert_before(call);
+                if (shouldInterceptFunction(function)) {
+                    auto fIrb = insert_before(call);
 
                     // Increment map using index which is prevLoc XOR currLoc
-                    functionIrb.CreateCall(DsfIncrementFunction, {DsfMapVariable, xored, getConst(1)});
+                    fIrb.CreateCall(DsfIncrementFunction, {DsfMapVariable, xored, getConst(1)});
 
                     std::string text = (function->getName().str() + "." + std::to_string(bbCounter));
-                    createAppendTraceCall(irb, text);
+                    createAppendTraceCall(fIrb, text);
                 }
             }
         }

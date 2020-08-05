@@ -23,11 +23,11 @@ public:
                   // todo: by 2 maybe? or maybe a separate counter for overflows? then we can combine both heap and this
                   // todo: domain-specific fuzzer. guides coverage towards paths that maximize heap ops and buff overflows.
 
-                if (function->getName() == "malloc" || function->getName() == "calloc" || function->getName() == "free") {
-                    auto irb = insert_before(call);
-                    irb.CreateCall(DsfIncrementFunction, {DsfMapVariable, getConst(0), getConst(1)});
+                if (shouldInterceptFunction(function)) {
+                    auto fIrb = insert_before(call);
+                    fIrb.CreateCall(DsfIncrementFunction, {DsfMapVariable, getConst(0), getConst(1)});
 
-                    createAppendTraceCall(irb, function->getName());
+                    createAppendTraceCall(fIrb, function->getName());
                 }
             }
         }

@@ -2,12 +2,12 @@
 
 using namespace fuzzfactory;
 
-class HeapOp2Feedback : public BaseLibFuncFeedback<HeapOp2Feedback> {
+class LibraryFunctionBlockBasicFeedback : public BaseLibraryFunctionFeedback<LibraryFunctionBlockBasicFeedback> {
 
     int bbCounter = 0;
 
 public:
-    HeapOp2Feedback(Module& M) : BaseLibFuncFeedback<HeapOp2Feedback>(M, "heap2", "__afl_heap2_dsf") { }
+    LibraryFunctionBlockBasicFeedback(Module& M) : BaseLibraryFunctionFeedback<LibraryFunctionBlockBasicFeedback>(M, "lfbbf", "__afl_lfbbf_dsf") { }
 
     void visitBasicBlock(BasicBlock& basicBlock) {
         // Compared to "heap", "heap2" is different. It keeps track of the basic block in which the heap-op function
@@ -31,12 +31,12 @@ public:
                     continue;
                 }
 
-                if (function->getName() == "malloc" || function->getName() == "calloc" || function->getName() == "free") {
-                    auto functionIrb = insert_before(call);
-                    functionIrb.CreateCall(DsfIncrementFunction, {DsfMapVariable, key, getConst(1)});
+                if (shouldInterceptFunction(function)) {
+                    auto fIrb = insert_before(call);
+                    fIrb.CreateCall(DsfIncrementFunction, {DsfMapVariable, key, getConst(1)});
 
                     std::string text = (function->getName().str() + "." + std::to_string(bbCounter));
-                    createAppendTraceCall(functionIrb, text);
+                    createAppendTraceCall(fIrb, text);
                 }
             }
         }
@@ -45,4 +45,4 @@ public:
     }
 };
 
-FUZZFACTORY_REGISTER_DOMAIN(HeapOp2Feedback);
+FUZZFACTORY_REGISTER_DOMAIN(LibraryFunctionBasicBlockAwareFeedback);

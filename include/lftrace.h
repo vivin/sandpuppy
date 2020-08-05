@@ -12,8 +12,8 @@ extern "C" {
 /* Conditionally declare external functions if compiling with AFL compiler */
 #if defined(__AFL_COMPILER) || defined(AFL_PATH)
 
-void __append_trace(const char* dirname, const char* prefix, const char* text);
-void __create_trace_file_if_not_exists(const char* dirname, const char* prefix);
+void __append_trace(const char* dirname, const char* text);
+void __create_trace_file_if_not_exists(const char* dirname);
 
 #else // Not compiling with AFL
 

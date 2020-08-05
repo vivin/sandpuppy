@@ -6,6 +6,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
+#include <iostream>
 
 #include "llvm/Pass.h"
 #include "llvm/ADT/Statistic.h"
@@ -17,9 +18,12 @@
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/RandomNumberGenerator.h"
 #include "llvm/Support/raw_ostream.h"
+#include "llvm/Support/CommandLine.h"
 
 #ifndef FUZZFACTORY_H
 #define FUZZFACTORY_H
+
+extern std::string FunctionsFile;
 
 namespace fuzzfactory {
 
@@ -34,17 +38,22 @@ public:
 
     /** Registers this domain's instrumentation pass with LLVM's pass manager */
     static void registerPass(const PassManagerBuilder &, legacy::PassManagerBase &PM) {
+      std::cout<< "ok we are registering a pass!\n";
       PM.add(new RegisterDomain<D>());
     }
 
     /** Instatiates a new domain and immediately registered the instrumentation pass with LLVM */
     RegisterDomain() : ModulePass(RegisterDomain<D>::ID) {
+        std::cout<<"we are instantiating the new domain and registering the pass with llvm!\n";
         RegisterStandardPasses RegisterFuzzFactoryPass(PassManagerBuilder::EP_OptimizerLast, RegisterDomain<D>::registerPass);
-        RegisterStandardPasses RegisterFuzzFactoryPass0(PassManagerBuilder::EP_EnabledOnOptLevel0, RegisterDomain<D>::registerPass);    
+        std::cout<<"ok we called register pass!\n";
+        RegisterStandardPasses RegisterFuzzFactoryPass0(PassManagerBuilder::EP_EnabledOnOptLevel0, RegisterDomain<D>::registerPass);
+        std::cout<<"ok we called register pass the second time!\n";
     }
 
     /* Runs this instrumentation pass on a module */
     bool runOnModule(Module &M) override {
+        std::cout << "Ok we are running it on a module man!!!!\n";
         D instrumentor(M);
         instrumentor.setRNG(M.createRNG(this));
         instrumentor.visit(M);
@@ -66,6 +75,7 @@ class DomainFeedback : public InstVisitor<V, void> {
 public:
 
     DomainFeedback<V>(Module &M, StringRef dsfVarName) : M(M), C(M.getContext()) {
+        std::cout<<"ok we are instantiating the feedback class!!!\n";
         // Create basic types
         this->Int32Ty = getIntTy(32);
         this->Int64Ty = getIntTy(64);
@@ -136,11 +146,16 @@ protected:
 
     /* Get declared function or else declare a new function. Never returns NULL. */
     Function* resolveFunction(StringRef name, Type* retType, ArrayRef<Type*> argTypes) {
+        return resolveFunction(name, retType, argTypes, false);
+    }
+
+    /* Get declared function or else declare a new function. Never returns NULL. */
+    Function* resolveFunction(StringRef name, Type* retType, ArrayRef<Type*> argTypes, bool isVarArg) {
         Function* f = M.getFunction(name);
         if (f) {
             return f;
         } else {
-            return Function::Create(FunctionType::get(retType, argTypes, false), GlobalValue::ExternalLinkage, name, &M);
+            return Function::Create(FunctionType::get(retType, argTypes, isVarArg), GlobalValue::ExternalLinkage, name, &M);
         }
     }
 
