@@ -29,6 +29,9 @@ namespace fuzzfactory {
 
 using namespace llvm;
 
+/** Hacky struct to get name of template type parameter X */
+    template<typename X> struct TypeName;
+
 /** Instrumentation pass for a fuzzing domain */
 template<class D>
 class RegisterDomain : public ModulePass {
@@ -38,22 +41,15 @@ public:
 
     /** Registers this domain's instrumentation pass with LLVM's pass manager */
     static void registerPass(const PassManagerBuilder &, legacy::PassManagerBase &PM) {
-      std::cout<< "ok we are registering a pass!\n";
+      OKF("Registering pass for [%s].", TypeName<D>::name);
       PM.add(new RegisterDomain<D>());
     }
 
     /** Instatiates a new domain and immediately registered the instrumentation pass with LLVM */
-    RegisterDomain() : ModulePass(RegisterDomain<D>::ID) {
-        std::cout<<"we are instantiating the new domain and registering the pass with llvm!\n";
-        RegisterStandardPasses RegisterFuzzFactoryPass(PassManagerBuilder::EP_OptimizerLast, RegisterDomain<D>::registerPass);
-        std::cout<<"ok we called register pass!\n";
-        RegisterStandardPasses RegisterFuzzFactoryPass0(PassManagerBuilder::EP_EnabledOnOptLevel0, RegisterDomain<D>::registerPass);
-        std::cout<<"ok we called register pass the second time!\n";
-    }
+    RegisterDomain() : ModulePass(RegisterDomain<D>::ID) { }
 
     /* Runs this instrumentation pass on a module */
     bool runOnModule(Module &M) override {
-        std::cout << "Ok we are running it on a module man!!!!\n";
         D instrumentor(M);
         instrumentor.setRNG(M.createRNG(this));
         instrumentor.visit(M);
@@ -65,9 +61,6 @@ public:
 template<class D>
 char RegisterDomain<D>::ID = 0; // This silly char is required by LLVM, which remembers its address (ugh)
 
-/** Hacky struct to get name of template type parameter X */
-template<typename X> struct TypeName;
-
 /** Base class for domain-specific fuzzing instrumentation */
 template<class V>
 class DomainFeedback : public InstVisitor<V, void> {
@@ -75,7 +68,6 @@ class DomainFeedback : public InstVisitor<V, void> {
 public:
 
     DomainFeedback<V>(Module &M, StringRef dsfVarName) : M(M), C(M.getContext()) {
-        std::cout<<"ok we are instantiating the feedback class!!!\n";
         // Create basic types
         this->Int32Ty = getIntTy(32);
         this->Int64Ty = getIntTy(64);
@@ -203,14 +195,18 @@ protected:
 
 };
 
-
-
 }
 
 /* Called by client domains at the top-level using the instrumentation pass as typename D */
 #define FUZZFACTORY_REGISTER_DOMAIN(D)  template <> struct fuzzfactory::TypeName<D> \
     { static const char* name; } ; const char* fuzzfactory::TypeName<D>::name = #D; \
-    static fuzzfactory::RegisterDomain<D> D;
+    static fuzzfactory::RegisterDomain<D> D; \
+    RegisterStandardPasses RegisterFuzzFactoryPass(PassManagerBuilder::EP_OptimizerLast, fuzzfactory::RegisterDomain<class D>::registerPass); \
+    RegisterStandardPasses RegisterFuzzFactoryPass0(PassManagerBuilder::EP_EnabledOnOptLevel0, fuzzfactory::RegisterDomain<class D>::registerPass);
 
+//NOTE: the above macro has been modified to register the pass. Previously, this was done via the constructor in
+//RegisterDomain, which would register and then reference the static method. However this stopped working because
+//the registerPass method would never be called. This might be due to a change in the LLVM API. Anyway, the macro
+//above seems to work.
 
 #endif // FUZZFACTORY_H
