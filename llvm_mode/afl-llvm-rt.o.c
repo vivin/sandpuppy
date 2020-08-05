@@ -30,7 +30,7 @@
 #include "../config.h"
 #include "../types.h"
 #include "waypoints.h"
-#include "heaptrace.h"
+#include "lftrace.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -38,6 +38,7 @@
 #include <unistd.h>
 #include <string.h>
 #include <assert.h>
+#include <stdarg.h>
 
 #include <sys/mman.h>
 #include <sys/shm.h>
@@ -399,7 +400,14 @@ void __fuzzfactory_dsfp_increment(dsf_t* p, u32 key, u32 value) {
   __fuzzfactory_dsf_increment(*p, key, value);
 }
 
-void __append_trace(const char* dirname, const char* prefix, const char* text) {
+//use: https://stackoverflow.com/a/9210960/263004
+void __append_trace(const char* dirname, const char* format, ...) {
+    va_list args_vsnprintf;
+    va_list args_vsprintf;
+
+    va_start(args_vsnprintf, format);
+    va_copy(args_vsprintf, args_vsnprintf);
+
     struct stat st = {0};
     if (stat(dirname, &st) == -1) {
         mkdir(dirname, 0700);
@@ -407,19 +415,28 @@ void __append_trace(const char* dirname, const char* prefix, const char* text) {
 
     int pid = getpid();
 
-    s32 len = snprintf(NULL, 0, "%s/%s-pid-%d.trace", dirname, prefix, pid);
+    // Generate filename
+    s32 len = snprintf(NULL, 0, "%s/pid-%d.trace", dirname, pid);
     u8* filename = malloc(len + 1);
-    sprintf((char*) filename, "%s/%s-pid-%d.trace", dirname, prefix, pid);
+    sprintf((char*) filename, "%s/pid-%d.trace", dirname, pid);
+
+    // Generate trace
+    len = vsnprintf(NULL, 0, format, args_vsnprintf);
+    u8* trace = malloc(len + 1);
+    vsprintf((char *) trace, format, args_vsprintf);
 
     FILE *file = fopen((char *) filename, "a");
-    fprintf(file, "%s\n", text);
+    fprintf(file, "%s\n", trace);
 
     fclose(file);
 
     free(filename);
+
+    va_end(args_vsprintf);
+    va_end(args_vsnprintf);
 }
 
-void __create_trace_file_if_not_exists(const char* dirname, const char* prefix) {
+void __create_trace_file_if_not_exists(const char* dirname) {
     struct stat st = {0};
     if (stat(dirname, &st) == -1) {
         mkdir(dirname, 0700);
@@ -427,9 +444,9 @@ void __create_trace_file_if_not_exists(const char* dirname, const char* prefix) 
 
     int pid = getpid();
 
-    s32 len = snprintf(NULL, 0, "%s/%s-pid-%d.trace", dirname, prefix, pid);
+    s32 len = snprintf(NULL, 0, "%s/pid-%d.trace", dirname, pid);
     u8* filename = malloc(len + 1);
-    sprintf((char*) filename, "%s/%s-pid-%d.trace", dirname, prefix, pid);
+    sprintf((char*) filename, "%s/pid-%d.trace", dirname, pid);
 
     if (access((char *) filename, F_OK) == -1) {
         FILE* file = fopen((char *) filename, "ab+");

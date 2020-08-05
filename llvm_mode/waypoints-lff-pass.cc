@@ -2,14 +2,11 @@
 
 using namespace fuzzfactory;
 
-class HeapOpFeedback : public BaseLibFuncFeedback<HeapOpFeedback> {
+class LibraryFunctionFeedback : public BaseLibraryFunctionFeedback<LibraryFunctionFeedback> {
 public:
-    HeapOpFeedback(Module& M) : BaseLibFuncFeedback<HeapOpFeedback>(M, "heap", "__afl_heap_dsf") { }
+    LibraryFunctionFeedback(Module& M) : BaseLibraryFunctionFeedback<LibraryFunctionFeedback>(M, "lff", "__afl_lff_dsf") { }
 
     void visitBasicBlock(BasicBlock& basicBlock) {
-        auto irb = insert_before(basicBlock);
-        createCreateTraceFileIfNotExistsCall(irb);
-
         for (Instruction &instruction : basicBlock) {
             if (isa<CallInst>(instruction)) {
                 auto &call = cast<CallInst>(instruction);
@@ -24,14 +21,12 @@ public:
                   // todo: domain-specific fuzzer. guides coverage towards paths that maximize heap ops and buff overflows.
 
                 if (shouldInterceptFunction(function)) {
-                    auto fIrb = insert_before(call);
-                    fIrb.CreateCall(DsfIncrementFunction, {DsfMapVariable, getConst(0), getConst(1)});
-
-                    createAppendTraceCall(fIrb, function->getName());
+                    auto irb = insert_before(call);
+                    irb.CreateCall(DsfIncrementFunction, {DsfMapVariable, getConst(0), getConst(1)});
                 }
             }
         }
     }
 };
 
-FUZZFACTORY_REGISTER_DOMAIN(HeapOpFeedback);
+FUZZFACTORY_REGISTER_DOMAIN(LibraryFunctionFeedback);

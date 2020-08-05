@@ -298,6 +298,10 @@
 
 #define MSAN_ERROR          86
 
+/* Special exit code that a binary can emit to indicate that input should be treated as a crash */
+
+#define CUSTOM_CRASH        83
+
 /* Designated file descriptors for forkserver commands (the application will
    use FORKSRV_FD and FORKSRV_FD + 1): */
 

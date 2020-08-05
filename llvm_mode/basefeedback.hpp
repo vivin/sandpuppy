@@ -4,82 +4,79 @@
 #define AFL_LLVM_PASS
 
 #include "fuzzfactory.hpp"
+#include <sstream>
+#include <fstream>
+#include <iostream>
 
 #ifndef BASEFEEDBACK_H
 #define BASEFEEDBACK_H
 
 using namespace fuzzfactory;
 
-cl::opt<std::string> TraceDirectory(
-        "trace_directory",
-        cl::desc("Output directory for traces."),
-        cl::value_desc("trace_directory"));
+bool hasFunctionsFile() {
+    return !FunctionsFile.empty();
+}
 
-bool hasTraceDirectory() {
-    return !TraceDirectory.empty();
+template <typename T>
+void split(const std::string &string, char delimiter, T result) {
+    std::istringstream iss(string);
+    std::string item;
+    while (std::getline(iss, item, delimiter)) {
+        *result++ = item;
+    }
+}
+
+std::vector<std::string> split(const std::string &s, char delimiter) {
+    std::vector<std::string> elements;
+    split(s, delimiter, std::back_inserter(elements));
+    return elements;
+}
+
+bool load_functions(std::vector<std::string>* functions) {
+    if (!hasFunctionsFile()) {
+        std::cerr << "No functions file provided through -functions_file option.\n";
+        return false;
+    }
+
+    std::ifstream functionsFile(FunctionsFile);
+    if ((functionsFile.rdstate() & std::ifstream::failbit ) != 0 ){
+        std::cerr << "Error opening " << FunctionsFile << "\n";
+        return false;
+    }
+
+    std::string line;
+    while (std::getline(functionsFile, line)){
+        functions->push_back(line);
+    }
+
+    return true;
 }
 
 /** Base class for library function feedback instrumentation **/
 template<class V>
-class BaseLibFuncFeedback : public DomainFeedback<V> {
+class BaseLibraryFunctionFeedback : public DomainFeedback<V> {
 
 private:
 
     StringRef domainName;
-    Function* appendTraceFunction;
-    Function* createTraceFileIfNotExistsFunction;
+    std::vector<std::string> functions;
 
 public:
 
-    BaseLibFuncFeedback<V>(Module &M, const StringRef &domainName, const StringRef &dsfVarName) : DomainFeedback<V>(M, dsfVarName) {
-        this->appendTraceFunction = this->resolveFunction(
-            "__append_trace",
-            this->getVoidTy(),
-            {this->getIntTy(8), this->getIntTy(8), this->getIntTy(8)}
-        );
-        this->createTraceFileIfNotExistsFunction = this->resolveFunction(
-            "__create_trace_file_if_not_exists",
-            this->getVoidTy(),
-            {this->getIntTy(8), this->getIntTy(8)}
-        );
+    BaseLibraryFunctionFeedback<V>(Module &M, const StringRef &domainName, const StringRef &dsfVarName) : DomainFeedback<V>(M, dsfVarName) {
+        if (!load_functions(&functions)) {
+            std::cerr << "Could not load functions to intercept.\n";
+            return;
+        }
+
         this->domainName = domainName;
     }
 
 protected:
 
-    void createAppendTraceCall(IRBuilder<> &irb, const StringRef &text) {
-        if (!hasTraceDirectory()) {
-            return;
-        }
-
-        Value* traceDirectory = irb.CreateGlobalString(
-            StringRef(TraceDirectory),
-            "traceDirectory"
-        );
-        Value* prefix = irb.CreateGlobalString(
-            StringRef(domainName),
-            "feedbackClass"
-        );
-        Value* textValue = irb.CreateGlobalString(text);
-
-        irb.CreateCall(appendTraceFunction, {traceDirectory, prefix, textValue});
-    }
-
-    void createCreateTraceFileIfNotExistsCall(IRBuilder<> &irb) {
-        if (!hasTraceDirectory()) {
-            return;
-        }
-
-        Value* traceDirectory = irb.CreateGlobalString(
-                StringRef(TraceDirectory),
-                "traceDirectory"
-        );
-        Value* prefix = irb.CreateGlobalString(
-                StringRef(domainName),
-                "feedbackClass"
-        );
-
-        irb.CreateCall(createTraceFileIfNotExistsFunction, {traceDirectory, prefix});
+    bool shouldInterceptFunction(Function *function) {
+        std::string functionName = function->getName();
+        return std::find(functions.begin(), functions.end(), functionName) != functions.end();
     }
 };
 #endif //BASEFEEDBACK_H

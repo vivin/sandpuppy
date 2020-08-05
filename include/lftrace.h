@@ -2,8 +2,8 @@
 // Created by vivin on 3/31/20.
 //
 
-#ifndef FUZZFACTORY_HEAPTRACE_H
-#define FUZZFACTORY_HEAPTRACE_H
+#ifndef FUZZFACTORY_LFTRACE_H
+#define FUZZFACTORY_LFTRACE_H
 
 #ifdef __cplusplus
 extern "C" {
@@ -12,7 +12,7 @@ extern "C" {
 /* Conditionally declare external functions if compiling with AFL compiler */
 #if defined(__AFL_COMPILER) || defined(AFL_PATH)
 
-void __append_trace(const char* dirname, const char* text);
+void __append_trace(const char* dirname, const char* format, ...);
 void __create_trace_file_if_not_exists(const char* dirname);
 
 #else // Not compiling with AFL
@@ -23,4 +23,4 @@ void __create_trace_file_if_not_exists(const char* dirname);
 }
 #endif
 
-#endif //FUZZFACTORY_HEAPTRACE_H
+#endif //FUZZFACTORY_LFTRACE_H

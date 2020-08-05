@@ -75,5 +75,5 @@ add_executable(FuzzFactory
         reducers.c
         test-instr.c
         types.h
-        include/heaptrace.h
-        llvm_mode/basefeedback.hpp)
+        include/lftrace.h
+        llvm_mode/basefeedback.hpp llvm_mode/shared-opts.cc)

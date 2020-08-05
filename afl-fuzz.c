@@ -108,8 +108,7 @@ EXP_ST u8 *in_dir,                    /* Input directory with test cases  */
           *doc_path,                  /* Path to documentation dir        */
           *target_path,               /* Path to target binary            */
           *orig_cmdline,              /* Original command line            */
-          *trace_dir,                 /* Where trace files live           */
-          *domain_name;               /* Domain name                      */
+          *trace_dir;                 /* Where trace files live           */
 
 EXP_ST u32 exec_tmout = EXEC_TIMEOUT; /* Configurable exec timeout (ms)   */
 static u32 hang_tmout = EXEC_TIMEOUT; /* Timeout used for hang det (ms)   */
@@ -143,6 +142,7 @@ EXP_ST u8  skip_deterministic,        /* Skip deterministic stages?       */
            persistent_mode,           /* Running in persistent mode?      */
            dsf_enabled,               /* Domain-specific fuzzing          */
            save_everything,           /* save all inputs with something in perf_map */
+           keep_everything,           /* save all noncrashing inputs!     */
            deferred_mode,             /* Deferred forkserver mode?        */
            fast_cal;                  /* Try to calibrate faster?         */
 
@@ -2600,7 +2600,7 @@ static u8 run_target(char** argv, u32 timeout) {
 
   }
 
-  /*u8 *trace_file = alloc_printf("%s/%s-pid-%d.trace", trace_dir, domain_name, last_child_pid);
+  /*u8 *trace_file = alloc_printf("%s/pid-%d.trace", trace_dir, last_child_pid);
   if (access(trace_file, F_OK) != -1) {
       DEBUG("after running child pid %d, trace file %s exists\n", child_pid, trace_file);
   } else {
@@ -2652,7 +2652,7 @@ static u8 run_target(char** argv, u32 timeout) {
   /* A somewhat nasty hack for MSAN, which doesn't support abort_on_error and
      must use a special exit code. */
 
-  if (uses_asan && WEXITSTATUS(status) == MSAN_ERROR) {
+  if (WEXITSTATUS(status) == CUSTOM_CRASH || (uses_asan && WEXITSTATUS(status) == MSAN_ERROR)) {
     kill_signal = 0;
     return FAULT_CRASH;
   }
@@ -2752,9 +2752,9 @@ static void copy(u8* source, u8* dest) {
 static void copy_trace_for_test_case(u8 *fn) {
     //DEBUG("last_child_pid is %d\n", last_child_pid);
 
-    if (trace_dir && domain_name) {
-        u8 *trace_file = alloc_printf("%s/%s-pid-%d.trace", trace_dir, domain_name, last_child_pid);
-        u8 *new_trace_file = alloc_printf("%s,fuzz:%s,trace:%s.trace", fn, domain_name, domain_name);
+    if (trace_dir) {
+        u8 *trace_file = alloc_printf("%s/pid-%d.trace", trace_dir, last_child_pid);
+        u8 *new_trace_file = alloc_printf("%s.trace", fn);
 
         if (access(trace_file, F_OK) != -1) {
             //DEBUG("source trace file %s exists\n", trace_file);
@@ -2775,8 +2775,8 @@ static void copy_trace_for_test_case(u8 *fn) {
 }
 
 static void delete_trace_file_for_pid(s32 pid) {
-    if (trace_dir && domain_name) {
-        u8 *trace_file = alloc_printf("%s/%s-pid-%d.trace", trace_dir, domain_name, pid);
+    if (trace_dir) {
+        u8 *trace_file = alloc_printf("%s/pid-%d.trace", trace_dir, pid);
         //DEBUG("removing trace file %s\n", trace_file);
         remove(trace_file);
         ck_free(trace_file);
@@ -3442,14 +3442,12 @@ static u8 save_if_interesting(char** argv, void* mem, u32 len, u8 fault) {
   // If no faults happened; that is, if fault == crash_mode == 0. So this is the same as saying we're not in crash_mode
   // and it did not crash
   if (fault == crash_mode) {
-      // We will delete the trace because we are going to call calibrate_case, which will store the trace from the final
-      // stage where it called run_target. This means that we don't need the trace we got from the run_target call that
-      // was made before save_if_interesting was called. Note that we don't want to delete it outright (outside the if)
-      // because we may need to copy it for a crash or hang input.
-      delete_trace_file();
 
     /* Keep only if there are new bits in the map, add to queue for
        future fuzzing, etc. DSF: also keep if there is a new max*/
+
+    // TODO: introduce a new option that saves literally every input as long as it's not a crash or hang.
+    // TODO: obv this would be slower. but it's for training data.
 
     u8 dsf_changed = 0;
     if (dsf_enabled) dsf_changed = has_dsf_changed();
@@ -3457,22 +3455,51 @@ static u8 save_if_interesting(char** argv, void* mem, u32 len, u8 fault) {
         if (dsf_changed || has_dsf_bit()) save_as_perf_input(mem, len);
     }
 
-    if (!(hnb = has_new_bits(virgin_bits)) && (!dsf_enabled || !dsf_changed)) {
-      if (crash_mode) total_crashes++;
-      return 0;
-    }    
-   
+    hnb = has_new_bits(virgin_bits);
 
 #ifndef SIMPLE_FILES
 
     fn = alloc_printf("%s/queue/id:%06u,%s%s", out_dir, queued_paths,
-                      describe_op(hnb), (dsf_enabled && dsf_changed) ? ",+dsf" : "" );
+                      describe_op(hnb), (dsf_enabled && (dsf_changed || keep_everything)) ? ",+dsf" : "" );
 
 #else
 
     fn = alloc_printf("%s/queue/id_%06u", out_dir, queued_paths);
 
 #endif /* ^!SIMPLE_FILES */
+
+    if (!hnb && (!dsf_enabled || !dsf_changed)) {
+        if (crash_mode) total_crashes++;
+
+        // If the keep_everything flag is on, we want to keep this input even though it didn't affect coverage. I'm
+        // adding a suffix to it because for some reason (that I haven't cared to figure out yet) a file with the
+        // same name may already exist. It's fine though because it is nice to distinguish those inputs where
+        // coverage didn't change.
+        if (keep_everything) {
+            fn = alloc_printf("%s+kept", fn);
+
+            if (access(fn, F_OK) != -1) {
+                return 0;
+            }
+
+            fd = open(fn, O_WRONLY | O_CREAT | O_EXCL, 0600);
+            if (fd < 0) PFATAL("Unable to create '%s'", fn);
+            ck_write(fd, mem, len, fn);
+            close(fd);
+
+            /** copy trace file over to <fn>.trace **/
+            copy_trace_for_test_case(fn);
+        }
+
+        delete_trace_file();
+        return 0;
+    }
+
+    // We will delete the trace because we are going to call calibrate_case, which will store the trace from the final
+    // stage where it called run_target. This means that we don't need the trace we got from the run_target call that
+    // was made before save_if_interesting was called. Note that we don't want to delete it outright (outside the if)
+    // because we may need to copy it for a crash or hang input.
+    delete_trace_file();
 
     DEBUG("adding %s to queue\n", fn);
 
@@ -3484,8 +3511,8 @@ static u8 save_if_interesting(char** argv, void* mem, u32 len, u8 fault) {
     }
 
     queue_top->exec_cksum = hash32(trace_bits, MAP_SIZE, HASH_CONST);
-    if (dsf_enabled) 
-      queue_top->dsf_cksum = hash32(dsf_map, dsf_len_actual*sizeof(u32), HASH_CONST); 
+    if (dsf_enabled)
+      queue_top->dsf_cksum = hash32(dsf_map, dsf_len_actual*sizeof(u32), HASH_CONST);
 
     /* Try to calibrate inline; this also calls update_bitmap_score() when
        successful. */
@@ -3506,6 +3533,7 @@ static u8 save_if_interesting(char** argv, void* mem, u32 len, u8 fault) {
 
     /** copy trace file over to <fn>.trace **/
     copy_trace_for_test_case(fn);
+    delete_trace_file();
   }
 
   switch (fault) {
@@ -8194,13 +8222,18 @@ int main(int argc, char** argv) {
   gettimeofday(&tv, &tz);
   srandom(tv.tv_sec ^ tv.tv_usec ^ getpid());
 
-  while ((opt = getopt(argc, argv, "+azspN:chi:o:f:m:t:T:dnCB:S:M:x:Q:R:D:")) > 0)
+  while ((opt = getopt(argc, argv, "+aezspN:chi:o:f:m:t:T:dnCB:S:M:x:Q:R:")) > 0)
 
     switch (opt) {
 
       case 'a':
         SAYF("Saving everything with extra feedback. May be slower.\n");
         save_everything = 1;
+        break;
+
+      case 'e':
+        SAYF("Keeping every non-crashing input. May be slower.\n");
+        keep_everything = 1;
         break;
 
       case 'p':
@@ -8379,11 +8412,6 @@ int main(int argc, char** argv) {
       case 'R': /* trace directory */
         if (trace_dir) FATAL("Multiple -R options not supported");
         trace_dir = optarg;
-        break;
-
-      case 'D': /* domain name */
-        if (domain_name) FATAL("Multiple -D options not supported");
-        domain_name = optarg;
         break;
 
       default:

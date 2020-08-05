@@ -2,14 +2,18 @@
 #include <string.h>
 #include <stdlib.h>
 #include <stdbool.h>
+#include <errno.h>
 
 /* this is my own babyheap and it is probably easier than babyheap so i am calling it infantheap  */
+
+int CUSTOM_CRASH = 83;
 
 int MAX_CHUNK_SIZE = 256;
 int MAX_CHUNKS = 1000;
 
 char *chunk_table[1000];
 int max_used_table_index = -1;
+int num_chunks = 0;
 
 int free_index_stack[1000];
 int num_free_indexes = 0;
@@ -17,7 +21,7 @@ int num_free_indexes = 0;
 bool index_allocated[1000] = { false };
 bool index_filled[1000] = { false };
 
-void alloc_chunk(int size) {
+int alloc_chunk(int size) {
     char *chunk = malloc(size * sizeof(char));
 
     int chunk_index = -1;
@@ -30,43 +34,54 @@ void alloc_chunk(int size) {
     chunk_table[chunk_index] = chunk;
     index_allocated[chunk_index] = true;
 
+    num_chunks ++;
+
     printf("\nChunk: %d (%p)\n\n", chunk_index, chunk);
+
+    return 0;
 }
 
-void do_alloc_chunk() {
+int do_alloc_chunk() {
+    if (num_chunks == MAX_CHUNKS) {
+        printf("Maximum number of chunks (%d) allocated!", MAX_CHUNKS);
+        return -1;
+    }
+
     printf("Allocating chunk\n");
     int BUFFER_SIZE = 256;
     char buffer[BUFFER_SIZE];
+    char *endptr = NULL;
     int size;
 
     printf("\nEnter size (max %d): ", MAX_CHUNK_SIZE);
     if (!fgets(buffer, BUFFER_SIZE, stdin)) {
-        return;
+        return -1;
     }
 
     buffer[strlen(buffer) - 1] = 0; // remove \n
-    size = atoi(buffer);
 
-    if (size <= 0 || size > MAX_CHUNK_SIZE) {
+    errno = 0;
+    size = strtol(buffer, &endptr, 10);
+    if (errno != 0 || *endptr != 0 || size <= 0 || size > MAX_CHUNK_SIZE) {
         printf("\nBad size\n\n");
-        return;
+        return -1;
     }
 
-    alloc_chunk(size);
+    return alloc_chunk(size);
 }
 
-void fill_chunk(int chunk_index) {
+int fill_chunk(int chunk_index) {
     printf("Filling chunk\n");
     if (!index_allocated[chunk_index]) {
         printf("Chunk %d is not allocated.\n\n", chunk_index);
-        return;
+        return -1;
     }
 
     char buffer[MAX_CHUNK_SIZE];
 
     printf("Content: ");
     if(!fgets(buffer, MAX_CHUNK_SIZE, stdin)) {
-        return;
+        return -1;
     }
 
     buffer[strlen(buffer) - 1] = 0; // remove \n
@@ -77,55 +92,62 @@ void fill_chunk(int chunk_index) {
     //printf("strcpy %s to %p\n", buffer, chunk_table[chunk_index]);
     strcpy(chunk_table[chunk_index], buffer);
     index_filled[chunk_index] = true;
+
+    return 0;
 }
 
-void do_option(void (*option_function)(int)) {
+int do_option(int (*option_function)(int)) {
     int BUFFER_SIZE = 256;
     char buffer[BUFFER_SIZE];
+    char *endptr = NULL;
     int chunk_index;
 
     //printf("\n\n-- index used of chunk index %d = %s\n", chunk_index, index_allocated[chunk_index] ? "true" : "false");
     //printf("-- index allocated of chunk index %d = %s\n\n", chunk_index, index_filled[chunk_index] ? "true" : "false");
 
-    printf("Doing something with a chunk\n");
+    //printf("Doing something with a chunk\n");
 
     printf("\nEnter chunk index: ");
     if (!fgets(buffer, BUFFER_SIZE, stdin)) {
         printf("No chunk index given.\n");
-        return;
+        return -1;
     }
 
     buffer[strlen(buffer) - 1] = 0; // remove \n
-    chunk_index = atoi(buffer);
 
-    if (chunk_index < 0 || chunk_index >= MAX_CHUNKS) {
+    errno = 0;
+    chunk_index = strtol(buffer, &endptr, 10);
+
+    if (errno != 0 || *endptr != 0 || chunk_index < 0 || chunk_index >= MAX_CHUNKS) {
         printf("Invalid chunk index\n\n");
-        return;
+        return -1;
     }
 
-    (*option_function)(chunk_index);
+    return (*option_function)(chunk_index);
 }
 
-void dump_chunk(int chunk_index) {
+int dump_chunk(int chunk_index) {
     printf("Dumping chunk\n");
     if (!index_allocated[chunk_index] || !index_filled[chunk_index]) {
         printf("Chunk %d is not allocated.\n\n", chunk_index);
-        return;
+        return -1;
     }
 
     if (!index_filled[chunk_index]) {
         printf("Chunk %d is not filled.\n\n", chunk_index);
-        return;
+        return -1;
     }
 
     printf("\nContent (%p): %s\n", chunk_table[chunk_index], chunk_table[chunk_index]);
+
+    return 0;
 }
 
-void free_chunk(int chunk_index) {
+int free_chunk(int chunk_index) {
     printf("Freeing chunk\n");
     if (!index_allocated[chunk_index]) {
         printf("Chunk %d is not allocated.\n\n", chunk_index);
-        return;
+        return -1;
     }
 
     free(chunk_table[chunk_index]);
@@ -133,15 +155,21 @@ void free_chunk(int chunk_index) {
 
     index_allocated[chunk_index] = false;
     index_filled[chunk_index] = false;
+
+    num_chunks --;
+
+    return 0;
 }
 
 int main(int argc, char* argv[]) {
     int BUFFER_SIZE = 256;
     char buffer[BUFFER_SIZE];
 
+    int return_value;
     char option;
+    bool error = false;
     bool done = false;
-    while (!done) {
+    while (!done && !error) {
         printf("Options\n");
         printf("=======\n\n");
 
@@ -153,10 +181,12 @@ int main(int argc, char* argv[]) {
 
         printf("Select an option: ");
         if (!fgets(buffer, BUFFER_SIZE, stdin)) {
+            error = true;
             continue;
         }
 
         if (strlen(buffer) != 2) {
+            error = true;
             break;
         }
 
@@ -164,24 +194,32 @@ int main(int argc, char* argv[]) {
         option = buffer[0];
 
         switch(option) {
-            case 'a': do_alloc_chunk();
+            case 'a': return_value = do_alloc_chunk();
                 break;
 
-            case 'l': do_option(&fill_chunk);
+            case 'l': return_value = do_option(&fill_chunk);
                 break;
 
-            case 'd': do_option(&dump_chunk);
+            case 'd': return_value = do_option(&dump_chunk);
                 break;
 
-            case 'f': do_option(&free_chunk);
+            case 'f': return_value = do_option(&free_chunk);
                 break;
 
-            default: done = true;
+            case 'x': done = true;
                 break;
 
+            default:
+                error = true;
+                break;
         }
+
+        error = error || (return_value != 0);
     }
 
     printf("Exiting\n");
     return 0;
+//    uncomment for the machine learning stuff if you ever do it. this makes it so that any invalid input is treated
+//    as a crash
+//    return error ? CUSTOM_CRASH : 0;
 }
