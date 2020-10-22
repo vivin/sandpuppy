@@ -76,4 +76,5 @@ add_executable(FuzzFactory
         test-instr.c
         types.h
         include/lftrace.h
+        include/vvdump.h
         llvm_mode/basefeedback.hpp llvm_mode/shared-opts.cc)

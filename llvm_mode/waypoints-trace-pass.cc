@@ -29,6 +29,7 @@ class TraceLibraryFunctionFeedback : public BaseLibraryFunctionFeedback<TraceLib
             "formatString"
         );
 
+        Value *sourceFileNameValue = irb.CreateGlobalString(call.getModule()->getSourceFileName());
         Function *function = call.getCalledFunction();
         Value *functionNameValue = irb.CreateGlobalString(function->getName());
         Value *bbNumber = getConst(bbCounter);
@@ -40,8 +41,9 @@ class TraceLibraryFunctionFeedback : public BaseLibraryFunctionFeedback<TraceLib
         appendTraceArgs.push_back(formatStringValue); // second concrete argument is format (format string)
 
         // now we will set up the varargs
-        appendTraceArgs.push_back(functionNameValue); // %s part of %s.%d
-        appendTraceArgs.push_back(bbNumber); // %d part of %s.%d
+        appendTraceArgs.push_back(sourceFileNameValue); // first %s of %s: %s.%d
+        appendTraceArgs.push_back(functionNameValue); // second %s of %s: %s.%d
+        appendTraceArgs.push_back(bbNumber); // %d part of %s: %s.%d
 
         // push in all the operand values we have
         for (unsigned int i = 0; i < call.getNumArgOperands(); i++) {
@@ -73,9 +75,9 @@ class TraceLibraryFunctionFeedback : public BaseLibraryFunctionFeedback<TraceLib
     }
 
     static std::string getFormatSpecifierForType(Type* type) {
-        std::string str;
-        llvm::raw_string_ostream rso(str);
-        type->print(rso);
+        //std::string str;
+        //llvm::raw_string_ostream rso(str);
+        //type->print(rso);
 
         if (type->isIntegerTy()) {
             return "%d";
@@ -90,7 +92,7 @@ class TraceLibraryFunctionFeedback : public BaseLibraryFunctionFeedback<TraceLib
 
     std::string getFunctionSignatureFormat(CallInst& call) {
         Function *function = call.getCalledFunction();
-        std::string nameFormat = "%s.%d";
+        std::string nameFormat = "%s: %s.%d"; // name format contains source filename as well!
 
         //std::cout << " function " << function->getName().str() << " has num operands " << function->getNumOperands() << " call num operands " << call.getNumArgOperands() << "\n";
 
@@ -137,7 +139,7 @@ public:
         createTraceFileIfNotExistsFunction = this->resolveFunction(
             "__create_trace_file_if_not_exists",
             this->getVoidTy(),
-            {this->getIntTy(8), this->getIntTy(8)}
+            {this->getIntTy(8)}
         );
     }
 
@@ -163,5 +165,11 @@ public:
         bbCounter++;
     }
 };
+
+// TODO: get libpng 1.5.8 -- it has a buffer overflow that is maybe easier to trigger. 1.5.9 also has an overflow but
+// TODO: it only comes from text chunks... so harder to trigger. for 1.5.9, see if you can generate a test image with
+// TODO: a text chunk and then fuzz using that.
+// TODO:
+// TODO: ALSO, take a look at the testbed used in the paper that @fish sent you. use those programs.
 
 FUZZFACTORY_REGISTER_DOMAIN(TraceLibraryFunctionFeedback);

@@ -31,6 +31,7 @@
 #include "../types.h"
 #include "waypoints.h"
 #include "lftrace.h"
+#include "vvdump.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -39,12 +40,15 @@
 #include <string.h>
 #include <assert.h>
 #include <stdarg.h>
+#include <stdbool.h>
+#include <fcntl.h>
 
 #include <sys/mman.h>
 #include <sys/shm.h>
 #include <sys/wait.h>
 #include <sys/types.h>
 #include <sys/stat.h>
+#include <time.h>
 
 /* This is a somewhat ugly hack for the experimental 'trace-pc-guard' mode.
    Basically, we need to make sure that the forkserver is initialized after
@@ -74,7 +78,6 @@ static u32 dsf_count = 0; // Length of above array (i.e, number of non-zero item
 /* Running in persistent mode? */
 
 static u8 is_persistent;
-
 
 /* SHM setup. */
 
@@ -107,7 +110,6 @@ static void __afl_map_shm(void) {
   }
 
 }
-
 
 /* Fork server logic. */
 
@@ -423,14 +425,17 @@ void __append_trace(const char* dirname, const char* format, ...) {
     // Generate trace
     len = vsnprintf(NULL, 0, format, args_vsnprintf);
     u8* trace = malloc(len + 1);
-    vsprintf((char *) trace, format, args_vsprintf);
+    if (trace) {
+        vsprintf((char *) trace, format, args_vsprintf);
 
-    FILE *file = fopen((char *) filename, "a");
-    fprintf(file, "%s\n", trace);
+        FILE *file = fopen((char *) filename, "a");
+        fprintf(file, "%s\n", trace);
 
-    fclose(file);
+        fclose(file);
 
-    free(filename);
+        free(filename);
+        free(trace);
+    }
 
     va_end(args_vsprintf);
     va_end(args_vsnprintf);
@@ -454,4 +459,91 @@ void __create_trace_file_if_not_exists(const char* dirname) {
     }
 
     free(filename);
+}
+
+void __dump_variable_value(const char* filename, const char* function_name, const char* variable_name, int declared_line, int modified_line, const char* var_val_format, ...) {
+    if (access((char *) VVD_NAMED_PIPE_PATH, F_OK) == -1) {
+        return;
+    }
+
+    u8 *experiment_name = getenv(VVD_EXP_NAME_ENV_VAR);
+    u8 *subject = getenv(VVD_SUBJECT_ENV_VAR);
+    u8 *binary_context = getenv(VVD_BIN_CONTEXT_ENV_VAR);
+    u8 *exec_context = getenv(VVD_EXEC_CONTEXT_ENV_VAR);
+
+    if (!(experiment_name && subject && binary_context && exec_context)) {
+        // write an error to named pipe with pid
+        int pid = getpid();
+
+        s32 len = snprintf(NULL, 0, "%d:error missing environment variables\n", pid);
+        u8* line = malloc(len + 1);
+        sprintf((char *) line, "%d:error missing environment variables\n", pid);
+
+        int fd = open(VVD_NAMED_PIPE_PATH, O_WRONLY);
+        write(fd, line, strlen((char *) line) + 1);
+        close(fd);
+
+        free(line);
+
+        return;
+    }
+
+    va_list var_val_vsnprintf;
+    va_list var_val_vsprintf;
+
+    va_start(var_val_vsnprintf, var_val_format);
+    va_copy(var_val_vsprintf, var_val_vsnprintf);
+
+    int pid = getpid();
+
+    // Get variable value as string
+    s32 var_val_len = vsnprintf(NULL, 0, var_val_format, var_val_vsnprintf);
+    u8* var_val = malloc(var_val_len + 1);
+    vsprintf((char *) var_val, var_val_format, var_val_vsprintf);
+
+    // Now build the rest of it.
+    unsigned long timestamp = time(NULL);
+    s32 len = snprintf(
+        NULL, 0, "%s:%s:%s:%s:%d:%s:%s:%s:%d:%d:%s:%lu\n",
+         experiment_name,
+         subject,
+         binary_context,
+         exec_context,
+         pid,
+         filename,
+         function_name,
+         variable_name,
+         declared_line,
+         modified_line,
+         var_val,
+         timestamp
+    );
+
+    u8* var_val_trace = malloc(len + 1);
+    if (var_val_trace) {
+        sprintf((char *) var_val_trace, "%s:%s:%s:%s:%d:%s:%s:%s:%d:%d:%s:%lu\n",
+                experiment_name,
+                subject,
+                binary_context,
+                exec_context,
+                pid,
+                filename,
+                function_name,
+                variable_name,
+                declared_line,
+                modified_line,
+                var_val,
+                timestamp
+        );
+
+        int fd = open(VVD_NAMED_PIPE_PATH, O_WRONLY);
+        write(fd, var_val_trace, strlen((char *) var_val_trace) + 1);
+        close(fd);
+
+        free(var_val);
+        free(var_val_trace);
+    }
+
+    va_end(var_val_vsprintf);
+    va_end(var_val_vsnprintf);
 }

@@ -58,6 +58,11 @@ int do_alloc_chunk() {
         return -1;
     }
 
+    if (strlen(buffer) == 0) {
+        printf("\nBad size\n\n");
+        return -1;
+    }
+
     buffer[strlen(buffer) - 1] = 0; // remove \n
 
     errno = 0;
@@ -84,10 +89,15 @@ int fill_chunk(int chunk_index) {
         return -1;
     }
 
+    if (strlen(buffer) == 0) {
+        printf("\nBad content\n\n");
+        return -1;
+    }
+
     buffer[strlen(buffer) - 1] = 0; // remove \n
 
-    char* addr = chunk_table[chunk_index];
-    *addr = 'a';
+    //char* addr = chunk_table[chunk_index];
+    //*addr = 'a';
 
     //printf("strcpy %s to %p\n", buffer, chunk_table[chunk_index]);
     strcpy(chunk_table[chunk_index], buffer);
@@ -109,7 +119,12 @@ int do_option(int (*option_function)(int)) {
 
     printf("\nEnter chunk index: ");
     if (!fgets(buffer, BUFFER_SIZE, stdin)) {
-        printf("No chunk index given.\n");
+        printf("No chunk index given\n");
+        return -1;
+    }
+
+    if (strlen(buffer) == 0) {
+        printf("\nInvalid chunk index\n\n");
         return -1;
     }
 
@@ -169,6 +184,8 @@ int main(int argc, char* argv[]) {
     char option;
     bool error = false;
     bool done = false;
+    int blue = 0;
+    char* butt = "butts";
     while (!done && !error) {
         printf("Options\n");
         printf("=======\n\n");
@@ -195,18 +212,23 @@ int main(int argc, char* argv[]) {
 
         switch(option) {
             case 'a': return_value = do_alloc_chunk();
+                blue++;
                 break;
 
             case 'l': return_value = do_option(&fill_chunk);
+                blue++;
                 break;
 
             case 'd': return_value = do_option(&dump_chunk);
+                blue++;
                 break;
 
             case 'f': return_value = do_option(&free_chunk);
+                blue++;
                 break;
 
             case 'x': done = true;
+                blue = 10;
                 break;
 
             default:
@@ -217,7 +239,7 @@ int main(int argc, char* argv[]) {
         error = error || (return_value != 0);
     }
 
-    printf("Exiting\n");
+    printf("Exiting %s\n", butt);
     return 0;
 //    uncomment for the machine learning stuff if you ever do it. this makes it so that any invalid input is treated
 //    as a crash
