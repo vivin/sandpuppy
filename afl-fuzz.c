@@ -1,4 +1,20 @@
 /*
+  Copyright 2013 Google LLC All rights reserved.
+
+  Licensed under the Apache License, Version 2.0 (the "License");
+  you may not use this file except in compliance with the License.
+  You may obtain a copy of the License at:
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+  Unless required by applicable law or agreed to in writing, software
+  distributed under the License is distributed on an "AS IS" BASIS,
+  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+  See the License for the specific language governing permissions and
+  limitations under the License.
+*/
+
+/*
    american fuzzy lop - fuzzer code
    --------------------------------
 
@@ -6,27 +22,19 @@
 
    Forkserver design by Jann Horn <jannhorn@googlemail.com>
 
-   Copyright 2013, 2014, 2015, 2016, 2017 Google Inc. All rights reserved.
-   
-   Domain-Specific Fuzzing (DSF) extensions by Rohan Padhye and Caroline Lemieux
-   Copyright 2019 Regents of the University of California
-
-   Licensed under the Apache License, Version 2.0 (the "License");
-   you may not use this file except in compliance with the License.
-   You may obtain a copy of the License at:
-
-     http://www.apache.org/licenses/LICENSE-2.0
-
    This is the real deal: the program takes an instrumented binary and
    attempts a variety of basic fuzzing tricks, paying close attention to
    how they affect the execution path.
 
- */
+*/
 
 #define AFL_MAIN
+#include "android-ashmem.h"
 #define MESSAGES_TO_STDOUT
 
+#ifndef _GNU_SOURCE
 #define _GNU_SOURCE
+#endif
 #define _FILE_OFFSET_BITS 64
 
 #include "config.h"
@@ -99,7 +107,8 @@ EXP_ST u8 *in_dir,                    /* Input directory with test cases  */
           *in_bitmap,                 /* Input bitmap                     */
           *doc_path,                  /* Path to documentation dir        */
           *target_path,               /* Path to target binary            */
-          *orig_cmdline;              /* Original command line            */
+          *orig_cmdline,              /* Original command line            */
+          *trace_dir;                 /* Where trace files live           */
 
 EXP_ST u32 exec_tmout = EXEC_TIMEOUT; /* Configurable exec timeout (ms)   */
 static u32 hang_tmout = EXEC_TIMEOUT; /* Timeout used for hang det (ms)   */
@@ -133,6 +142,7 @@ EXP_ST u8  skip_deterministic,        /* Skip deterministic stages?       */
            persistent_mode,           /* Running in persistent mode?      */
            dsf_enabled,               /* Domain-specific fuzzing          */
            save_everything,           /* save all inputs with something in perf_map */
+           keep_everything,           /* save all noncrashing inputs!     */
            deferred_mode,             /* Deferred forkserver mode?        */
            fast_cal;                  /* Try to calibrate faster?         */
 
@@ -144,7 +154,8 @@ static s32 out_fd,                    /* Persistent fd for out_file       */
 
 static s32 forksrv_pid,               /* PID of the fork server           */
            child_pid = -1,            /* PID of the fuzzed program        */
-           out_dir_fd = -1;           /* FD of the lock file              */
+           out_dir_fd = -1,           /* FD of the lock file              */
+           last_child_pid = -1;       /* last child pid                   */
 
 EXP_ST u8* trace_bits;                /* SHM with instrumentation bitmap  */
 
@@ -194,6 +205,7 @@ EXP_ST u64 total_crashes,             /* Total number of crashes          */
            unique_tmouts,             /* Timeouts with unique signatures  */
            unique_hangs,              /* Hangs with unique signatures     */
            total_execs,               /* Total execve() calls             */
+           slowest_exec_ms,           /* Slowest testcase non hang in ms  */
            start_time,                /* Unix start time (ms)             */
            num_dsf_inputs,            /* Number of inputs with something in the dsf map */
            last_path_time,            /* Time for most recent path (ms)   */
@@ -283,7 +295,8 @@ static struct queue_entry *queue,     /* Fuzzing queue (linked list)      */
                           *queue_top, /* Top of the list                  */
                           *q_prev100; /* Previous 100 marker              */
 
-static struct queue_entry** top_rated;/* Top entries for bitmap bytes     */
+static struct queue_entry*
+  top_rated[MAP_SIZE];                /* Top entries for bitmap bytes     */
 
 struct extra_data {
   u8* data;                           /* Dictionary token data            */
@@ -915,7 +928,7 @@ EXP_ST void read_bitmap(u8* fname) {
 
 static inline u8 has_new_bits(u8* virgin_map) {
 
-#ifdef __x86_64__
+#ifdef WORD_SIZE_64
 
   u64* current = (u64*)trace_bits;
   u64* virgin  = (u64*)virgin_map;
@@ -929,7 +942,7 @@ static inline u8 has_new_bits(u8* virgin_map) {
 
   u32  i = (MAP_SIZE >> 2);
 
-#endif /* ^__x86_64__ */
+#endif /* ^WORD_SIZE_64 */
 
   u8   ret = 0;
 
@@ -949,7 +962,7 @@ static inline u8 has_new_bits(u8* virgin_map) {
         /* Looks like we have not found any new bytes yet; see if any non-zero
            bytes in current[] are pristine in virgin[]. */
 
-#ifdef __x86_64__
+#ifdef WORD_SIZE_64
 
         if ((cur[0] && vir[0] == 0xff) || (cur[1] && vir[1] == 0xff) ||
             (cur[2] && vir[2] == 0xff) || (cur[3] && vir[3] == 0xff) ||
@@ -963,7 +976,7 @@ static inline u8 has_new_bits(u8* virgin_map) {
             (cur[2] && vir[2] == 0xff) || (cur[3] && vir[3] == 0xff)) ret = 2;
         else ret = 1;
 
-#endif /* ^__x86_64__ */
+#endif /* ^WORD_SIZE_64 */
 
       }
 
@@ -1126,7 +1139,7 @@ static const u8 simplify_lookup[256] = {
 
 };
 
-#ifdef __x86_64__
+#ifdef WORD_SIZE_64
 
 static void simplify_trace(u64* mem) {
 
@@ -1183,7 +1196,7 @@ static void simplify_trace(u32* mem) {
 
 }
 
-#endif /* ^__x86_64__ */
+#endif /* ^WORD_SIZE_64 */
 
 
 /* Destructively classify execution counts in a trace. This is used as a
@@ -1220,7 +1233,7 @@ EXP_ST void init_count_class16(void) {
 }
 
 
-#ifdef __x86_64__
+#ifdef WORD_SIZE_64
 
 static inline void classify_counts(u64* mem) {
 
@@ -1272,7 +1285,7 @@ static inline void classify_counts(u32* mem) {
 
 }
 
-#endif /* ^__x86_64__ */
+#endif /* ^WORD_SIZE_64 */
 
 
 /* Get rid of shared memory (atexit handler). */
@@ -1310,8 +1323,7 @@ static void minimize_bits(u8* dst, u8* src) {
 
    The first step of the process is to maintain a list of top_rated[] entries
    for every byte in the bitmap. We win that slot if there is no previous
-   contender, or if the contender has a more favorable speed x size factor. 
-*/
+   contender, or if the contender has a more favorable speed x size factor. */
 
 static void update_bitmap_score(struct queue_entry* q) {
 
@@ -1335,44 +1347,43 @@ static void update_bitmap_score(struct queue_entry* q) {
 
     u64 fav_factor = q->exec_us * q->len;
 
+    /* For every byte set in trace_bits[], see if there is a previous winner,
+       and how it compares to us. */
+
     for (i = 0; i < MAP_SIZE; i++)
 
-      if (unlikely(trace_bits[i])) {
+      if (trace_bits[i]) {
          
-         if (top_rated[i]) {
+        if (top_rated[i]) {
 
-           /* Faster-executing or smaller test cases are favored. */
+          /* Faster-executing or smaller test cases are favored. */
 
-           if (fav_factor > top_rated[i]->exec_us * top_rated[i]->len) continue;
+          if (fav_factor > top_rated[i]->exec_us * top_rated[i]->len) continue;
 
-           /* Looks like we're going to win. Decrease ref count for the
-              previous winner, discard its trace_bits[] if necessary. */
+          /* Looks like we're going to win. Decrease ref count for the
+             previous winner, discard its trace_bits[] if necessary. */
 
-           if (!--top_rated[i]->tc_ref) {
-             ck_free(top_rated[i]->trace_mini);
-             top_rated[i]->trace_mini = 0;
-           }
+          if (!--top_rated[i]->tc_ref) {
+            ck_free(top_rated[i]->trace_mini);
+            top_rated[i]->trace_mini = 0;
+          }
 
-         }
+        }
 
         /* Insert ourselves as the new winner. */
+
         top_rated[i] = q;
-
-        /* change scores accordingly */
-
         q->tc_ref++;
 
         if (!q->trace_mini) {
           q->trace_mini = ck_alloc(MAP_SIZE >> 3);
           minimize_bits(q->trace_mini, trace_bits);
-         }
+        }
+
         score_changed = 1;
 
-       }
-
+     }
   }
-
-
 }
 
 
@@ -1381,12 +1392,12 @@ static void update_bitmap_score(struct queue_entry* q) {
    previously-unseen bytes (temp_v) and marks them as favored, at least
    until the next run. The favored entries are given more air time during
    all fuzzing steps. 
-   In the dsf_enabled setting we only favor entries which achieve the max.*/
+
+   In the dsf_enabled setting we only favor entries which achieve the max. */
 
 static void cull_queue(void) {
 
   struct queue_entry* q;
-  
   u32 i;
 
   if (dumb_mode || !score_changed) return;
@@ -1430,34 +1441,26 @@ static void cull_queue(void) {
     static u8 temp_v[MAP_SIZE >> 3];
     memset(temp_v, 255, MAP_SIZE >> 3);
 
+    /* Let's see if anything in the bitmap isn't captured in temp_v.
+       If yes, and if it has a top_rated[] contender, let's use it. */
+
     for (i = 0; i < MAP_SIZE; i++) {
+      if (top_rated[i] && (temp_v[i >> 3] & (1 << (i & 7)))) {
 
-      if (top_rated[i]) {
+        u32 j = MAP_SIZE >> 3;
 
-        if ((temp_v[i >> 3] & (1 << (i & 7)))) {
-          /* Let's see if anything in the bitmap isn't captured in temp_v.
-          If yes, and if it has a top_rated[] contender, let's use it. */
+        /* Remove all bits belonging to the current entry from temp_v. */
 
-          u32 j = MAP_SIZE >> 3;
+        while (j--) 
+          if (top_rated[i]->trace_mini[j])
+            temp_v[j] &= ~top_rated[i]->trace_mini[j];
 
-          /* Remove all bits belonging to the current entry from temp_v. */
+        top_rated[i]->favored = 1;          
+        queued_favored++;
 
-          while (j--) 
-            if (top_rated[i]->trace_mini[j])
-              temp_v[j] &= ~top_rated[i]->trace_mini[j];
-
-          top_rated[i]->favored = 1;
-          
-          queued_favored++;
-
-          if (!top_rated[i]->was_fuzzed) pending_favored++;
-
-        }
-
+        if (!top_rated[i]->was_fuzzed) pending_favored++;
       }
-
     }
-
   }
 
   q = queue;
@@ -1482,7 +1485,7 @@ EXP_ST void setup_shm(void) {
   memset(virgin_crash, 255, MAP_SIZE);
 
   /* in the case of the domain-specific fuzzing, allocate the DSF
-    map right after the regular bitmap.  */
+     map right after the regular bitmap.  */
   /* always allocate so that programs instrumented with afl-clang-fast
      don't cause segfaults */
   shm_id = shmget(IPC_PRIVATE, MAP_SIZE + (DSF_LEN * sizeof(u32)), IPC_CREAT | IPC_EXCL | 0600);
@@ -1620,9 +1623,9 @@ static void read_testcases(void) {
 
     }
 
-    if (st.st_size > max_file_len) 
+    if (st.st_size > MAX_FILE) 
       FATAL("Test case '%s' is too big (%s, limit is %s)", fn,
-            DMS(st.st_size), DMS(max_file_len));
+            DMS(st.st_size), DMS(MAX_FILE));
 
     /* Check for metadata that indicates that deterministic fuzzing
        is complete for this entry. We don't want to repeat deterministic
@@ -2125,7 +2128,6 @@ static void destroy_extras(void) {
    cloning a stopped child. So, we just execute once, and then send commands
    through a pipe. The other part of this logic is in afl-as.h. */
 
-
 EXP_ST void init_forkserver(char** argv) {
 
   static struct itimerval it;
@@ -2444,6 +2446,7 @@ static u8 run_target(char** argv, u32 timeout) {
 
   static struct itimerval it;
   static u32 prev_timed_out = 0;
+  static u64 exec_ms = 0;
 
   int status = 0;
   u32 tb4;
@@ -2468,6 +2471,7 @@ static u8 run_target(char** argv, u32 timeout) {
   if (dumb_mode == 1 || no_forkserver) {
 
     child_pid = fork();
+    last_child_pid = child_pid;
 
     if (child_pid < 0) PFATAL("fork() failed");
 
@@ -2556,6 +2560,7 @@ static u8 run_target(char** argv, u32 timeout) {
 
     }
 
+    //DEBUG("last_child_pid before calling forkserver is %d\n", last_child_pid);
     if ((res = read(fsrv_st_fd, &child_pid, 4)) != 4) {
 
       if (stop_soon) return 0;
@@ -2563,7 +2568,9 @@ static u8 run_target(char** argv, u32 timeout) {
 
     }
 
+    //DEBUG("\nchild_pid received from forkserver is %d\n", child_pid);
     if (child_pid <= 0) FATAL("Fork server is misbehaving (OOM?)");
+    last_child_pid = child_pid;
 
   }
 
@@ -2593,7 +2600,19 @@ static u8 run_target(char** argv, u32 timeout) {
 
   }
 
+  /*u8 *trace_file = alloc_printf("%s/pid-%d.trace", trace_dir, last_child_pid);
+  if (access(trace_file, F_OK) != -1) {
+      DEBUG("after running child pid %d, trace file %s exists\n", child_pid, trace_file);
+  } else {
+      DEBUG("after running child pid %d, could not find trace file %s\n", child_pid, trace_file);
+  }*/
+
   if (!WIFSTOPPED(status)) child_pid = 0;
+  //DEBUG("child_pid is now %d and last_child_pid is now %d\n\n", child_pid, last_child_pid);
+
+  getitimer(ITIMER_REAL, &it);
+  exec_ms = (u64) timeout - (it.it_value.tv_sec * 1000 +
+                             it.it_value.tv_usec / 1000);
 
   it.it_value.tv_sec = 0;
   it.it_value.tv_usec = 0;
@@ -2609,12 +2628,12 @@ static u8 run_target(char** argv, u32 timeout) {
   MEM_BARRIER();
 
   tb4 = *(u32*)trace_bits;
-  /* this should only bucket the MAP_SIZE part of shmem */
-#ifdef __x86_64__
+
+#ifdef WORD_SIZE_64
   classify_counts((u64*)trace_bits);
 #else
   classify_counts((u32*)trace_bits);
-#endif /* ^__x86_64__ */
+#endif /* ^WORD_SIZE_64 */
 
   prev_timed_out = child_timed_out;
 
@@ -2633,13 +2652,19 @@ static u8 run_target(char** argv, u32 timeout) {
   /* A somewhat nasty hack for MSAN, which doesn't support abort_on_error and
      must use a special exit code. */
 
-  if (uses_asan && WEXITSTATUS(status) == MSAN_ERROR) {
+  if (WEXITSTATUS(status) == CUSTOM_CRASH || (uses_asan && WEXITSTATUS(status) == MSAN_ERROR)) {
     kill_signal = 0;
     return FAULT_CRASH;
   }
 
   if ((dumb_mode == 1 || no_forkserver) && tb4 == EXEC_FAIL_SIG)
     return FAULT_ERROR;
+
+  /* It makes sense to account for the slowest units only if the testcase was run
+  under the user defined timeout. */
+  if (!(timeout > exec_tmout) && (slowest_exec_ms < exec_ms)) {
+    slowest_exec_ms = exec_ms;
+  }
 
   return FAULT_NONE;
 
@@ -2659,6 +2684,7 @@ static void write_to_testcase(void* mem, u32 len) {
     unlink(out_file); /* Ignore errors. */
 
     fd = open(out_file, O_WRONLY | O_CREAT | O_EXCL, 0600);
+    //DEBUG("last_child_pid is %d. writing to testcase file: %s\n", last_child_pid, out_fd);
 
     if (fd < 0) PFATAL("Unable to create '%s'", out_file);
 
@@ -2706,7 +2732,60 @@ static void write_with_gap(void* mem, u32 len, u32 skip_at, u32 skip_len) {
 
 }
 
+//TODO: we don't seem to be copying this over for every test case??
 
+static void copy(u8* source, u8* dest) {
+    s32 sfd = open(source, O_RDONLY);
+    s32 dfd = open(dest, O_WRONLY | O_CREAT | O_EXCL, 0600);
+
+    u8* tmp = ck_alloc(64 * 1024);
+
+    s32 i;
+    while ((i = read(sfd, tmp, 64 * 1024)) > 0)
+        ck_write(dfd, tmp, i, dest);
+
+    ck_free(tmp);
+    close(sfd);
+    close(dfd);
+}
+
+static void copy_trace_for_test_case(u8 *fn) {
+    //DEBUG("last_child_pid is %d\n", last_child_pid);
+
+    if (trace_dir) {
+        u8 *trace_file = alloc_printf("%s/pid-%d.trace", trace_dir, last_child_pid);
+        u8 *new_trace_file = alloc_printf("%s.trace", fn);
+
+        if (access(trace_file, F_OK) != -1) {
+            //DEBUG("source trace file %s exists\n", trace_file);
+            copy(trace_file, new_trace_file);
+        } else {
+            DEBUG("could not find source trace file %s\n", trace_file);
+        }
+
+        if (access(new_trace_file, F_OK) == -1) {
+            DEBUG("could not find new trace file %s\n", new_trace_file);
+        }
+
+        //DEBUG("created %s from trace file %s\n", new_trace_file, trace_file);
+
+        ck_free(trace_file);
+        ck_free(new_trace_file);
+    }
+}
+
+static void delete_trace_file_for_pid(s32 pid) {
+    if (trace_dir) {
+        u8 *trace_file = alloc_printf("%s/pid-%d.trace", trace_dir, pid);
+        //DEBUG("removing trace file %s\n", trace_file);
+        remove(trace_file);
+        ck_free(trace_file);
+    }
+}
+
+static void delete_trace_file() {
+    delete_trace_file_for_pid(last_child_pid);
+}
 static void show_stats(void);
 
 /* Calibrate a new test case. This is done when processing the input directory
@@ -2715,7 +2794,6 @@ static void show_stats(void);
 
 static u8 calibrate_case(char** argv, struct queue_entry* q, u8* use_mem,
                          u32 handicap, u8 from_queue) {
-  // TODO in calibration look at the entire trace bits... booo
 
   static u8 first_trace[MAP_SIZE];
 
@@ -2759,13 +2837,18 @@ static u8 calibrate_case(char** argv, struct queue_entry* q, u8* use_mem,
 
     write_to_testcase(use_mem, q->len);
 
+    //DEBUG("\nbefore stage(%d) calibrate_case->run_target. last_child_pid is %d\n", stage_cur, last_child_pid);
     fault = run_target(argv, use_tmout);
+    //DEBUG("after stage(%d) calibrate_case->run_target. last_child_pid is %d\n\n", stage_cur, last_child_pid);
 
     /* stop_soon is set by the handler for Ctrl+C. When it's pressed,
        we want to bail out quickly. */
 
+    // we won't delete trace files in these cases because always want to keep the trace from the last run_target
+    // call.
     if (stop_soon || fault != crash_mode) goto abort_calibration;
 
+    // same as above
     if (!dumb_mode && !stage_cur && !count_bytes(trace_bits)) {
       fault = FAULT_NOINST;
       goto abort_calibration;
@@ -2808,6 +2891,10 @@ static u8 calibrate_case(char** argv, struct queue_entry* q, u8* use_mem,
 
     }
 
+    // Only keep the trace file if we are on the very last stage
+    if (stage_cur != stage_max - 1) {
+        delete_trace_file();
+    }
   }
 
   stop_us = get_cur_time_us();
@@ -2910,7 +2997,12 @@ static void perform_dry_run(char** argv) {
 
     close(fd);
 
+    //DEBUG("\nbefore perform_dry_run->calibrate_case. last_child_pid is %d\n", last_child_pid);
     res = calibrate_case(argv, q, use_mem, 0, 1);
+    copy_trace_for_test_case(q->fname);
+    delete_trace_file();
+    //DEBUG("after perform_dry_run->calibrate_case. last_child_pid is %d\n\n", last_child_pid);
+
     ck_free(use_mem);
 
     if (stop_soon) return;
@@ -2923,8 +3015,7 @@ static void perform_dry_run(char** argv) {
 
       case FAULT_NONE:
 
-
-    	if (q == queue) check_map_coverage();
+        if (q == queue) check_map_coverage();
 
 	// Populates the dsf_cumulated properly.
 	if (dsf_enabled) has_dsf_changed();
@@ -3133,7 +3224,6 @@ static void link_or_copy(u8* old_path, u8* new_path) {
 
 }
 
-
 static void nuke_resume_dir(void);
 
 /* Create hard links for input test cases in the output directory, choosing
@@ -3335,6 +3425,13 @@ static void save_as_perf_input(void * mem, u32 len) {
    save or queue the input test case for further analysis if so. Returns 1 if
    entry is saved, 0 otherwise. */
 
+// TODO: some inputs in the queue directory do not have trace files. not sure why that is.
+// TODO: also need to verify that traces are accurate. (so make sure you compare .trace with output trace file
+// TODO: after running). i think it has to do with calibrate_case or whatever where it writes data to the case file.
+// TODO: i dunno. you have to check.
+// TODO: anyway so preliminary comparison of copied trace seems to match input. so you just need to see which cases
+// TODO: you're missing. see when save_if_interesting is called. maybe there is a code path where it is not called.
+
 static u8 save_if_interesting(char** argv, void* mem, u32 len, u8 fault) {
 
   u8  *fn = "";
@@ -3342,10 +3439,15 @@ static u8 save_if_interesting(char** argv, void* mem, u32 len, u8 fault) {
   s32 fd;
   u8  keeping = 0, res;
 
+  // If no faults happened; that is, if fault == crash_mode == 0. So this is the same as saying we're not in crash_mode
+  // and it did not crash
   if (fault == crash_mode) {
 
     /* Keep only if there are new bits in the map, add to queue for
        future fuzzing, etc. DSF: also keep if there is a new max*/
+
+    // TODO: introduce a new option that saves literally every input as long as it's not a crash or hang.
+    // TODO: obv this would be slower. but it's for training data.
 
     u8 dsf_changed = 0;
     if (dsf_enabled) dsf_changed = has_dsf_changed();
@@ -3353,22 +3455,51 @@ static u8 save_if_interesting(char** argv, void* mem, u32 len, u8 fault) {
         if (dsf_changed || has_dsf_bit()) save_as_perf_input(mem, len);
     }
 
-    if (!(hnb = has_new_bits(virgin_bits)) && (!dsf_enabled || !dsf_changed)) {
-      if (crash_mode) total_crashes++;
-      return 0;
-    }    
-   
+    hnb = has_new_bits(virgin_bits);
 
 #ifndef SIMPLE_FILES
 
     fn = alloc_printf("%s/queue/id:%06u,%s%s", out_dir, queued_paths,
-                      describe_op(hnb), (dsf_enabled && dsf_changed) ? ",+dsf" : "" );
+                      describe_op(hnb), (dsf_enabled && (dsf_changed || keep_everything)) ? ",+dsf" : "" );
 
 #else
 
     fn = alloc_printf("%s/queue/id_%06u", out_dir, queued_paths);
 
 #endif /* ^!SIMPLE_FILES */
+
+    if (!hnb && (!dsf_enabled || !dsf_changed)) {
+        if (crash_mode) total_crashes++;
+
+        // If the keep_everything flag is on, we want to keep this input even though it didn't affect coverage. I'm
+        // adding a suffix to it because for some reason (that I haven't cared to figure out yet) a file with the
+        // same name may already exist. It's fine though because it is nice to distinguish those inputs where
+        // coverage didn't change.
+        if (keep_everything) {
+            fn = alloc_printf("%s+kept", fn);
+
+            if (access(fn, F_OK) != -1) {
+                return 0;
+            }
+
+            fd = open(fn, O_WRONLY | O_CREAT | O_EXCL, 0600);
+            if (fd < 0) PFATAL("Unable to create '%s'", fn);
+            ck_write(fd, mem, len, fn);
+            close(fd);
+
+            /** copy trace file over to <fn>.trace **/
+            copy_trace_for_test_case(fn);
+        }
+
+        delete_trace_file();
+        return 0;
+    }
+
+    // We will delete the trace because we are going to call calibrate_case, which will store the trace from the final
+    // stage where it called run_target. This means that we don't need the trace we got from the run_target call that
+    // was made before save_if_interesting was called. Note that we don't want to delete it outright (outside the if)
+    // because we may need to copy it for a crash or hang input.
+    delete_trace_file();
 
     DEBUG("adding %s to queue\n", fn);
 
@@ -3380,15 +3511,17 @@ static u8 save_if_interesting(char** argv, void* mem, u32 len, u8 fault) {
     }
 
     queue_top->exec_cksum = hash32(trace_bits, MAP_SIZE, HASH_CONST);
-    if (dsf_enabled) 
-      queue_top->dsf_cksum = hash32(dsf_map, dsf_len_actual*sizeof(u32), HASH_CONST); 
+    if (dsf_enabled)
+      queue_top->dsf_cksum = hash32(dsf_map, dsf_len_actual*sizeof(u32), HASH_CONST);
 
     /* Try to calibrate inline; this also calls update_bitmap_score() when
        successful. */
 
+    //DEBUG("\nbefore save_if_interesting->calibrate_case. last_child_pid is %d\n", last_child_pid);
     res = calibrate_case(argv, queue_top, mem, queue_cycle - 1, 0);
+    //DEBUG("after save_if_interesting->calibrate_case. last_child_pid is %d\n\n", last_child_pid);
 
-    if (res == FAULT_ERROR)
+      if (res == FAULT_ERROR)
       FATAL("Unable to execute target application");
 
     fd = open(fn, O_WRONLY | O_CREAT | O_EXCL, 0600);
@@ -3398,6 +3531,9 @@ static u8 save_if_interesting(char** argv, void* mem, u32 len, u8 fault) {
 
     keeping = 1;
 
+    /** copy trace file over to <fn>.trace **/
+    copy_trace_for_test_case(fn);
+    delete_trace_file();
   }
 
   switch (fault) {
@@ -3411,17 +3547,23 @@ static u8 save_if_interesting(char** argv, void* mem, u32 len, u8 fault) {
 
       total_tmouts++;
 
-      if (unique_hangs >= KEEP_UNIQUE_HANG) return keeping;
+      if (unique_hangs >= KEEP_UNIQUE_HANG) {
+          delete_trace_file();
+          return keeping;
+      }
 
       if (!dumb_mode) {
 
-#ifdef __x86_64__
+#ifdef WORD_SIZE_64
         simplify_trace((u64*)trace_bits);
 #else
         simplify_trace((u32*)trace_bits);
-#endif /* ^__x86_64__ */
+#endif /* ^WORD_SIZE_64 */
 
-        if (!has_new_bits(virgin_tmout)) return keeping;
+        if (!has_new_bits(virgin_tmout)) {
+            delete_trace_file();
+            return keeping;
+        }
 
       }
 
@@ -3431,20 +3573,36 @@ static u8 save_if_interesting(char** argv, void* mem, u32 len, u8 fault) {
          the target with a more generous timeout (unless the default timeout
          is already generous). */
 
+      s32 prev_last_child_pid = last_child_pid;
+
       if (exec_tmout < hang_tmout) {
 
         u8 new_fault;
         write_to_testcase(mem, len);
+        //DEBUG("\nbefore save_if_interesting->run_target. last_child_pid is %d\n", last_child_pid);
         new_fault = run_target(argv, hang_tmout);
+        //DEBUG("after save_if_interesting->run_target. last_child_pid is %d\n\n", last_child_pid);
 
         /* A corner case that one user reported bumping into: increasing the
            timeout actually uncovers a crash. Make sure we don't discard it if
            so. */
 
-        if (!stop_soon && new_fault == FAULT_CRASH) goto keep_as_crash;
+        if (!stop_soon && new_fault == FAULT_CRASH) {
+            // Delete the previous trace file because we have a new one
+            delete_trace_file_for_pid(prev_last_child_pid);
+            goto keep_as_crash;
+        }
 
-        if (stop_soon || new_fault != FAULT_TMOUT) return keeping;
+        if (stop_soon || new_fault != FAULT_TMOUT) {
+            // Delete both trace files
+            delete_trace_file();
+            delete_trace_file_for_pid(prev_last_child_pid);
+            return keeping;
+        }
 
+        // Nothing really changed so let's delete the latest trace file and reset the value of last_child_pid
+        delete_trace_file();
+        last_child_pid = prev_last_child_pid;
       }
 
 #ifndef SIMPLE_FILES
@@ -3475,17 +3633,23 @@ keep_as_crash:
 
       total_crashes++;
 
-      if (unique_crashes >= KEEP_UNIQUE_CRASH) return keeping;
+      if (unique_crashes >= KEEP_UNIQUE_CRASH) {
+          delete_trace_file();
+          return keeping;
+      }
 
       if (!dumb_mode) {
 
-#ifdef __x86_64__
+#ifdef WORD_SIZE_64
         simplify_trace((u64*)trace_bits);
 #else
         simplify_trace((u32*)trace_bits);
-#endif /* ^__x86_64__ */
+#endif /* ^WORD_SIZE_64 */
 
-        if (!has_new_bits(virgin_crash)) return keeping;
+        if (!has_new_bits(virgin_crash)) {
+            delete_trace_file();
+            return keeping;
+        }
 
       }
 
@@ -3512,7 +3676,9 @@ keep_as_crash:
 
     case FAULT_ERROR: FATAL("Unable to execute target application");
 
-    default: return keeping;
+    default:
+        delete_trace_file();
+        return keeping;
 
   }
 
@@ -3523,6 +3689,10 @@ keep_as_crash:
   if (fd < 0) PFATAL("Unable to create '%s'", fn);
   ck_write(fd, mem, len, fn);
   close(fd);
+
+  /** copy trace file over to <fn>.trace **/
+  copy_trace_for_test_case(fn);
+  delete_trace_file();
 
   ck_free(fn);
 
@@ -3590,10 +3760,10 @@ static void find_timeout(void) {
   i = read(fd, tmp, sizeof(tmp) - 1); (void)i; /* Ignore errors */
   close(fd);
 
-  off = strstr(tmp, "exec_timeout   : ");
+  off = strstr(tmp, "exec_timeout      : ");
   if (!off) return;
 
-  ret = atoi(off + 17);
+  ret = atoi(off + 20);
   if (ret <= 4) return;
 
   exec_tmout = ret;
@@ -3607,6 +3777,7 @@ static void find_timeout(void) {
 static void write_stats_file(double bitmap_cvg, double stability, double eps) {
 
   static double last_bcvg, last_stab, last_eps;
+  static struct rusage usage;
 
   u8* fn = alloc_printf("%s/fuzzer_stats", out_dir);
   s32 fd;
@@ -3658,11 +3829,12 @@ static void write_stats_file(double bitmap_cvg, double stability, double eps) {
              "last_crash        : %llu\n"
              "last_hang         : %llu\n"
              "execs_since_crash : %llu\n"
-             "exec_timeout      : %u\n"
+             "exec_timeout      : %u\n" /* Must match find_timeout() */
              "afl_banner        : %s\n"
              "afl_version       : " VERSION "\n"
              "target_mode       : %s%s%s%s%s%s%s\n"
-             "command_line      : %s\n",
+             "command_line      : %s\n"
+             "slowest_exec_ms   : %llu\n",
              start_time / 1000, get_cur_time() / 1000, getpid(),
              queue_cycle ? (queue_cycle - 1) : 0, total_execs, eps,
              queued_paths, queued_favored, queued_discovered, queued_imported,
@@ -3676,8 +3848,23 @@ static void write_stats_file(double bitmap_cvg, double stability, double eps) {
              persistent_mode ? "persistent " : "", deferred_mode ? "deferred " : "",
              (qemu_mode || dumb_mode || no_forkserver || crash_mode ||
               persistent_mode || deferred_mode) ? "" : "default",
-             orig_cmdline);
+             orig_cmdline, slowest_exec_ms);
              /* ignore errors */
+
+  /* Get rss value from the children
+     We must have killed the forkserver process and called waitpid
+     before calling getrusage */
+  if (getrusage(RUSAGE_CHILDREN, &usage)) {
+      WARNF("getrusage failed");
+  } else if (usage.ru_maxrss == 0) {
+    fprintf(f, "peak_rss_mb       : not available while afl is running\n");
+  } else {
+#ifdef __APPLE__
+    fprintf(f, "peak_rss_mb       : %zu\n", usage.ru_maxrss >> 20);
+#else
+    fprintf(f, "peak_rss_mb       : %zu\n", usage.ru_maxrss >> 10);
+#endif /* ^__APPLE__ */
+  }
 
   fclose(f);
 
@@ -4746,12 +4933,15 @@ static u8 trim_case(char** argv, struct queue_entry* q, u8* in_buf) {
     while (remove_pos < q->len) {
 
       u32 trim_avail = MIN(remove_len, q->len - remove_pos);
-      u32 exec_cksum;
+      u32 cksum;
       u32 dsf_cksum;
 
       write_with_gap(in_buf, q->len, remove_pos, trim_avail);
 
+      //DEBUG("\nbefore stage(%d) trim_case->run_target. last_child_pid is %d\n", stage_cur, last_child_pid);
       fault = run_target(argv, exec_tmout);
+      delete_trace_file();
+      //DEBUG("after stage(%d) trim_case->run_target. last_child_pid is %d\n\n", stage_cur, last_child_pid);
       trim_execs++;
 
       if (stop_soon || fault == FAULT_ERROR) goto abort_trimming;
@@ -4759,10 +4949,8 @@ static u8 trim_case(char** argv, struct queue_entry* q, u8* in_buf) {
       /* Note that we don't keep track of crashes or hangs here; maybe TODO? */
       if (dsf_enabled)
         dsf_cksum = hash32(dsf_map, dsf_len_actual*sizeof(u32), HASH_CONST);
-      exec_cksum = hash32(trace_bits, MAP_SIZE, HASH_CONST);
-
-        
-
+      
+      cksum = hash32(trace_bits, MAP_SIZE, HASH_CONST);
 
       /* If the deletion had no impact on the trace, make it permanent. This
          isn't perfect for variable-path inputs, but we're just making a
@@ -4770,7 +4958,7 @@ static u8 trim_case(char** argv, struct queue_entry* q, u8* in_buf) {
          negatives every now and then.  DSF: Make sure that the domain-specific
          details don't change either. */
 
-      if ((exec_cksum == q->exec_cksum) && 
+      if ((cksum == q->exec_cksum) && 
           (!dsf_enabled || (dsf_cksum == q->dsf_cksum))) {
 
         u32 move_tail = q->len - remove_pos - trim_avail;
@@ -4851,15 +5039,20 @@ EXP_ST u8 common_fuzz_stuff(char** argv, u8* out_buf, u32 len) {
   }
 
   write_to_testcase(out_buf, len);
-
+  //DEBUG("\nbefore common_fuzz_stuff->run_target. last_child_pid is %d\n", last_child_pid);
   fault = run_target(argv, exec_tmout);
+  //DEBUG("after common_fuzz_stuff->run_target. last_child_pid is %d\n\n", last_child_pid);
 
-  if (stop_soon) return 1;
+  if (stop_soon) {
+      delete_trace_file();
+      return 1;
+  }
 
   if (fault == FAULT_TMOUT) {
 
     if (subseq_tmouts++ > TMOUT_LIMIT) {
       cur_skipped_paths++;
+      delete_trace_file();
       return 1;
     }
 
@@ -4872,13 +5065,17 @@ EXP_ST u8 common_fuzz_stuff(char** argv, u8* out_buf, u32 len) {
 
      skip_requested = 0;
      cur_skipped_paths++;
+     delete_trace_file();
      return 1;
 
   }
 
   /* This handles FAULT_ERROR for us: */
 
+  //DEBUG("\nbefore common_fuzz_stuff->save_if_interesting. last_child_pid is %d\n", last_child_pid);
+  // save_if_interesting will also take care of getting rid of the trace file
   queued_discovered += save_if_interesting(argv, out_buf, len, fault);
+  //DEBUG("after common_fuzz_stuff->save_if_interesting. last_child_pid is %d\n\n", last_child_pid);
 
   if (!(stage_cur % stats_update_freq) || stage_cur + 1 == stage_max)
     show_stats();
@@ -4901,24 +5098,24 @@ static u32 choose_block_len(u32 limit) {
   switch (UR(rlim)) {
 
     case 0:  min_value = 1;
-             max_value = max_file_len / 16;
+             max_value = HAVOC_BLK_SMALL;
              break;
 
-    case 1:  min_value = max_file_len / 16;
-             max_value = max_file_len / 8;
+    case 1:  min_value = HAVOC_BLK_SMALL;
+             max_value = HAVOC_BLK_MEDIUM;
              break;
 
     default: 
 
              if (UR(10)) {
 
-               min_value = max_file_len / 8;
-               max_value = max_file_len / 4;
+               min_value = HAVOC_BLK_MEDIUM;
+               max_value = HAVOC_BLK_LARGE;
 
              } else {
 
-               min_value = max_file_len / 4;
-               max_value = max_file_len * 3 / 4;
+               min_value = HAVOC_BLK_LARGE;
+               max_value = HAVOC_BLK_XL;
 
              }
 
@@ -5294,7 +5491,9 @@ static u8 fuzz_one(char** argv) {
 
     if (queue_cur->cal_failed < CAL_CHANCES) {
 
+      //DEBUG("\nbefore fuzz_one->calibrate_case. last_child_pid is %d\n", last_child_pid);
       res = calibrate_case(argv, queue_cur, in_buf, queue_cycle - 1, 0);
+      //DEBUG("after fuzz_one->calibrate_case. last_child_pid is %d\n\n", last_child_pid);
 
       if (res == FAULT_ERROR)
         FATAL("Unable to execute target application");
@@ -5566,23 +5765,23 @@ static u8 fuzz_one(char** argv) {
 
     if (!eff_map[EFF_APOS(stage_cur)]) {
 
-      u32 exec_cksum;
+      u32 cksum;
       u32 dsf_cksum;
 
       /* If in dumb mode or if the file is very short, just flag everything
          without wasting time on checksums. */
 
       if (!dumb_mode && len >= EFF_MIN_LEN){
-        exec_cksum = hash32(trace_bits, MAP_SIZE, HASH_CONST);
+        cksum = hash32(trace_bits, MAP_SIZE, HASH_CONST);
         if (dsf_enabled) 
           dsf_cksum = hash32(dsf_map, dsf_len_actual*sizeof(u32), HASH_CONST);
       } else {
-        exec_cksum = ~queue_cur->exec_cksum;
+        cksum = ~queue_cur->exec_cksum;
         if (dsf_enabled) 
           dsf_cksum = ~queue_cur->dsf_cksum;
       }
 
-      if ((exec_cksum != queue_cur->exec_cksum) || (dsf_enabled && (dsf_cksum != queue_cur->dsf_cksum))) {
+      if ((cksum != queue_cur->exec_cksum) || (dsf_enabled && (dsf_cksum != queue_cur->dsf_cksum))) {
         eff_map[EFF_APOS(stage_cur)] = 1;
         eff_cnt++;
       }
@@ -6225,7 +6424,7 @@ skip_interest:
 
     for (j = 0; j < extras_cnt; j++) {
 
-      if (len + extras[j].len > max_file_len) {
+      if (len + extras[j].len > MAX_FILE) {
         stage_max--; 
         continue;
       }
@@ -6566,52 +6765,56 @@ havoc_stage:
 
           }
 
-        case 13: {
-          
-          u8  actually_clone = UR(4);
-          u32 clone_from, clone_to, clone_len;
+        case 13:
 
-          if (actually_clone) {
+          if (temp_len + HAVOC_BLK_XL < MAX_FILE) {
 
-            clone_len  = choose_block_len(temp_len);
-            clone_from = UR(temp_len - clone_len + 1);
+            /* Clone bytes (75%) or insert a block of constant bytes (25%). */
 
-          } else {
+            u8  actually_clone = UR(4);
+            u32 clone_from, clone_to, clone_len;
+            u8* new_buf;
 
-            clone_len = choose_block_len(HAVOC_BLK_XL);
-            clone_from = 0;
+            if (actually_clone) {
+
+              clone_len  = choose_block_len(temp_len);
+              clone_from = UR(temp_len - clone_len + 1);
+
+            } else {
+
+              clone_len = choose_block_len(HAVOC_BLK_XL);
+              clone_from = 0;
+
+            }
+
+            clone_to   = UR(temp_len);
+
+            new_buf = ck_alloc_nozero(temp_len + clone_len);
+
+            /* Head */
+
+            memcpy(new_buf, out_buf, clone_to);
+
+            /* Inserted part */
+
+            if (actually_clone)
+              memcpy(new_buf + clone_to, out_buf + clone_from, clone_len);
+            else
+              memset(new_buf + clone_to,
+                     UR(2) ? UR(256) : out_buf[UR(temp_len)], clone_len);
+
+            /* Tail */
+            memcpy(new_buf + clone_to + clone_len, out_buf + clone_to,
+                   temp_len - clone_to);
+
+            ck_free(out_buf);
+            out_buf = new_buf;
+            temp_len += clone_len;
 
           }
 
-          if (temp_len + clone_len >= max_file_len) break;
-
-          clone_to   = UR(temp_len);
-
-          u8* new_buf;
-          new_buf = ck_alloc_nozero(temp_len + clone_len);
-
-          /* Head */
-
-          memcpy(new_buf, out_buf, clone_to);
-
-          /* Inserted part */
-
-          if (actually_clone)
-            memcpy(new_buf + clone_to, out_buf + clone_from, clone_len);
-          else
-            memset(new_buf + clone_to,
-                   UR(2) ? UR(256) : out_buf[UR(temp_len)], clone_len);
-
-          /* Tail */
-          memcpy(new_buf + clone_to + clone_len, out_buf + clone_to,
-                 temp_len - clone_to);
-
-          ck_free(out_buf);
-          out_buf = new_buf;
-          temp_len += clone_len;
-
           break;
-        }
+
         case 14: {
 
             /* Overwrite bytes with a randomly selected chunk (75%) or fixed
@@ -6691,7 +6894,7 @@ havoc_stage:
               use_extra = UR(a_extras_cnt);
               extra_len = a_extras[use_extra].len;
 
-              if (temp_len + extra_len >= max_file_len) break;
+              if (temp_len + extra_len >= MAX_FILE) break;
 
               new_buf = ck_alloc_nozero(temp_len + extra_len);
 
@@ -6706,7 +6909,7 @@ havoc_stage:
               use_extra = UR(extras_cnt);
               extra_len = extras[use_extra].len;
 
-              if (temp_len + extra_len >= max_file_len) break;
+              if (temp_len + extra_len >= MAX_FILE) break;
 
               new_buf = ck_alloc_nozero(temp_len + extra_len);
 
@@ -6875,7 +7078,7 @@ abandon_entry:
     queue_cur->was_fuzzed = 1;
     pending_not_fuzzed--;
     if (queue_cur->favored) pending_favored--;
-  } 
+  }
 
   munmap(orig_in, queue_cur->len);
 
@@ -6983,7 +7186,7 @@ static void sync_fuzzers(char** argv) {
 
       /* Ignore zero-sized or oversized files. */
 
-      if (st.st_size && st.st_size <= max_file_len) {
+      if (st.st_size && st.st_size <= MAX_FILE) {
 
         u8  fault;
         u8* mem = mmap(0, st.st_size, PROT_READ, MAP_PRIVATE, fd, 0);
@@ -6995,12 +7198,21 @@ static void sync_fuzzers(char** argv) {
 
         write_to_testcase(mem, st.st_size);
 
+        //DEBUG("\nbefore sync_fuzzers->run_target. last_child_pid is %d\n", last_child_pid);
         fault = run_target(argv, exec_tmout);
-
-        if (stop_soon) return;
+        //DEBUG("after sync_fuzzers->run_target. last_child_pid is %d\n\n", last_child_pid);
+        if (stop_soon) {
+            delete_trace_file();
+            return;
+        }
 
         syncing_party = sd_ent->d_name;
+
+        //DEBUG("\nbefore sync_fuzzers->save_if_interesting. last_child_pid is %d\n", last_child_pid);
+        // save_if_interesting will take care of cleaning up the trace files
         queued_imported += save_if_interesting(argv, mem, st.st_size, fault);
+        //DEBUG("after sync_fuzzers->save_if_interesting. last_child_pid is %d\n\n", last_child_pid);
+
         syncing_party = 0;
 
         munmap(mem, st.st_size);
@@ -7301,6 +7513,7 @@ static void check_term_size(void) {
 
   if (ioctl(1, TIOCGWINSZ, &ws)) return;
 
+  if (ws.ws_row == 0 && ws.ws_col == 0) return;
   if (ws.ws_row < 25 || ws.ws_col < 80) term_too_small = 1;
 
 }
@@ -7841,7 +8054,7 @@ EXP_ST void detect_file_args(char** argv) {
 
 /* Set up signal handlers. More complicated that needs to be, because libc on
    Solaris doesn't resume interrupted reads(), sets SA_RESETHAND when you call
-   siginterrupt(), and does other stupid things. */
+   siginterrupt(), and does other unnecessary things. */
 
 EXP_ST void setup_signal_handlers(void) {
 
@@ -8009,13 +8222,18 @@ int main(int argc, char** argv) {
   gettimeofday(&tv, &tz);
   srandom(tv.tv_sec ^ tv.tv_usec ^ getpid());
 
-  while ((opt = getopt(argc, argv, "+azspN:chi:o:f:m:t:T:dnCB:S:M:x:Q")) > 0)
+  while ((opt = getopt(argc, argv, "+aezspN:chi:o:f:m:t:T:dnCB:S:M:x:Q:R:")) > 0)
 
     switch (opt) {
 
       case 'a':
         SAYF("Saving everything with extra feedback. May be slower.\n");
         save_everything = 1;
+        break;
+
+      case 'e':
+        SAYF("Keeping every non-crashing input. May be slower.\n");
+        keep_everything = 1;
         break;
 
       case 'p':
@@ -8191,6 +8409,11 @@ int main(int argc, char** argv) {
 
         break;
 
+      case 'R': /* trace directory */
+        if (trace_dir) FATAL("Multiple -R options not supported");
+        trace_dir = optarg;
+        break;
+
       default:
 
         usage(argv[0]);
@@ -8255,7 +8478,6 @@ int main(int argc, char** argv) {
   setup_shm();
   init_count_class16();
 
-
   setup_dirs_fds();
   read_testcases();
   load_auto();
@@ -8281,11 +8503,6 @@ int main(int argc, char** argv) {
   
   if (!forksrv_pid) init_forkserver(use_argv); // We do this early in order to get dsf_len_actual
   if (dsf_enabled || save_everything) setup_dsf_cumulated();
-  if (dsf_enabled)
-    top_rated= ck_alloc(dsf_len_actual * sizeof(struct queue_entry *));
-  else
-    top_rated = ck_alloc(MAP_SIZE * sizeof(struct queue_entry *));
-
   perform_dry_run(use_argv);
 
   cull_queue();
@@ -8369,6 +8586,17 @@ int main(int argc, char** argv) {
 
   if (queue_cur) show_stats();
 
+  /* If we stopped programmatically, we kill the forkserver and the current runner. 
+     If we stopped manually, this is done by the signal handler. */
+  if (stop_soon == 2) {
+      if (child_pid > 0) kill(child_pid, SIGKILL);
+      if (forksrv_pid > 0) kill(forksrv_pid, SIGKILL);
+  }
+  /* Now that we've killed the forkserver, we wait for it to be able to get rusage stats. */
+  if (waitpid(forksrv_pid, NULL, 0) <= 0) {
+    WARNF("error waitpid\n");
+  }
+
   write_bitmap();
   write_stats_file(0, 0, 0);
   save_auto();
@@ -8391,7 +8619,6 @@ stop_fuzzing:
   fclose(plot_file);
   destroy_queue();
   destroy_extras();
-  ck_free(top_rated);
   ck_free(target_path);
   ck_free(sync_id);
 

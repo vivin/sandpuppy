@@ -1,4 +1,20 @@
 /*
+  Copyright 2015 Google LLC All rights reserved.
+
+  Licensed under the Apache License, Version 2.0 (the "License");
+  you may not use this file except in compliance with the License.
+  You may obtain a copy of the License at:
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+  Unless required by applicable law or agreed to in writing, software
+  distributed under the License is distributed on an "AS IS" BASIS,
+  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+  See the License for the specific language governing permissions and
+  limitations under the License.
+*/
+
+/*
    american fuzzy lop - LLVM-mode wrapper for clang
    ------------------------------------------------
 
@@ -7,19 +23,10 @@
 
    LLVM integration design comes from Laszlo Szekeres.
 
-   Copyright 2015, 2016 Google Inc. All rights reserved.
-
-   Licensed under the Apache License, Version 2.0 (the "License");
-   you may not use this file except in compliance with the License.
-   You may obtain a copy of the License at:
-
-     http://www.apache.org/licenses/LICENSE-2.0
-
    This program is a drop-in replacement for clang, similar in most respects
    to ../afl-gcc. It tries to figure out compilation mode, adds a bunch
    of flags, and then calls the real compiler.
-
- */
+*/
 
 #define AFL_MAIN
 
@@ -88,7 +95,7 @@ static void find_obj(u8* argv0) {
   }
 
   FATAL("Unable to find 'afl-llvm-rt.o' or 'afl-llvm-pass.so'. Please set AFL_PATH");
- 
+
 }
 
 
@@ -121,14 +128,33 @@ static void edit_params(u32 argc, char** argv) {
 
 #ifdef USE_TRACE_PC
   cc_params[cc_par_cnt++] = "-fsanitize-coverage=trace-pc-guard";
+#ifndef __ANDROID__
   cc_params[cc_par_cnt++] = "-mllvm";
   cc_params[cc_par_cnt++] = "-sanitizer-coverage-block-threshold=0";
+#endif
 #else
   if (!getenv("WAYPOINTS_DISABLE_COVERAGE")) {
     cc_params[cc_par_cnt++] = "-Xclang";
     cc_params[cc_par_cnt++] = "-load";
     cc_params[cc_par_cnt++] = "-Xclang";
     cc_params[cc_par_cnt++] = alloc_printf("%s/afl-llvm-pass.so", obj_path);
+
+    // OH MY FUCKING GOD THIS ONLY TOOK THE WHOLE FUCKING DAY TO FIGURE OUT
+    // SO HERE IS WHAT DOESN'T FUCKING WORK IF ALL YOU WANT TO DO IS FUCKING
+    // SHARE THE SAME FUCKING COMMAND LINE OPTIONS ACROSS ALL FUCKING PASSES:
+    //
+    // - you can't define it in a separate .cc file and then compile it to .o
+    //   and then add it to the waypoints pass so file. that causes the
+    //   duplicate definition error.
+    //
+    // - you can't make shared-opts.so and then add it to LD_PRELOAD.
+    // - oh and makefiles FUCKING SUCK and HOLY FUCK like WHY THE FUCK is it so
+    //   FUCKING HARD TO JUST COMPILE MY SHIT FUUUUUCK
+
+    cc_params[cc_par_cnt++] = "-Xclang";
+    cc_params[cc_par_cnt++] = "-load";
+    cc_params[cc_par_cnt++] = "-Xclang";
+    cc_params[cc_par_cnt++] = alloc_printf("%s/shared-opts.so", obj_path);
   }
 
   /* Waypoints passes */ 
@@ -142,13 +168,26 @@ static void edit_params(u32 argc, char** argv) {
   char* comma = ",";
   char* domain = strtok(domains, comma);
 
+  int include_trace_dir = 0;
+  int include_functions_file = 0;
+
   while (domain != NULL) {
     printf("Found domain: %s\n", domain);
     cc_params[cc_par_cnt++] = "-Xclang";
     cc_params[cc_par_cnt++] = "-load";
     cc_params[cc_par_cnt++] = "-Xclang";
+
     cc_params[cc_par_cnt++] = alloc_printf("%s/waypoints-%s-pass.so", obj_path, domain);
     cc_params[cc_par_cnt++] = alloc_printf("%s/waypoints-%s-rt.o", obj_path, domain);
+
+    if (strcmp(domain, "trace") == 0) {
+        include_trace_dir = 1;
+        include_functions_file = 1;
+    }
+
+    if (strcmp(domain, "lff") == 0 || strcmp(domain, "lfbbf") == 0 || strcmp(domain, "lfcof") == 0) {
+        include_functions_file = 1;
+    }
 
     domain = strtok(NULL, comma);
   }
@@ -167,7 +206,16 @@ static void edit_params(u32 argc, char** argv) {
     if (!strncmp(cur, "-target_locations", 17))
       cc_params[cc_par_cnt++] = "-mllvm";
 
+    if (!strncmp(cur, "-trace_directory", 16) && include_trace_dir == 1) {
+        cc_params[cc_par_cnt++] = "-mllvm";
+    }
+
+    if (!strncmp(cur, "-functions_file", 15) && include_functions_file == 1) {
+        cc_params[cc_par_cnt++] = "-mllvm";
+    }
+
     if (!strcmp(cur, "-m32")) bit_mode = 32;
+    if (!strcmp(cur, "armv7a-linux-androideabi")) bit_mode = 32;
     if (!strcmp(cur, "-m64")) bit_mode = 64;
 
     if (!strcmp(cur, "-x")) x_set = 1;
@@ -236,8 +284,9 @@ static void edit_params(u32 argc, char** argv) {
   if (!getenv("AFL_DONT_OPTIMIZE")) {
 
     cc_params[cc_par_cnt++] = "-g";
-    cc_params[cc_par_cnt++] = "-O3";
-    cc_params[cc_par_cnt++] = "-funroll-loops";
+    cc_params[cc_par_cnt++] = "-gfull";
+    cc_params[cc_par_cnt++] = "-O0";
+    //cc_params[cc_par_cnt++] = "-funroll-loops";
 
   }
 
@@ -307,6 +356,7 @@ static void edit_params(u32 argc, char** argv) {
       cc_params[cc_par_cnt++] = "none";
     }
 
+#ifndef __ANDROID__
     switch (bit_mode) {
 
       case 0:
@@ -330,11 +380,19 @@ static void edit_params(u32 argc, char** argv) {
         break;
 
     }
+#endif
 
   }
 
   cc_params[cc_par_cnt] = NULL;
+  /*
+  printf("We will call clang with:\n");
+  for (int i = 0; i < cc_par_cnt; i++) {
+      printf("%s ", cc_params[i]);
+  }
 
+  printf("\n");
+   */
 }
 
 
@@ -374,7 +432,9 @@ int main(int argc, char** argv) {
   }
 
 
+#ifndef __ANDROID__
   find_obj(argv[0]);
+#endif
 
   edit_params(argc, argv);
 

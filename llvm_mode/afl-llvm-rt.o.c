@@ -1,4 +1,20 @@
 /*
+  Copyright 2015 Google LLC All rights reserved.
+
+  Licensed under the Apache License, Version 2.0 (the "License");
+  you may not use this file except in compliance with the License.
+  You may obtain a copy of the License at:
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+  Unless required by applicable law or agreed to in writing, software
+  distributed under the License is distributed on an "AS IS" BASIS,
+  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+  See the License for the specific language governing permissions and
+  limitations under the License.
+*/
+
+/*
    american fuzzy lop - LLVM instrumentation bootstrap
    ---------------------------------------------------
 
@@ -7,21 +23,15 @@
 
    LLVM integration design comes from Laszlo Szekeres.
 
-   Copyright 2015, 2016 Google Inc. All rights reserved.
-
-   Licensed under the Apache License, Version 2.0 (the "License");
-   you may not use this file except in compliance with the License.
-   You may obtain a copy of the License at:
-
-     http://www.apache.org/licenses/LICENSE-2.0
-
    This code is the rewrite of afl-as.h's main_payload.
-
 */
 
+#include "../android-ashmem.h"
 #include "../config.h"
 #include "../types.h"
 #include "waypoints.h"
+#include "lftrace.h"
+#include "vvdump.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -29,11 +39,16 @@
 #include <unistd.h>
 #include <string.h>
 #include <assert.h>
+#include <stdarg.h>
+#include <stdbool.h>
+#include <fcntl.h>
 
 #include <sys/mman.h>
 #include <sys/shm.h>
 #include <sys/wait.h>
 #include <sys/types.h>
+#include <sys/stat.h>
+#include <time.h>
 
 /* This is a somewhat ugly hack for the experimental 'trace-pc-guard' mode.
    Basically, we need to make sure that the forkserver is initialized after
@@ -64,7 +79,6 @@ static u32 dsf_count = 0; // Length of above array (i.e, number of non-zero item
 
 static u8 is_persistent;
 
-
 /* SHM setup. */
 
 static void __afl_map_shm(void) {
@@ -89,14 +103,13 @@ static void __afl_map_shm(void) {
        our parent doesn't give up on us. */
 
     __afl_area_ptr[0] = 1;
-    
+
     /* Set waypoints map to be after the AFL code coverage shared memory region */
     __fuzzfactory_dsf_map = (u32*) &__afl_area_ptr[MAP_SIZE];
 
   }
 
 }
-
 
 /* Fork server logic. */
 
@@ -150,7 +163,7 @@ static void __afl_start_forkserver(void) {
         close(FORKSRV_FD);
         close(FORKSRV_FD + 1);
         return;
-  
+
       }
 
     } else {
@@ -336,7 +349,7 @@ int __fuzzfactory_new_domain(u32 size, enum fuzzfactory_reducer reducer, u32 ini
   // Okay, populate the next config
   int start = (dsf_count == 0) ? 0 : dsf_configs[dsf_count-1].end;
   int end = start + size;
-  dsf_configs[dsf_count].start = start; 
+  dsf_configs[dsf_count].start = start;
   dsf_configs[dsf_count].end = end;
   dsf_configs[dsf_count].reducer = reducer;
   dsf_configs[dsf_count].initial = initial;
@@ -355,7 +368,7 @@ static inline int key_idx(int id, u32 key) {
 void __fuzzfactory_dsf_max(dsf_t id, u32 key, u32 value) {
   int idx = key_idx(id, key);
   int old = __fuzzfactory_dsf_map[idx];
-  __fuzzfactory_dsf_map[idx] = old > value ? old : value; 
+  __fuzzfactory_dsf_map[idx] = old > value ? old : value;
 }
 
 void __fuzzfactory_dsf_set(dsf_t id, u32 key, u32 value) {
@@ -387,4 +400,150 @@ void __fuzzfactory_dsfp_bitwise_or(dsf_t* p, u32 key, u32 value) {
 
 void __fuzzfactory_dsfp_increment(dsf_t* p, u32 key, u32 value) {
   __fuzzfactory_dsf_increment(*p, key, value);
+}
+
+//use: https://stackoverflow.com/a/9210960/263004
+void __append_trace(const char* dirname, const char* format, ...) {
+    va_list args_vsnprintf;
+    va_list args_vsprintf;
+
+    va_start(args_vsnprintf, format);
+    va_copy(args_vsprintf, args_vsnprintf);
+
+    struct stat st = {0};
+    if (stat(dirname, &st) == -1) {
+        mkdir(dirname, 0700);
+    }
+
+    int pid = getpid();
+
+    // Generate filename
+    s32 len = snprintf(NULL, 0, "%s/pid-%d.trace", dirname, pid);
+    u8* filename = malloc(len + 1);
+    sprintf((char*) filename, "%s/pid-%d.trace", dirname, pid);
+
+    // Generate trace
+    len = vsnprintf(NULL, 0, format, args_vsnprintf);
+    u8* trace = malloc(len + 1);
+    if (trace) {
+        vsprintf((char *) trace, format, args_vsprintf);
+
+        FILE *file = fopen((char *) filename, "a");
+        fprintf(file, "%s\n", trace);
+
+        fclose(file);
+
+        free(filename);
+        free(trace);
+    }
+
+    va_end(args_vsprintf);
+    va_end(args_vsnprintf);
+}
+
+void __create_trace_file_if_not_exists(const char* dirname) {
+    struct stat st = {0};
+    if (stat(dirname, &st) == -1) {
+        mkdir(dirname, 0700);
+    }
+
+    int pid = getpid();
+
+    s32 len = snprintf(NULL, 0, "%s/pid-%d.trace", dirname, pid);
+    u8* filename = malloc(len + 1);
+    sprintf((char*) filename, "%s/pid-%d.trace", dirname, pid);
+
+    if (access((char *) filename, F_OK) == -1) {
+        FILE* file = fopen((char *) filename, "ab+");
+        fclose(file);
+    }
+
+    free(filename);
+}
+
+void __dump_variable_value(const char* filename, const char* function_name, const char* variable_name, int declared_line, int modified_line, const char* var_val_format, ...) {
+    if (access((char *) VVD_NAMED_PIPE_PATH, F_OK) == -1) {
+        return;
+    }
+
+    u8 *experiment_name = getenv(VVD_EXP_NAME_ENV_VAR);
+    u8 *subject = getenv(VVD_SUBJECT_ENV_VAR);
+    u8 *binary_context = getenv(VVD_BIN_CONTEXT_ENV_VAR);
+    u8 *exec_context = getenv(VVD_EXEC_CONTEXT_ENV_VAR);
+
+    if (!(experiment_name && subject && binary_context && exec_context)) {
+        // write an error to named pipe with pid
+        int pid = getpid();
+
+        s32 len = snprintf(NULL, 0, "%d:error missing environment variables\n", pid);
+        u8* line = malloc(len + 1);
+        sprintf((char *) line, "%d:error missing environment variables\n", pid);
+
+        int fd = open(VVD_NAMED_PIPE_PATH, O_WRONLY);
+        write(fd, line, strlen((char *) line) + 1);
+        close(fd);
+
+        free(line);
+
+        return;
+    }
+
+    va_list var_val_vsnprintf;
+    va_list var_val_vsprintf;
+
+    va_start(var_val_vsnprintf, var_val_format);
+    va_copy(var_val_vsprintf, var_val_vsnprintf);
+
+    int pid = getpid();
+
+    // Get variable value as string
+    s32 var_val_len = vsnprintf(NULL, 0, var_val_format, var_val_vsnprintf);
+    u8* var_val = malloc(var_val_len + 1);
+    vsprintf((char *) var_val, var_val_format, var_val_vsprintf);
+
+    // Now build the rest of it.
+    unsigned long timestamp = time(NULL);
+    s32 len = snprintf(
+        NULL, 0, "%s:%s:%s:%s:%d:%s:%s:%s:%d:%d:%s:%lu\n",
+         experiment_name,
+         subject,
+         binary_context,
+         exec_context,
+         pid,
+         filename,
+         function_name,
+         variable_name,
+         declared_line,
+         modified_line,
+         var_val,
+         timestamp
+    );
+
+    u8* var_val_trace = malloc(len + 1);
+    if (var_val_trace) {
+        sprintf((char *) var_val_trace, "%s:%s:%s:%s:%d:%s:%s:%s:%d:%d:%s:%lu\n",
+                experiment_name,
+                subject,
+                binary_context,
+                exec_context,
+                pid,
+                filename,
+                function_name,
+                variable_name,
+                declared_line,
+                modified_line,
+                var_val,
+                timestamp
+        );
+
+        int fd = open(VVD_NAMED_PIPE_PATH, O_WRONLY);
+        write(fd, var_val_trace, strlen((char *) var_val_trace) + 1);
+        close(fd);
+
+        free(var_val);
+        free(var_val_trace);
+    }
+
+    va_end(var_val_vsprintf);
+    va_end(var_val_vsnprintf);
 }

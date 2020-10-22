@@ -60,6 +60,8 @@ else
   PROGS      = ../afl-clang-fast ../afl-llvm-rt.o ../afl-llvm-rt-32.o ../afl-llvm-rt-64.o
 endif
 
+OBJ = ../shared-opts.o
+
 CFLAGS += -I../include
 
 all: test_deps $(PROGS) test_build all_done
@@ -98,17 +100,33 @@ endif
 	@printf "[*] Building 64-bit variant of the runtime (-m64)... "
 	@$(CC) $(CFLAGS) -m64 -fPIC -c $< -o $@ 2>/dev/null; if [ "$$?" = "0" ]; then echo "success!"; else echo "failed (that's fine)"; fi
 
-../waypoints-%-pass.so: waypoints-%-pass.cc fuzzfactory.hpp
+# FUCKING HELL THIS ONLY FUCKING TOOK ALL FUCKING DAY.
+# FOR NEXT TIME:
+#   - you can't just add shared-opts.cc because like you have to actually specify it in the command or some fucking
+#     shit and it won't work anyway because (see next)
+#   - you can't just compile shared-opts.cc to shared-opts.o and then change the command to build the waypoints shared
+#     object because congratulations you just found a MORE FUCKING COMPLICATED WAY TO GET THE DUPLICATE DEFINITION ERORR
+#   - you have to build it into an SO and then like make afl-clang-fast fucking load that shit as a plugin FUUUUCK
+
+../shared-opts.so: shared-opts.cc
+	$(CXX) $(CLANG_CFL) -fPIC -shared $< -o $@ $(CLANG_LFL)
+
+../waypoints-%-pass.so: waypoints-%-pass.cc ../shared-opts.so
 	$(CXX) $(CLANG_CFL) -shared $< -o $@ $(CLANG_LFL)
 
 ../waypoints-%-rt.o: waypoints-%-rt.c
 	$(CC) $(CFLAGS) -fPIC -c $< -o $@
 
-
 test_build: $(PROGS)
 	@echo "[*] Testing the CC wrapper and instrumentation output..."
-	unset AFL_USE_ASAN AFL_USE_MSAN AFL_INST_RATIO; AFL_QUIET=1 AFL_PATH=. AFL_CC=$(CC) ../afl-clang-fast $(CFLAGS) ../test-instr.c -o test-instr $(LDFLAGS)
-	echo 0 | ../afl-showmap -m none -q -o .test-instr0 ./test-instr
+	#@if [ "$(DOMAINS)" = "trace" ]; \
+	#then unset AFL_USE_ASAN AFL_USE_MSAN AFL_INST_RATIO; AFL_QUIET=1 AFL_PATH=. AFL_CC=$(CC) ../afl-clang-fast $(CFLAGS) -functions_file=../test-functions-file.txt -trace_directory=/tmp ../test-instr.c -o test-instr $(LDFLAGS); \
+	#elif [ "$(DOMAINS)" = "lff" ] || [ "$(DOMAINS)" = "lfbbf" ] || [ "$(DOMAINS)" = "lfcof" ]; \
+	#then unset AFL_USE_ASAN AFL_USE_MSAN AFL_INST_RATIO; AFL_QUIET=1 AFL_PATH=. AFL_CC=$(CC) ../afl-clang-fast $(CFLAGS) -functions_file=../test-functions-file.txt ../test-instr.c -o test-instr $(LDFLAGS); \
+	#else unset AFL_USE_ASAN AFL_USE_MSAN AFL_INST_RATIO; AFL_QUIET=1 AFL_PATH=. AFL_CC=$(CC) ../afl-clang-fast $(CFLAGS) ../test-instr.c -o test-instr $(LDFLAGS); \
+	#fi
+	unset AFL_USE_ASAN AFL_USE_MSAN AFL_INST_RATIO; AFL_QUIET=1 AFL_PATH=. AFL_CC=$(CC) ../afl-clang-fast $(CFLAGS) ../test-instr.c -o test-instr $(LDFLAGS); \
+	../afl-showmap -m none -q -o .test-instr0 ./test-instr < /dev/null
 	echo 1 | ../afl-showmap -m none -q -o .test-instr1 ./test-instr
 	@rm -f test-instr
 	@cmp -s .test-instr0 .test-instr1; DR="$$?"; rm -f .test-instr0 .test-instr1; if [ "$$DR" = "0" ]; then echo; echo "Oops, the instrumentation does not seem to be behaving correctly!"; echo; echo "Please ping <lcamtuf@google.com> to troubleshoot the issue."; echo; exit 1; fi

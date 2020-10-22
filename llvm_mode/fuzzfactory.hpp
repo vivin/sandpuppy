@@ -6,24 +6,35 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
+#include <iostream>
 
 #include "llvm/Pass.h"
 #include "llvm/ADT/Statistic.h"
+#include "llvm/IR/DebugInfoMetadata.h"
+#include "llvm/IR/InstVisitor.h"
+#include "llvm/IR/InstIterator.h"
+#include "llvm/IR/IntrinsicInst.h"
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/LegacyPassManager.h"
 #include "llvm/IR/Module.h"
-#include "llvm/IR/InstVisitor.h"
+#include "llvm/IR/ModuleSlotTracker.h"
 #include "llvm/Transforms/IPO/PassManagerBuilder.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/RandomNumberGenerator.h"
 #include "llvm/Support/raw_ostream.h"
+#include "llvm/Support/CommandLine.h"
 
 #ifndef FUZZFACTORY_H
 #define FUZZFACTORY_H
 
+extern std::string FunctionsFile;
+
 namespace fuzzfactory {
 
 using namespace llvm;
+
+/** Hacky struct to get name of template type parameter X */
+    template<typename X> struct TypeName;
 
 /** Instrumentation pass for a fuzzing domain */
 template<class D>
@@ -34,14 +45,12 @@ public:
 
     /** Registers this domain's instrumentation pass with LLVM's pass manager */
     static void registerPass(const PassManagerBuilder &, legacy::PassManagerBase &PM) {
+      OKF("Registering pass for [%s].", TypeName<D>::name);
       PM.add(new RegisterDomain<D>());
     }
 
     /** Instatiates a new domain and immediately registered the instrumentation pass with LLVM */
-    RegisterDomain() : ModulePass(RegisterDomain<D>::ID) {
-        RegisterStandardPasses RegisterFuzzFactoryPass(PassManagerBuilder::EP_OptimizerLast, RegisterDomain<D>::registerPass);
-        RegisterStandardPasses RegisterFuzzFactoryPass0(PassManagerBuilder::EP_EnabledOnOptLevel0, RegisterDomain<D>::registerPass);    
-    }
+    RegisterDomain() : ModulePass(RegisterDomain<D>::ID) { }
 
     /* Runs this instrumentation pass on a module */
     bool runOnModule(Module &M) override {
@@ -55,9 +64,6 @@ public:
 
 template<class D>
 char RegisterDomain<D>::ID = 0; // This silly char is required by LLVM, which remembers its address (ugh)
-
-/** Hacky struct to get name of template type parameter X */
-template<typename X> struct TypeName;
 
 /** Base class for domain-specific fuzzing instrumentation */
 template<class V>
@@ -136,11 +142,16 @@ protected:
 
     /* Get declared function or else declare a new function. Never returns NULL. */
     Function* resolveFunction(StringRef name, Type* retType, ArrayRef<Type*> argTypes) {
+        return resolveFunction(name, retType, argTypes, false);
+    }
+
+    /* Get declared function or else declare a new function. Never returns NULL. */
+    Function* resolveFunction(StringRef name, Type* retType, ArrayRef<Type*> argTypes, bool isVarArg) {
         Function* f = M.getFunction(name);
         if (f) {
             return f;
         } else {
-            return Function::Create(FunctionType::get(retType, argTypes, false), GlobalValue::ExternalLinkage, name, &M);
+            return Function::Create(FunctionType::get(retType, argTypes, isVarArg), GlobalValue::ExternalLinkage, name, &M);
         }
     }
 
@@ -188,14 +199,18 @@ protected:
 
 };
 
-
-
 }
 
 /* Called by client domains at the top-level using the instrumentation pass as typename D */
 #define FUZZFACTORY_REGISTER_DOMAIN(D)  template <> struct fuzzfactory::TypeName<D> \
     { static const char* name; } ; const char* fuzzfactory::TypeName<D>::name = #D; \
-    static fuzzfactory::RegisterDomain<D> D;
+    static fuzzfactory::RegisterDomain<D> D; \
+    RegisterStandardPasses RegisterFuzzFactoryPass(PassManagerBuilder::EP_OptimizerLast, fuzzfactory::RegisterDomain<class D>::registerPass); \
+    RegisterStandardPasses RegisterFuzzFactoryPass0(PassManagerBuilder::EP_EnabledOnOptLevel0, fuzzfactory::RegisterDomain<class D>::registerPass);
 
+//NOTE: the above macro has been modified to register the pass. Previously, this was done via the constructor in
+//RegisterDomain, which would register and then reference the static method. However this stopped working because
+//the registerPass method would never be called. This might be due to a change in the LLVM API. Anyway, the macro
+//above seems to work.
 
 #endif // FUZZFACTORY_H
