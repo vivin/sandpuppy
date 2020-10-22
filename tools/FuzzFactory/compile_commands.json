@@ -1,0 +1,218 @@
+[
+ {
+  "directory": "/home/vivin/Projects/phd/experiments/FuzzFactory",
+  "arguments": [
+   "cc",
+   "-O3",
+   "-funroll-loops",
+   "-Wall",
+   "-D_FORTIFY_SOURCE=2",
+   "-g",
+   "-Wno-pointer-sign",
+   "-DAFL_PATH=\"/usr/local/lib/afl\"",
+   "-DDOC_PATH=\"/usr/local/share/doc/afl\"",
+   "-DBIN_PATH=\"/usr/local/bin\"",
+   "-Iinclude",
+   "afl-gcc.c",
+   "-o",
+   "afl-gcc",
+   "-ldl"
+  ],
+  "file": "afl-gcc.c"
+ },
+ {
+  "directory": "/home/vivin/Projects/phd/experiments/FuzzFactory",
+  "arguments": [
+   "cc",
+   "-O3",
+   "-funroll-loops",
+   "-Wall",
+   "-D_FORTIFY_SOURCE=2",
+   "-g",
+   "-Wno-pointer-sign",
+   "-DAFL_PATH=\"/usr/local/lib/afl\"",
+   "-DDOC_PATH=\"/usr/local/share/doc/afl\"",
+   "-DBIN_PATH=\"/usr/local/bin\"",
+   "-Iinclude",
+   "-c",
+   "afl-fuzz.c",
+   "alloc-inl.h",
+   "config.h",
+   "debug.h",
+   "types.h"
+  ],
+  "file": "afl-fuzz.c"
+ },
+ {
+  "directory": "/home/vivin/Projects/phd/experiments/FuzzFactory",
+  "arguments": [
+   "cc",
+   "-O3",
+   "-funroll-loops",
+   "-Wall",
+   "-D_FORTIFY_SOURCE=2",
+   "-g",
+   "-Wno-pointer-sign",
+   "-DAFL_PATH=\"/usr/local/lib/afl\"",
+   "-DDOC_PATH=\"/usr/local/share/doc/afl\"",
+   "-DBIN_PATH=\"/usr/local/bin\"",
+   "-Iinclude",
+   "-c",
+   "reducers.c",
+   "alloc-inl.h",
+   "config.h",
+   "debug.h",
+   "types.h"
+  ],
+  "file": "reducers.c"
+ },
+ {
+  "directory": "/home/vivin/Projects/phd/experiments/FuzzFactory",
+  "arguments": [
+   "cc",
+   "-O3",
+   "-funroll-loops",
+   "-Wall",
+   "-D_FORTIFY_SOURCE=2",
+   "-g",
+   "-Wno-pointer-sign",
+   "-DAFL_PATH=\"/usr/local/lib/afl\"",
+   "-DDOC_PATH=\"/usr/local/share/doc/afl\"",
+   "-DBIN_PATH=\"/usr/local/bin\"",
+   "-Iinclude",
+   "afl-showmap.c",
+   "-o",
+   "afl-showmap",
+   "-ldl"
+  ],
+  "file": "afl-showmap.c"
+ },
+ {
+  "directory": "/home/vivin/Projects/phd/experiments/FuzzFactory",
+  "arguments": [
+   "cc",
+   "-O3",
+   "-funroll-loops",
+   "-Wall",
+   "-D_FORTIFY_SOURCE=2",
+   "-g",
+   "-Wno-pointer-sign",
+   "-DAFL_PATH=\"/usr/local/lib/afl\"",
+   "-DDOC_PATH=\"/usr/local/share/doc/afl\"",
+   "-DBIN_PATH=\"/usr/local/bin\"",
+   "-Iinclude",
+   "-c",
+   "afl-showdsf.c",
+   "alloc-inl.h",
+   "config.h",
+   "debug.h",
+   "types.h"
+  ],
+  "file": "afl-showdsf.c"
+ },
+ {
+  "directory": "/home/vivin/Projects/phd/experiments/FuzzFactory",
+  "arguments": [
+   "cc",
+   "-O3",
+   "-funroll-loops",
+   "-Wall",
+   "-D_FORTIFY_SOURCE=2",
+   "-g",
+   "-Wno-pointer-sign",
+   "-DAFL_PATH=\"/usr/local/lib/afl\"",
+   "-DDOC_PATH=\"/usr/local/share/doc/afl\"",
+   "-DBIN_PATH=\"/usr/local/bin\"",
+   "-Iinclude",
+   "afl-tmin.c",
+   "-o",
+   "afl-tmin",
+   "-ldl"
+  ],
+  "file": "afl-tmin.c"
+ },
+ {
+  "directory": "/home/vivin/Projects/phd/experiments/FuzzFactory",
+  "arguments": [
+   "cc",
+   "-O3",
+   "-funroll-loops",
+   "-Wall",
+   "-D_FORTIFY_SOURCE=2",
+   "-g",
+   "-Wno-pointer-sign",
+   "-DAFL_PATH=\"/usr/local/lib/afl\"",
+   "-DDOC_PATH=\"/usr/local/share/doc/afl\"",
+   "-DBIN_PATH=\"/usr/local/bin\"",
+   "-Iinclude",
+   "afl-gotcpu.c",
+   "-o",
+   "afl-gotcpu",
+   "-ldl"
+  ],
+  "file": "afl-gotcpu.c"
+ },
+ {
+  "directory": "/home/vivin/Projects/phd/experiments/FuzzFactory",
+  "arguments": [
+   "cc",
+   "-O3",
+   "-funroll-loops",
+   "-Wall",
+   "-D_FORTIFY_SOURCE=2",
+   "-g",
+   "-Wno-pointer-sign",
+   "-DAFL_PATH=\"/usr/local/lib/afl\"",
+   "-DDOC_PATH=\"/usr/local/share/doc/afl\"",
+   "-DBIN_PATH=\"/usr/local/bin\"",
+   "-Iinclude",
+   "afl-analyze.c",
+   "-o",
+   "afl-analyze",
+   "-ldl"
+  ],
+  "file": "afl-analyze.c"
+ },
+ {
+  "directory": "/home/vivin/Projects/phd/experiments/FuzzFactory",
+  "arguments": [
+   "cc",
+   "-O3",
+   "-funroll-loops",
+   "-Wall",
+   "-D_FORTIFY_SOURCE=2",
+   "-g",
+   "-Wno-pointer-sign",
+   "-DAFL_PATH=\"/usr/local/lib/afl\"",
+   "-DDOC_PATH=\"/usr/local/share/doc/afl\"",
+   "-DBIN_PATH=\"/usr/local/bin\"",
+   "-Iinclude",
+   "afl-as.c",
+   "-o",
+   "afl-as",
+   "-ldl"
+  ],
+  "file": "afl-as.c"
+ },
+ {
+  "directory": "/home/vivin/Projects/phd/experiments/FuzzFactory",
+  "arguments": [
+   "./afl-gcc",
+   "-O3",
+   "-funroll-loops",
+   "-Wall",
+   "-D_FORTIFY_SOURCE=2",
+   "-g",
+   "-Wno-pointer-sign",
+   "-DAFL_PATH=\"/usr/local/lib/afl\"",
+   "-DDOC_PATH=\"/usr/local/share/doc/afl\"",
+   "-DBIN_PATH=\"/usr/local/bin\"",
+   "-Iinclude",
+   "test-instr.c",
+   "-o",
+   "test-instr",
+   "-ldl"
+  ],
+  "file": "test-instr.c"
+ }
+]

@@ -1,0 +1,26 @@
+# catch objects and such
+*.swp
+*.o
+*.so
+*.gch
+.idea
+
+# don't track the actual binaries
+afl-showmax
+afl-analyze
+afl-as
+afl-clang
+afl-clang++
+afl-clang-fast
+afl-clang-fast++
+afl-fuzz
+afl-g++
+afl-gcc
+afl-gotcpu
+afl-showmap
+afl-showdsf
+afl-tmin
+as
+results/
+graph/
+infantheap/infantheap

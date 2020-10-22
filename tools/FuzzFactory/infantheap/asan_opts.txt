@@ -1,0 +1,7 @@
+ASAN_OPTIONS=symbolize=0:abort_on_error=1:halt_on_error=0:suppress_equal_pcs=0:exitcode=86
+
+ASAN_OPTIONS=symbolize=0:abort_on_error=1:halt_on_error=0:suppress_equal_pcs=0:exitcode=86:print_summary=0:coverage_pcs=0:symbolize_inline_frames=0:print_legend=0:print_full_thread_history=0
+
+if you want to redirect logs:
+:log_path=./asan-log/asan.log
+

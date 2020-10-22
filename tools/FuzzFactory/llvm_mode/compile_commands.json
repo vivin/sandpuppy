@@ -1,0 +1,97 @@
+[
+ {
+  "directory": "/home/vivin/Projects/phd/tools/FuzzFactory/llvm_mode",
+  "arguments": [
+   "clang",
+   "-O3",
+   "-funroll-loops",
+   "-Wall",
+   "-D_FORTIFY_SOURCE=2",
+   "-g",
+   "-Wno-pointer-sign",
+   "-DAFL_PATH=\"/usr/local/lib/afl\"",
+   "-DBIN_PATH=\"/usr/local/bin\"",
+   "-DVERSION=\"2.56b\"",
+   "-I../include",
+   "afl-clang-fast.c",
+   "-o",
+   "../afl-clang-fast"
+  ],
+  "file": "afl-clang-fast.c"
+ },
+ {
+  "directory": "/home/vivin/Projects/phd/tools/FuzzFactory/llvm_mode",
+  "arguments": [
+   "clang++",
+   "-I/usr/lib/llvm-10/include",
+   "-std=c++14",
+   "-fno-exceptions",
+   "-D_GNU_SOURCE",
+   "-D__STDC_CONSTANT_MACROS",
+   "-D__STDC_FORMAT_MACROS",
+   "-D__STDC_LIMIT_MACROS",
+   "-fno-rtti",
+   "-fpic",
+   "-O3",
+   "-funroll-loops",
+   "-Wall",
+   "-D_FORTIFY_SOURCE=2",
+   "-g",
+   "-Wno-pointer-sign",
+   "-DVERSION=\"2.56b\"",
+   "-Wno-variadic-macros",
+   "-shared",
+   "afl-llvm-pass.so.cc",
+   "-o",
+   "../afl-llvm-pass.so",
+   "-L/usr/lib/llvm-10/lib"
+  ],
+  "file": "afl-llvm-pass.so.cc"
+ },
+ {
+  "directory": "/home/vivin/Projects/phd/tools/FuzzFactory/llvm_mode",
+  "arguments": [
+   "clang",
+   "-O3",
+   "-funroll-loops",
+   "-Wall",
+   "-D_FORTIFY_SOURCE=2",
+   "-g",
+   "-Wno-pointer-sign",
+   "-DAFL_PATH=\"/usr/local/lib/afl\"",
+   "-DBIN_PATH=\"/usr/local/bin\"",
+   "-DVERSION=\"2.56b\"",
+   "-I../include",
+   "-fPIC",
+   "-shared",
+   "afl-catch-dlclose.so.c",
+   "-o",
+   "../afl-catch-dlclose.so"
+  ],
+  "file": "afl-catch-dlclose.so.c"
+ },
+ {
+  "directory": "/home/vivin/Projects/phd/tools/FuzzFactory/llvm_mode",
+  "arguments": [
+   "clang",
+   "-O3",
+   "-funroll-loops",
+   "-Wall",
+   "-D_FORTIFY_SOURCE=2",
+   "-g",
+   "-Wno-pointer-sign",
+   "-DAFL_PATH=\"/usr/local/lib/afl\"",
+   "-DBIN_PATH=\"/usr/local/bin\"",
+   "-DVERSION=\"2.56b\"",
+   "-I../include",
+   "-m64",
+   "-fPIC",
+   "-c",
+   "afl-llvm-rt.o.c",
+   "-o",
+   "../afl-llvm-rt-64.o",
+   "/dev/null"
+  ],
+  "file": "afl-llvm-rt.o.c"
+ }
+]
