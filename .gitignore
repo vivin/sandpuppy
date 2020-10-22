@@ -54,3 +54,4 @@ dkms.conf
 *.tbz2
 binaries/
 venv/
+workspace
