@@ -363,4 +363,11 @@
 
 // #define IGNORE_FINDS
 
+#define VVD_EXP_NAME_ENV_VAR        "__VVD_EXP_NAME"
+#define VVD_SUBJECT_ENV_VAR         "__VVD_SUBJECT"
+#define VVD_BIN_CONTEXT_ENV_VAR     "__VVD_BIN_CONTEXT"
+#define VVD_EXEC_CONTEXT_ENV_VAR    "__VVD_EXEC_CONTEXT"
+
+#define VVD_NAMED_PIPE_PATH         "/tmp/vvdump"
+
 #endif /* ! _HAVE_CONFIG_H */

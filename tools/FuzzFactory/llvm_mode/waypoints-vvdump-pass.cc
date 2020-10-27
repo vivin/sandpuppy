@@ -3,6 +3,12 @@
 
 using namespace fuzzfactory;
 
+// TODO: in afl-fuzz you need to write to /tmp/vvdump when the program crashes or hangs. i think you should also write
+// TODO: out the size of the program input. you could do the entire input but with named pipes there is a limit on the
+// TODO: size of data you can send before which there may be interleaving between multiple processes. so if you have
+// TODO: multiple afl-fuzz instances there may be issues because program input is likely greater than 512. i guess you
+// TODO: could save all files and then pass in the name of the file. but for right now let us only use size of the input.
+
 /**
  * This ONLY works with -O0 -g -gfull! We look for debug declares to find out where vars are declared. We also maintain
  * a cache of variable names. Then we look for all store insts and check to see if any operands are variables that we

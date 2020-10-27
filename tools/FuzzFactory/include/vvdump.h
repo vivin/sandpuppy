@@ -38,13 +38,6 @@
 extern "C" {
 #endif
 
-#define VVD_EXP_NAME_ENV_VAR        "__VVD_EXP_NAME"
-#define VVD_SUBJECT_ENV_VAR         "__VVD_SUBJECT"
-#define VVD_BIN_CONTEXT_ENV_VAR     "__VVD_BIN_CONTEXT"
-#define VVD_EXEC_CONTEXT_ENV_VAR    "__VVD_EXEC_CONTEXT"
-
-#define VVD_NAMED_PIPE_PATH         "/tmp/vvdump"
-
 void __dump_variable_value(const char* filename, const char* function_name, const char* variable_name, int declared_line, int modified_line, const char* var_val_format, ...);
 
 #ifdef __cplusplus

@@ -2786,6 +2786,55 @@ static void delete_trace_file_for_pid(s32 pid) {
 static void delete_trace_file() {
     delete_trace_file_for_pid(last_child_pid);
 }
+
+static void write_to_vvdump_named_pipe(u8 fault, s32 input_size) {
+    if (access((char *) VVD_NAMED_PIPE_PATH, F_OK) == -1) {
+        return;
+    }
+
+    u8 *experiment_name = getenv(VVD_EXP_NAME_ENV_VAR);
+    u8 *subject = getenv(VVD_SUBJECT_ENV_VAR);
+    u8 *binary_context = getenv(VVD_BIN_CONTEXT_ENV_VAR);
+    u8 *exec_context = getenv(VVD_EXEC_CONTEXT_ENV_VAR);
+
+    if (experiment_name && subject && binary_context && exec_context) {
+        u8* fault_str;
+        if (fault == crash_mode) {
+            fault_str = "success";
+        } else {
+            switch (fault) {
+                case FAULT_TMOUT:
+                    fault_str = "hang";
+                    break;
+
+                case FAULT_CRASH:
+                    fault_str = "crash";
+                    break;
+
+                default:
+                    fault_str = "success";
+            }
+        }
+
+        u8 *vvdump_end_trace = alloc_printf(
+            "%s:%s:%s:%s:%d:%s:%d:end\n",
+            experiment_name,
+            subject,
+            binary_context,
+            exec_context,
+            last_child_pid,
+            fault_str,
+            input_size
+        );
+
+        int fd = open(VVD_NAMED_PIPE_PATH, O_WRONLY);
+        write(fd, vvdump_end_trace, strlen((char *) vvdump_end_trace) + 1);
+        close(fd);
+
+        ck_free(vvdump_end_trace);
+    }
+}
+
 static void show_stats(void);
 
 /* Calibrate a new test case. This is done when processing the input directory
@@ -2999,6 +3048,7 @@ static void perform_dry_run(char** argv) {
 
     //DEBUG("\nbefore perform_dry_run->calibrate_case. last_child_pid is %d\n", last_child_pid);
     res = calibrate_case(argv, q, use_mem, 0, 1);
+    write_to_vvdump_named_pipe(res, q->len);
     copy_trace_for_test_case(q->fname);
     delete_trace_file();
     //DEBUG("after perform_dry_run->calibrate_case. last_child_pid is %d\n\n", last_child_pid);
@@ -3439,6 +3489,8 @@ static u8 save_if_interesting(char** argv, void* mem, u32 len, u8 fault) {
   s32 fd;
   u8  keeping = 0, res;
 
+  write_to_vvdump_named_pipe(fault, len);
+
   // If no faults happened; that is, if fault == crash_mode == 0. So this is the same as saying we're not in crash_mode
   // and it did not crash
   if (fault == crash_mode) {
@@ -3697,7 +3749,6 @@ keep_as_crash:
   ck_free(fn);
 
   return keeping;
-
 }
 
 

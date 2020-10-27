@@ -22,6 +22,7 @@
 
 
 use strict;
+use warnings;
 use Log::Simple::Color;
 use File::Path qw(make_path);
 
@@ -33,9 +34,8 @@ use File::Path qw(make_path);
   my $BASEWORKSPACEPATH = "$BASEPATH/workspace";
   my $TOOLS = "$BASEPATH/tools";
   my $RESOURCES = "$BASEPATH/resources";
+  my $SUBJECTS = "$RESOURCES/subjects";
 
-  my $BINARIES = "$BASEPATH/binaries";
-  my $RESULTS = "$BASEPATH/results";
   my $FUZZ_FACTORY = "$TOOLS/FuzzFactory";
 
   my $builders = {
@@ -152,7 +152,7 @@ use File::Path qw(make_path);
       
       # TODO: have to account for WEJON instrumentation waypoint eventually... similar arg like functions file
       
-      my $src_dir = "$FUZZ_FACTORY/infantheap";
+      my $src_dir = "$SUBJECTS/infantheap";
 
       $build_command .= " $src_dir/infantheap.c -o $binary_dir/infantheap";
 
@@ -207,7 +207,7 @@ use File::Path qw(make_path);
           $fuzz_command .= " -i-"
           
       } else {
-          my $seeds_directory = "$RESOURCES/infantheap-seeds/non-crashing-asan"; # buffer-overflow breaks things when we have vvdump instrumentation
+          my $seeds_directory = "$RESOURCES/seeds/infantheap/non-crashing-asan"; # buffer-overflow breaks things when we have vvdump instrumentation
           $fuzz_command .= " -i $seeds_directory";
       }
 
@@ -228,5 +228,4 @@ use File::Path qw(make_path);
 
       system $fuzz_command;
       system "unset ASAN_OPTIONS";
-
   }
