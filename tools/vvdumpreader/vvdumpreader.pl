@@ -1,6 +1,7 @@
 #!/usr/bin/perl
 
 use strict;
+use warnings;
 use POSIX qw(mkfifo);
 
   my $NAMED_PIPE_PATH = "/tmp/vvdump";

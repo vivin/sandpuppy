@@ -1,0 +1,16 @@
+a
+11
+a
+11
+l
+1
+hello
+l
+0
+hellohello
+f
+0
+f
+1
+x
+
