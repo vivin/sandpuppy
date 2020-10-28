@@ -38,6 +38,7 @@
 extern "C" {
 #endif
 
+void __init_vvdump();
 void __dump_variable_value(const char* filename, const char* function_name, const char* variable_name, int declared_line, int modified_line, const char* var_val_format, ...);
 
 #ifdef __cplusplus

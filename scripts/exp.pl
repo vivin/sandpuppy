@@ -7,6 +7,7 @@ use Log::Simple::Color;
 use File::Path qw(make_path);
 use infantheap;
 use rarebug;
+use vvdump;
 
   my $log = Log::Simple::Color->new;
 
@@ -94,10 +95,15 @@ use rarebug;
       $ENV{"__VVD_BIN_CONTEXT"} = $binary_context;
       $ENV{"__VVD_EXEC_CONTEXT"} = $context;
 
-      &{$tasks->{fuzz}}($experiment_name, $subject, $context, $waypoints, $binary_context, $ARGV[7] eq "resume");
+      my $pid = &vvdump::process();
+
+      &{$tasks->{fuzz}}($experiment_name, $subject, $context, $waypoints, $binary_context, 0);
 
       delete $ENV{"__VVD_EXP_NAME"};
       delete $ENV{"__VVD_SUBJECT"};
       delete $ENV{"__VVD_BIN_CONTEXT"};
       delete $ENV{"__VVD_EXEC_CONTEXT"};
+
+      $log->info("Waiting for vvdump trace processor to finish...");
+      waitpid $pid, 0;
   }

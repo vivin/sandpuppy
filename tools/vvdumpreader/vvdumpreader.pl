@@ -16,6 +16,7 @@ use POSIX qw(mkfifo);
 
   print "Opened named pipe at $NAMED_PIPE_PATH. Waiting for data...\n";
   while (<$named_pipe_fh>) {
+      $_ =~ s/\000//;
       print "Received: $_";
   }
 

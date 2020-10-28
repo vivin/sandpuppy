@@ -99,11 +99,11 @@ class VariableValueDumpFeedback : public fuzzfactory::DomainFeedback<VariableVal
     static std::string getFormatSpecifierForValue(Value* variable, Value* value) {
         auto *type = value->getType();
         if (type->isIntegerTy()) {
-            return "%d";
+            return "int:%d";
         } else if (type->isFloatTy()) {
-            return "%.9g";
+            return "float:%.9g";
         } else if (type->isDoubleTy()) {
-            return "%.17g";
+            return "double:%.17g";
         } else if (type->isPointerTy()) {
             // This code also from LLVM-Tracer
             if (auto *integerType = dyn_cast<IntegerType>(type->getPointerElementType())) {
@@ -111,7 +111,7 @@ class VariableValueDumpFeedback : public fuzzfactory::DomainFeedback<VariableVal
                     if (auto *constantExpr = dyn_cast<ConstantExpr>(value)) {
                         if (auto *globalVariable = dyn_cast<GlobalVariable>(constantExpr->getOperand(0))) {
                             if (dyn_cast<ConstantDataArray>(globalVariable->getInitializer())) {
-                                return "%s";
+                                return "string:%s";
                             }
                         }
                     }
@@ -119,7 +119,7 @@ class VariableValueDumpFeedback : public fuzzfactory::DomainFeedback<VariableVal
             }
         }
 
-        return "%p";
+        return "pointer:%p";
     }
 
 public:

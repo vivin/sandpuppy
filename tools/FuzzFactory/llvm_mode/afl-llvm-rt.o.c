@@ -79,6 +79,10 @@ static u32 dsf_count = 0; // Length of above array (i.e, number of non-zero item
 
 static u8 is_persistent;
 
+static u8 vvdump_named_pipe_available;
+static u8 vvdump_env_vars_available;
+static int vvdump_fd;
+
 /* SHM setup. */
 
 static void __afl_map_shm(void) {
@@ -281,7 +285,7 @@ __attribute__((constructor(CONST_PRIO))) void __afl_auto_init(void) {
   if (getenv(DEFER_ENV_VAR)) return;
 
   __afl_manual_init();
-
+  __init_vvdump();
 }
 
 
@@ -461,10 +465,13 @@ void __create_trace_file_if_not_exists(const char* dirname) {
     free(filename);
 }
 
-void __dump_variable_value(const char* filename, const char* function_name, const char* variable_name, int declared_line, int modified_line, const char* var_val_format, ...) {
+void __init_vvdump() {
     if (access((char *) VVD_NAMED_PIPE_PATH, F_OK) == -1) {
+        vvdump_named_pipe_available = false;
         return;
     }
+
+    vvdump_named_pipe_available = true;
 
     u8 *experiment_name = getenv(VVD_EXP_NAME_ENV_VAR);
     u8 *subject = getenv(VVD_SUBJECT_ENV_VAR);
@@ -472,21 +479,38 @@ void __dump_variable_value(const char* filename, const char* function_name, cons
     u8 *exec_context = getenv(VVD_EXEC_CONTEXT_ENV_VAR);
 
     if (!(experiment_name && subject && binary_context && exec_context)) {
+        vvdump_env_vars_available = false;
+        return;
+    }
+
+    vvdump_env_vars_available = true;
+    vvdump_fd = open(VVD_NAMED_PIPE_PATH, O_WRONLY);// | O_NONBLOCK);
+
+    // Unfortunately we can't explicitly close this but it does get automatically closed when program exits
+}
+
+void __dump_variable_value(const char* filename, const char* function_name, const char* variable_name, int declared_line, int modified_line, const char* var_val_format, ...) {
+    if (!vvdump_named_pipe_available) {
+        return;
+    }
+
+    if (!vvdump_env_vars_available) {
         // write an error to named pipe with pid
         int pid = getpid();
 
         s32 len = snprintf(NULL, 0, "%d:error missing environment variables\n", pid);
         u8* line = malloc(len + 1);
         sprintf((char *) line, "%d:error missing environment variables\n", pid);
-
-        int fd = open(VVD_NAMED_PIPE_PATH, O_WRONLY);
-        write(fd, line, strlen((char *) line) + 1);
-        close(fd);
-
+        write(vvdump_fd, line, len);
         free(line);
 
         return;
     }
+
+    u8 *experiment_name = getenv(VVD_EXP_NAME_ENV_VAR);
+    u8 *subject = getenv(VVD_SUBJECT_ENV_VAR);
+    u8 *binary_context = getenv(VVD_BIN_CONTEXT_ENV_VAR);
+    u8 *exec_context = getenv(VVD_EXEC_CONTEXT_ENV_VAR);
 
     va_list var_val_vsnprintf;
     va_list var_val_vsprintf;
@@ -504,7 +528,7 @@ void __dump_variable_value(const char* filename, const char* function_name, cons
     // Now build the rest of it.
     unsigned long timestamp = time(NULL);
     s32 len = snprintf(
-        NULL, 0, "%s:%s:%s:%s:%d:%s:%s:%s:%d:%d:%s:%lu\n",
+        NULL, 0, "%s:%s:%s:%s:%d:%s:%s:%s:%d:%d:%lu:%s\n",
          experiment_name,
          subject,
          binary_context,
@@ -515,13 +539,13 @@ void __dump_variable_value(const char* filename, const char* function_name, cons
          variable_name,
          declared_line,
          modified_line,
-         var_val,
-         timestamp
+         timestamp,
+         var_val
     );
 
     u8* var_val_trace = malloc(len + 1);
     if (var_val_trace) {
-        sprintf((char *) var_val_trace, "%s:%s:%s:%s:%d:%s:%s:%s:%d:%d:%s:%lu\n",
+        sprintf((char *) var_val_trace, "%s:%s:%s:%s:%d:%s:%s:%s:%d:%d:%lu:%s\n",
                 experiment_name,
                 subject,
                 binary_context,
@@ -532,13 +556,11 @@ void __dump_variable_value(const char* filename, const char* function_name, cons
                 variable_name,
                 declared_line,
                 modified_line,
-                var_val,
-                timestamp
+                timestamp,
+                var_val
         );
 
-        int fd = open(VVD_NAMED_PIPE_PATH, O_WRONLY);
-        write(fd, var_val_trace, strlen((char *) var_val_trace) + 1);
-        close(fd);
+        write(vvdump_fd, var_val_trace, len);
 
         free(var_val);
         free(var_val_trace);

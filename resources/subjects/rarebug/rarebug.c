@@ -57,8 +57,6 @@ int main(int argc, char* argv[]) {
             if (index == size || index == size - 1) {
                 printf ("Bad message format: empty message\n\n");
             } else {
-                //01234567
-                //1:helloN  size:7 index: 1
                 char *message_type_str = malloc(index + 1);
                 memcpy(message_type_str, line, index);
                 message_type_str[index] = '\0';

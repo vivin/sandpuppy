@@ -312,6 +312,10 @@ static u32 a_extras_cnt;              /* Total number of tokens available */
 
 static u8* (*post_handler)(u8* buf, u32* len);
 
+static u8 vvdump_named_pipe_available; /* Is the named pipe available?    */
+static u8 vvdump_env_vars_available;   /* Are vvdump env vars available   */
+static int vvdump_fd;                  /* vvdump named pipe fd            */
+
 /* Interesting values, as per config.h */
 
 static s8  interesting_8[]  = { INTERESTING_8 };
@@ -2637,6 +2641,7 @@ static u8 run_target(char** argv, u32 timeout) {
 
   prev_timed_out = child_timed_out;
 
+  DEBUG("run_target: executed pid %d\n", last_child_pid);
   /* Report outcome to caller. */
 
   if (WIFSIGNALED(status) && !stop_soon) {
@@ -2669,7 +2674,12 @@ static u8 run_target(char** argv, u32 timeout) {
   return FAULT_NONE;
 
 }
+static u8 run_target_special(char** argv, u32 timeout, const char *caller_name) {
+    DEBUG("run_target called by %s\n", caller_name);
+    return run_target(argv, timeout);
+}
 
+#define run_target(argv, timeout) run_target_special(argv, timeout, __func__)
 
 /* Write modified data to file for testing. If out_file is set, the old file
    is unlinked and a new one is created. Otherwise, out_fd is rewound and
@@ -2787,8 +2797,9 @@ static void delete_trace_file() {
     delete_trace_file_for_pid(last_child_pid);
 }
 
-static void write_to_vvdump_named_pipe(u8 fault, s32 input_size) {
-    if (access((char *) VVD_NAMED_PIPE_PATH, F_OK) == -1) {
+static void write_vvdump_end_trace(u8* suff, u8 fault, s32 input_size) {
+    if (!vvdump_named_pipe_available || !vvdump_env_vars_available) {
+        DEBUG("failed writing end trace! pipe avail: %d env avail: %d\n", vvdump_named_pipe_available, vvdump_env_vars_available);
         return;
     }
 
@@ -2797,42 +2808,66 @@ static void write_to_vvdump_named_pipe(u8 fault, s32 input_size) {
     u8 *binary_context = getenv(VVD_BIN_CONTEXT_ENV_VAR);
     u8 *exec_context = getenv(VVD_EXEC_CONTEXT_ENV_VAR);
 
-    if (experiment_name && subject && binary_context && exec_context) {
-        u8* fault_str;
-        if (fault == crash_mode) {
-            fault_str = "success";
-        } else {
-            switch (fault) {
-                case FAULT_TMOUT:
-                    fault_str = "hang";
-                    break;
+    u8* fault_str;
+    if (fault == crash_mode) {
+        fault_str = "success";
+    } else {
+        switch (fault) {
+            case FAULT_TMOUT:
+                fault_str = "hang";
+                break;
 
-                case FAULT_CRASH:
-                    fault_str = "crash";
-                    break;
+            case FAULT_CRASH:
+                fault_str = "crash";
+                break;
 
-                default:
-                    fault_str = "success";
-            }
+            default:
+                fault_str = "success";
         }
-
-        u8 *vvdump_end_trace = alloc_printf(
-            "%s:%s:%s:%s:%d:%s:%d:end\n",
-            experiment_name,
-            subject,
-            binary_context,
-            exec_context,
-            last_child_pid,
-            fault_str,
-            input_size
-        );
-
-        int fd = open(VVD_NAMED_PIPE_PATH, O_WRONLY);
-        write(fd, vvdump_end_trace, strlen((char *) vvdump_end_trace) + 1);
-        close(fd);
-
-        ck_free(vvdump_end_trace);
     }
+
+    u8 *vvdump_end_trace = alloc_printf(
+        "%s:%s:%s:%s:%d:%s:%d:%send\n",
+        experiment_name,
+        subject,
+        binary_context,
+        exec_context,
+        last_child_pid,
+        fault_str,
+        input_size,
+        suff
+    );
+
+    write(vvdump_fd, vvdump_end_trace, strlen((char *) vvdump_end_trace) + 1);
+
+    DEBUG("Trace: %s\n", vvdump_end_trace);
+    ck_free(vvdump_end_trace);
+}
+
+void write_kill_trace() {
+    if (!vvdump_named_pipe_available || !vvdump_env_vars_available) {
+        DEBUG("failed writing kill trace! pipe avail: %d env avail: %d\n", vvdump_named_pipe_available, vvdump_env_vars_available);
+        return;
+    }
+
+    u8 *experiment_name = getenv(VVD_EXP_NAME_ENV_VAR);
+    u8 *subject = getenv(VVD_SUBJECT_ENV_VAR);
+    u8 *binary_context = getenv(VVD_BIN_CONTEXT_ENV_VAR);
+    u8 *exec_context = getenv(VVD_EXEC_CONTEXT_ENV_VAR);
+
+    u8 *vvdump_end_trace = alloc_printf(
+        "%s:%s:%s:%s:%d:killed:%d:end\n",
+        experiment_name,
+        subject,
+        binary_context,
+        exec_context,
+        child_pid,
+        0
+    );
+
+    write(vvdump_fd, vvdump_end_trace, strlen((char *) vvdump_end_trace) + 1);
+
+    ck_free(vvdump_end_trace);
 }
 
 static void show_stats(void);
@@ -2888,6 +2923,7 @@ static u8 calibrate_case(char** argv, struct queue_entry* q, u8* use_mem,
 
     //DEBUG("\nbefore stage(%d) calibrate_case->run_target. last_child_pid is %d\n", stage_cur, last_child_pid);
     fault = run_target(argv, use_tmout);
+    write_vvdump_end_trace("calibrate_case", fault, q->len);
     //DEBUG("after stage(%d) calibrate_case->run_target. last_child_pid is %d\n\n", stage_cur, last_child_pid);
 
     /* stop_soon is set by the handler for Ctrl+C. When it's pressed,
@@ -3048,7 +3084,6 @@ static void perform_dry_run(char** argv) {
 
     //DEBUG("\nbefore perform_dry_run->calibrate_case. last_child_pid is %d\n", last_child_pid);
     res = calibrate_case(argv, q, use_mem, 0, 1);
-    write_to_vvdump_named_pipe(res, q->len);
     copy_trace_for_test_case(q->fname);
     delete_trace_file();
     //DEBUG("after perform_dry_run->calibrate_case. last_child_pid is %d\n\n", last_child_pid);
@@ -3489,8 +3524,6 @@ static u8 save_if_interesting(char** argv, void* mem, u32 len, u8 fault) {
   s32 fd;
   u8  keeping = 0, res;
 
-  write_to_vvdump_named_pipe(fault, len);
-
   // If no faults happened; that is, if fault == crash_mode == 0. So this is the same as saying we're not in crash_mode
   // and it did not crash
   if (fault == crash_mode) {
@@ -3553,7 +3586,7 @@ static u8 save_if_interesting(char** argv, void* mem, u32 len, u8 fault) {
     // because we may need to copy it for a crash or hang input.
     delete_trace_file();
 
-    DEBUG("adding %s to queue\n", fn);
+    //DEBUG("adding %s to queue\n", fn);
 
     add_to_queue(fn, len, 0);
 
@@ -3633,6 +3666,7 @@ static u8 save_if_interesting(char** argv, void* mem, u32 len, u8 fault) {
         write_to_testcase(mem, len);
         //DEBUG("\nbefore save_if_interesting->run_target. last_child_pid is %d\n", last_child_pid);
         new_fault = run_target(argv, hang_tmout);
+        write_vvdump_end_trace("save_if_interesting_tmout", new_fault, len);
         //DEBUG("after save_if_interesting->run_target. last_child_pid is %d\n\n", last_child_pid);
 
         /* A corner case that one user reported bumping into: increasing the
@@ -5038,6 +5072,7 @@ static u8 trim_case(char** argv, struct queue_entry* q, u8* in_buf) {
       if (!(trim_exec++ % stats_update_freq)) show_stats();
       stage_cur++;
 
+      write_vvdump_end_trace("trim_case", fault, q->len);
     }
 
     remove_len >>= 1;
@@ -5092,6 +5127,7 @@ EXP_ST u8 common_fuzz_stuff(char** argv, u8* out_buf, u32 len) {
   write_to_testcase(out_buf, len);
   //DEBUG("\nbefore common_fuzz_stuff->run_target. last_child_pid is %d\n", last_child_pid);
   fault = run_target(argv, exec_tmout);
+  write_vvdump_end_trace("common_fuzz_stuff", fault, len);
   //DEBUG("after common_fuzz_stuff->run_target. last_child_pid is %d\n\n", last_child_pid);
 
   if (stop_soon) {
@@ -7251,6 +7287,7 @@ static void sync_fuzzers(char** argv) {
 
         //DEBUG("\nbefore sync_fuzzers->run_target. last_child_pid is %d\n", last_child_pid);
         fault = run_target(argv, exec_tmout);
+        write_vvdump_end_trace("sync_fuzzers", fault, st.st_size);
         //DEBUG("after sync_fuzzers->run_target. last_child_pid is %d\n\n", last_child_pid);
         if (stop_soon) {
             delete_trace_file();
@@ -7297,9 +7334,12 @@ static void handle_stop_sig(int sig) {
 
   stop_soon = 1; 
 
-  if (child_pid > 0) kill(child_pid, SIGKILL);
-  if (forksrv_pid > 0) kill(forksrv_pid, SIGKILL);
+  if (child_pid > 0) {
+      kill(child_pid, SIGKILL);
+      write_kill_trace();
+  }
 
+  if (forksrv_pid > 0) kill(forksrv_pid, SIGKILL);
 }
 
 
@@ -8102,6 +8142,27 @@ EXP_ST void detect_file_args(char** argv) {
 
 }
 
+static void setup_vvdump() {
+    if (access((char *) VVD_NAMED_PIPE_PATH, F_OK) == -1) {
+        vvdump_named_pipe_available = 0;
+        return;
+    }
+
+    vvdump_named_pipe_available = 1;
+
+    u8 *experiment_name = getenv(VVD_EXP_NAME_ENV_VAR);
+    u8 *subject = getenv(VVD_SUBJECT_ENV_VAR);
+    u8 *binary_context = getenv(VVD_BIN_CONTEXT_ENV_VAR);
+    u8 *exec_context = getenv(VVD_EXEC_CONTEXT_ENV_VAR);
+
+    if (!(experiment_name && subject && binary_context && exec_context)) {
+        vvdump_env_vars_available = 0;
+        return;
+    }
+
+    vvdump_env_vars_available = 1;
+    vvdump_fd = open(VVD_NAMED_PIPE_PATH, O_WRONLY);// | O_NONBLOCK);
+}
 
 /* Set up signal handlers. More complicated that needs to be, because libc on
    Solaris doesn't resume interrupted reads(), sets SA_RESETHAND when you call
@@ -8473,6 +8534,7 @@ int main(int argc, char** argv) {
 
   if (optind == argc || !in_dir || !out_dir) usage(argv[0]);
 
+  setup_vvdump();
   setup_signal_handlers();
   check_asan_opts();
 
@@ -8672,6 +8734,10 @@ stop_fuzzing:
   destroy_extras();
   ck_free(target_path);
   ck_free(sync_id);
+
+  if (vvdump_named_pipe_available) {
+      close(vvdump_fd);
+  }
 
   alloc_report();
 

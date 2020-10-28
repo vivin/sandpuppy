@@ -21,25 +21,11 @@ sub build {
     my $workspace = "$BASEWORKSPACEPATH/$experiment_name/$subject";
 
     my $binary_base = "$workspace/binaries";
-    my $binary_dir = "";
-
-    if ($context eq "default") {
-        my $result = `find $binary_base -type d -name "ver[0-9]" | sed -e 's,.*\\([0-9]\\+\\),\\1,' | sort -r | head -1`;
-        if ($result eq "") {
-            $result = -1;
-        }
-
-        my $new_version = ++$result;
-
-        $binary_dir = "$binary_base/ver$new_version";
-    } else {
-        $binary_dir = "$binary_base/$context";
-    }
-
+    my $binary_dir =  "$binary_base/$context";
     my $binary = "$binary_dir/rarebug";
 
     if (-d $binary_dir and -e $binary) {
-        my $result = `find $binary_dir -type f -name "*backup[0-9]" | sed -e 's,.*\\([0-9]\\+\\),\\1,' | sort -r | head -1`;
+        my $result = `find $binary_dir -type f -name "*backup[0-9]" | sed -e 's,^.*backup,,' | sort -nr | head -1`;
         if ($result eq "") {
             $result = -1;
         }
@@ -99,7 +85,7 @@ sub fuzz {
 
     if (!$resume) {
         if (-d $results_dir) {
-            my $result = `find $results_base -type d -name "*backup[0-9]" | sed -e 's,.*\\([0-9]\\+\\),\\1,' | sort -r | head -1`;
+            my $result = `find $results_base -type d -regex '.*$exec_context.backup[0-9]+' | sed -e 's,^.*backup,,' | sort -nr | head -1`;
             if ($result eq "") {
                 $result = -1;
             }
