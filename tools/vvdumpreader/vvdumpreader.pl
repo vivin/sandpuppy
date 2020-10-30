@@ -10,14 +10,22 @@ use POSIX qw(mkfifo);
       mkfifo($NAMED_PIPE_PATH, 0700) or die "Could not create named pipe at $NAMED_PIPE_PATH: $!";
   }
 
+  my $pids = {};
   # pipe opened in rw mode so that it remains open even after we have read stuff
   my $named_pipe_fh;
   open $named_pipe_fh, "+<", $NAMED_PIPE_PATH or die "Could not open named pipe at $NAMED_PIPE_PATH: $!";
 
   print "Opened named pipe at $NAMED_PIPE_PATH. Waiting for data...\n";
   while (<$named_pipe_fh>) {
+      chomp;
       $_ =~ s/\000//;
-      print "Received: $_";
+      my @data = split /:/;
+      if (scalar @data == 8) {
+          print "$_\n\n";
+      } elsif (!$pids->{$data[4]}) {
+          $pids->{$data[4]} = 1;
+          print "$_\n";
+      }
   }
 
   close $named_pipe_fh;

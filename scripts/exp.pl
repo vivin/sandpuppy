@@ -7,7 +7,7 @@ use Log::Simple::Color;
 use File::Path qw(make_path);
 use infantheap;
 use rarebug;
-use vvdump;
+use vvdprocessor;
 
   my $log = Log::Simple::Color->new;
 
@@ -95,7 +95,7 @@ use vvdump;
       $ENV{"__VVD_BIN_CONTEXT"} = $binary_context;
       $ENV{"__VVD_EXEC_CONTEXT"} = $context;
 
-      my $pid = &vvdump::process();
+      my $reader_pid = &vvdprocessor::start();
 
       &{$tasks->{fuzz}}($experiment_name, $subject, $context, $waypoints, $binary_context, 0);
 
@@ -105,5 +105,6 @@ use vvdump;
       delete $ENV{"__VVD_EXEC_CONTEXT"};
 
       $log->info("Waiting for vvdump trace processor to finish...");
-      waitpid $pid, 0;
+
+      waitpid $reader_pid, 0;
   }

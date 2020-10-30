@@ -484,7 +484,7 @@ void __init_vvdump() {
     }
 
     vvdump_env_vars_available = true;
-    vvdump_fd = open(VVD_NAMED_PIPE_PATH, O_WRONLY);// | O_NONBLOCK);
+    vvdump_fd = open(VVD_NAMED_PIPE_PATH, O_WRONLY); // | O_NONBLOCK would be fast but would cause us to lose messages if pipe fills up
 
     // Unfortunately we can't explicitly close this but it does get automatically closed when program exits
 }
