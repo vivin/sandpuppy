@@ -72,6 +72,9 @@ sub build {
 }
 
 sub fuzz {
+    my $pid = fork;
+    return $pid if $pid;
+
     my $experiment_name = $_[0];
     my $subject = $_[1];
     my $exec_context = $_[2];
@@ -134,12 +137,15 @@ sub fuzz {
         $fuzz_command .= " -m none";
     }
 
+    if ($waypoints =~ /vvdump/) {
+        $fuzz_command .= " -t 100";
+    }
+
     $fuzz_command .= " $binary";
 
-    system $fuzz_command;
-    if ($use_asan) {
-        delete $ENV{"ASAN_OPTIONS"};
-    }
+    # Need to run in shell using exec otherwise it runs it as sh -c $fuzz_command and the pid we get is of sh. So when
+    # we try to kill it, it doesn't work.
+    exec "exec $fuzz_command";
 }
 
 1;

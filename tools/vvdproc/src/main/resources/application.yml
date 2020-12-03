@@ -1,0 +1,23 @@
+server:
+  port: 8081
+
+spring:
+  jpa:
+    hibernate:
+      ddl-auto: "none"
+    properties:
+      jdbc:
+        lob:
+          non_contextual_creation: "true"
+  datasource:
+    initialization-mode: "always"
+    platform: "postgres"
+    url: "jdbc:postgresql://localhost:5432/phd"
+    username: "phd"
+    password: "phd"
+
+vvdump:
+  named-pipe-path: "/tmp/vvdump"
+  insert-variable-value-trace-query: "INSERT INTO variable_value_trace VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+  insert-fuzzed-process-info-query: "INSERT INTO fuzzed_process_info VALUES (?, ?, ?, ?, ?, ?, ?, current_timestamp)"
+  delete-variable-value-traces-query: "DELETE FROM variable_value_trace WHERE pid = ?"

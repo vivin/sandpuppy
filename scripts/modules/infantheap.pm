@@ -72,6 +72,9 @@ sub build {
 }
 
 sub fuzz {
+    my $pid = fork;
+    return $pid if $pid;
+
     my $experiment_name = $_[0];
     my $subject = $_[1];
     my $exec_context = $_[2];
@@ -136,10 +139,7 @@ sub fuzz {
 
     $fuzz_command .= " $binary";
 
-    system $fuzz_command;
-    if ($use_asan) {
-        delete $ENV{"ASAN_OPTIONS"};
-    }
+    exec "exec $fuzz_command";
 }
 
 1;

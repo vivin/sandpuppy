@@ -6,6 +6,7 @@
 // This program has a rare bug.
 
 #define WIDTH    8u
+#define CUSTOM_CRASH 83
 
 const int MIN_MESSAGE_TYPE = 1;
 const int MAX_MESSAGE_TYPE = 20;
@@ -35,6 +36,7 @@ int process_message(const char* message_type_str, const char* message) {
         printf("You got the magic sequence!\n");
         char *buffer = malloc(5);
         strcpy(buffer, "overflow"); // heap buffer overflow when you get the magic sequence
+        free(buffer);
     }
 
     printf ("Message type: %d, Message: %s\n\n", message_type, message);
@@ -45,17 +47,20 @@ int main(int argc, char* argv[]) {
     char *line = NULL;
     size_t bufsize;
 
-    while (getline(&line, &bufsize, stdin)) {
+    int exit_code = 0;
+
+    while (exit_code == 0 && getline(&line, &bufsize, stdin)) {
         unsigned int size = strlen(line) - 1; // Ignore newline in size
         if (size == 0) {
             break;
         }
 
-        const char *ptr = strchr(line, delimiter);
+        char *ptr = strchr(line, delimiter);
         if (ptr) {
             unsigned int index = ptr - line;
             if (index == size || index == size - 1) {
                 printf ("Bad message format: empty message\n\n");
+                exit_code = CUSTOM_CRASH;
             } else {
                 char *message_type_str = malloc(index + 1);
                 memcpy(message_type_str, line, index);
@@ -67,6 +72,7 @@ int main(int argc, char* argv[]) {
 
                 if (process_message(message_type_str, message) == -1) {
                     printf("Bad message size: %s\n\n", message_type_str);
+                    exit_code = CUSTOM_CRASH;
                 }
 
                 free(message_type_str);
@@ -74,8 +80,9 @@ int main(int argc, char* argv[]) {
             }
         } else {
             printf("Bad message format: no delimiter\n\n");
+            exit_code = CUSTOM_CRASH;
         }
     }
 
-    return 0;
+    return exit_code;
 }
