@@ -10,7 +10,11 @@ use POSIX;
 use infantheap;
 use rarebug;
 
-  my $log = Log::Simple::Color->new;
+  if (! -e "/tmp/vvdump") {
+      POSIX::mkfifo("/tmp/vvdump", 0700) or die "Could not create /tmp/vvdump";
+  }
+
+my $log = Log::Simple::Color->new;
 
   my $BASEPATH = glob "~/Projects/phd";
   my $BASEWORKSPACEPATH = "$BASEPATH/workspace";

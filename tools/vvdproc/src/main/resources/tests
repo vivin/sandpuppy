@@ -32,6 +32,51 @@ vvdump:
       insert-fuzzed-process-info-query: "INSERT INTO fuzzed_process_info VALUES (?, ?, ?, ?, ?, ?, ?, current_timestamp)"
       delete-variable-value-traces-query: "DELETE FROM variable_value_trace WHERE pid = ?"
     cassandra:
+      table-fields:
+        experiments:
+          - id
+          - experiment
+        experiment_subjects:
+          - id
+          - experiment
+          - subject
+        experiment_subject_binaries:
+          - id
+          - experiment
+          - subject
+          - binary
+        experiment_subject_binary_executions:
+          - id
+          - experimentggVG
+          - subject
+          - binary
+          - execution
+        subject_files:
+          - id
+          - subject
+          - filename
+        subject_file_functions:
+          - id
+          - subject
+          - filename
+          - function_name
+        subject_file_function_variables:
+          - id
+          - subject
+          - filename
+          - function_name
+          - declared_line
+          - variable_type
+          - variable_name
+        processes:
+          - id
+          - experiment
+          - subject
+          - binary
+          - execution
+          - pid
+        process_variable_value_trace
+
       insert-experiment-query: "INSERT INTO experiments (id, experiment) VALUES"
       insert-variable-value-trace-query: "INSERT INTO variable_value_trace (id, experiment_name, subject, binary_context, exec_context, pid, filename, function_name, variable_type, variable_name, declared_line, timestamp, modified_line, variable_value) VALUES (uuid(), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
       insert-fuzzed-process-info-query: "INSERT INTO fuzzed_process_info (id, experiment_name, subject, binary_context, exec_context, pid, exit_status, input_size) VALUES (uuid(), ?, ?, ?, ?, ?, ?, ?)"

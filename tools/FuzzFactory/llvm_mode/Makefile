@@ -62,7 +62,7 @@ endif
 
 OBJ = ../shared-opts.o
 
-CFLAGS += -I../include
+CFLAGS += -I../include -lm
 
 all: test_deps $(PROGS) test_build all_done
 

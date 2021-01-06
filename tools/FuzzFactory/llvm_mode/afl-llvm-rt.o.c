@@ -48,7 +48,9 @@
 #include <sys/wait.h>
 #include <sys/types.h>
 #include <sys/stat.h>
+#include <sys/time.h>
 #include <time.h>
+#include <math.h>
 
 /* This is a somewhat ugly hack for the experimental 'trace-pc-guard' mode.
    Basically, we need to make sure that the forkserver is initialized after
@@ -525,10 +527,20 @@ void __dump_variable_value(const char* filename, const char* function_name, cons
     u8* var_val = malloc(var_val_len + 1);
     vsprintf((char *) var_val, var_val_format, var_val_vsprintf);
 
+    // get timestamp in milliseconds
+    struct timeval tv;
+
+    gettimeofday(&tv, NULL);
+
+    unsigned long long timestamp =
+        (unsigned long long)(tv.tv_sec) * 1000 +
+        (unsigned long long)(tv.tv_usec) / 1000;
+    //unsigned long timestamp = time(NULL);
+
     // Now build the rest of it.
-    unsigned long timestamp = time(NULL);
+
     s32 len = snprintf(
-        NULL, 0, "%s:%s:%s:%s:%d:%s:%s:%s:%d:%d:%lu:%s\n",
+        NULL, 0, "%s:%s:%s:%s:%d:%s:%s:%s:%d:%d:%llu:%s\n",
          experiment_name,
          subject,
          binary_context,
@@ -545,7 +557,7 @@ void __dump_variable_value(const char* filename, const char* function_name, cons
 
     u8* var_val_trace = malloc(len + 1);
     if (var_val_trace) {
-        sprintf((char *) var_val_trace, "%s:%s:%s:%s:%d:%s:%s:%s:%d:%d:%lu:%s\n",
+        sprintf((char *) var_val_trace, "%s:%s:%s:%s:%d:%s:%s:%s:%d:%d:%llu:%s\n",
                 experiment_name,
                 subject,
                 binary_context,

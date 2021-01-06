@@ -1,8 +1,9 @@
-package net.vivin.vvdump.repository;
+package net.vivin.vvdump.postgres.repository;
 
 import lombok.extern.slf4j.Slf4j;
 import net.vivin.vvdump.model.VariableValueEndTrace;
 import net.vivin.vvdump.model.VariableValueTrace;
+import net.vivin.vvdump.repository.VariableValueTraceRepository;
 import org.apache.commons.lang3.RandomStringUtils;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Repository;
@@ -18,24 +19,25 @@ import javax.transaction.Transactional;
  */
 
 @Slf4j
-@Repository
-public class VariableValueRepository {
+@Repository("postgres")
+public class PostgresRepository implements VariableValueTraceRepository {
 
     private static final String PID_SUFFIX = RandomStringUtils.randomAlphabetic(6);
 
-    @Value("${vvdump.insert-variable-value-trace-query}")
+    @Value("${vvdump.sql.postgres.insert-variable-value-trace-query}")
     private String insertVariableValueTraceQuery;
 
-    @Value("${vvdump.insert-fuzzed-process-info-query}")
+    @Value("${vvdump.sql.postgres.insert-fuzzed-process-info-query}")
     private String insertFuzzedProcessInfoQuery;
 
-    @Value("${vvdump.delete-variable-value-traces-query}")
+    @Value("${vvdump.sql.postgres.delete-variable-value-traces-query}")
     private String deleteVariableValueTracesQuery;
 
     @PersistenceContext
     private EntityManager entityManager;
 
     @Transactional
+    @Override
     public void insertVariableValueTrace(VariableValueTrace variableValueTrace) {
         entityManager.createNativeQuery(insertVariableValueTraceQuery)
             .setParameter(1, variableValueTrace.getExperimentName())
@@ -57,6 +59,7 @@ public class VariableValueRepository {
     }
 
     @Transactional
+    @Override
     public void insertFuzzedProcessInfo(VariableValueEndTrace variableValueEndTrace) {
         entityManager.createNativeQuery(insertFuzzedProcessInfoQuery)
             .setParameter(1, variableValueEndTrace.getExperimentName())
@@ -72,10 +75,11 @@ public class VariableValueRepository {
     }
 
     @Transactional
-    public void deleteVariableValueTraces(int pid) {
-        log.info("Deleting traces for killed process {}", pid);
+    @Override
+    public void deleteVariableValueTraces(VariableValueEndTrace variableValueEndTrace) {
+        log.info("Deleting traces for killed process {}", variableValueEndTrace.getPid());
         entityManager.createNativeQuery(deleteVariableValueTracesQuery)
-            .setParameter(1, String.format("%d-%s", pid, PID_SUFFIX))
+            .setParameter(1, String.format("%d-%s", variableValueEndTrace.getPid(), PID_SUFFIX))
             .executeUpdate();
     }
 }
