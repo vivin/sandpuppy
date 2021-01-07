@@ -1,0 +1,10 @@
+mipsel-linux-gnu-gcc -mips1 -mfp32 -nostdlib -Wl,--build-id=none -s tools/FuzzFactory/infantheap/hello.S -o hello-mips
+
+# -mips1 and -mpf32 makes it MIPS-I version.
+# -nostdlib prevents linking with libc
+# -Wl,--build-id=none removes the BuildId stuff
+# This is statically linked though. Need to make it dynamically linked executable.
+
+mips-linux-gnu-gcc -mabi=64 -nostdlib -Wl,--build-id=none -s tools/FuzzFactory/infantheap/hello.S -o hello-mips
+
+# ok so this is the only way you get the MIPS_OPTIONS section (.MIPS.options). It is only present in 64 bit ABI.

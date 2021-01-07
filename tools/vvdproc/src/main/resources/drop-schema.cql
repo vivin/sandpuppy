@@ -6,5 +6,5 @@ DROP TABLE subject_files;
 DROP TABLE subject_file_functions;
 DROP TABLE subject_file_function_variables;
 DROP TABLE processes;
-DROP TABLE process_variable_value_trace;
+DROP TABLE process_variable_value_traces;
 DROP TABLE process_info;

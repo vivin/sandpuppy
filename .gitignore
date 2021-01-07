@@ -59,3 +59,8 @@ workspace
 .idea
 target/
 *.iml
+*.tar.gz
+*.tar.bz2
+resources/libpng*
+resources/binutils*
+cmake-build-debug

@@ -32,11 +32,62 @@ vvdump:
       insert-fuzzed-process-info-query: "INSERT INTO fuzzed_process_info VALUES (?, ?, ?, ?, ?, ?, ?, current_timestamp)"
       delete-variable-value-traces-query: "DELETE FROM variable_value_trace WHERE pid = ?"
     cassandra:
-      insert-experiment-query: "INSERT INTO experiments (id, experiment) VALUES"
-      insert-variable-value-trace-query: "INSERT INTO variable_value_trace (id, experiment_name, subject, binary_context, exec_context, pid, filename, function_name, variable_type, variable_name, declared_line, timestamp, modified_line, variable_value) VALUES (uuid(), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
-      insert-fuzzed-process-info-query: "INSERT INTO fuzzed_process_info (id, experiment_name, subject, binary_context, exec_context, pid, exit_status, input_size) VALUES (uuid(), ?, ?, ?, ?, ?, ?, ?)"
-      delete-variable-value-traces-query: "DELETE FROM variable_value_trace WHERE experiment_name = ? AND subject = ? AND binary_context = ? AND exec_context = ? AND pid = ?"
+      trace-table-fields:
+        experiments:
+          - experiment
+        experiment_subjects:
+          - experiment
+          - subject
+        experiment_subject_binaries:
+          - experiment
+          - subject
+          - binary
+        experiment_subject_binary_executions:
+          - experiment
+          - subject
+          - binary
+          - execution
+        subject_files:
+          - subject
+          - filename
+        subject_file_functions:
+          - subject
+          - filename
+          - function_name
+        subject_file_function_variables:
+          - subject
+          - filename
+          - function_name
+          - declared_line
+          - variable_type
+          - variable_name
+        processes:
+          - experiment
+          - subject
+          - binary
+          - execution
+          - pid
+        process_variable_value_traces:
+          - id
+          - pid
+          - filename
+          - function_name
+          - declared_line
+          - variable_type
+          - variable_name
+          - timestamp
+          - modified_line
+          - variable_value
+      process-table-fields:
+        process_info:
+          - pid
+          - exit_status
+          - input_size
+      delete-processes-query: "DELETE FROM processes WHERE experiment = ? AND subject = ? AND binary = ? AND execution = ? AND pid = ?"
+      delete-process-variable-value-traces-query: "DELETE FROM process_variable_value_traces WHERE pid = ?"
 
 logging:
+  file:
+    name: /tmp/vvdproc.log
   level:
     root: INFO

@@ -68,7 +68,6 @@ public class TraceProcessingService {
 
             String line;
             while ((line = pipe.readLine()) != null && !END_TRACE_MARKER.equals(line)) {
-                log.info(line);
                 var components = line.split(":");
                 if (components.length != NUM_END_TRACE_COMPONENTS) {
                     var variableValueTrace = VariableValueTrace.fromStringTrace(line);
@@ -87,7 +86,7 @@ public class TraceProcessingService {
                     });
                 } else {
                     var variableValueEndTrace = VariableValueEndTrace.fromStringTrace(line);
-                    log.info(variableValueEndTrace.toString());
+                    //log.info(variableValueEndTrace.toString());
                     if (!"killed".equals(variableValueEndTrace.getExitStatus())) {
                         traceCount.incrementAndGet();
                         dbQueryExecutor.submit(() -> {

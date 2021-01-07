@@ -1,0 +1,1058 @@
+Individual operation channels (IOC)
+==================================
+
+start: 0/1
+malloc: 0/1
+free: 0/1
+write: 0/1
+size: 0-9 normalized (size is represented as individual digits, with each digit being normalized; try this with 0-255 normalized as well with each digit converted to the ascii value).
+address: 0-255 normalized (sequence of 8)
+data: 0-255 normalized
+end input: 0/1
+output: 0-255 normalized
+end output: 0/1
+
+Num observation channels: 8
+Num target channels: 2
+
+
+Individual operation channels with combined data-address channel (IOC-DAC)
+==========================================================================
+
+data and address combined into one channel (0-255 normalized)
+
+Rest is the same as IOC.
+
+Num observation channels: 7
+Num target channels: 2
+
+
+Individual operation channels with combined data-address channel and parameter separator channel (IOC-DAC-PSC)
+==============================================================================================================
+
+param sep: 0/1. for write instruction, set to 1 after address is provided and before data is provided. 0 otherwise.
+
+Rest is the same as IOC-DAC.
+
+Num observation channels: 8
+Num target channels: 2
+
+
+Individual operation channels with combined data-address-size channel (IOC-DASC)
+================================================================================
+
+data, address, and size combined into one channel. Size is represented as sequence
+of ASCII hex codes representing the integer size. Eg 5 is 0x35 and 10 is 0x31 0x30
+
+Rest is same as IOC.
+
+Num observation channels: 6
+Num target channels: 2
+
+
+Individual operation channels with combined data-address-size channel and parameter separator channel (IOC-DASC-PSC)
+===================================================================================================================
+
+param sep: 0/1. for write instruction, set to 1 after address is provided and before data is provided. 0 otherwise.
+data, address, and size combined into one channel. Size is represented as sequence
+of ASCII hex codes representing the integer size. Eg 5 is 0x35 and 10 is 0x31 0x30
+
+Rest is the same as IOC-DASC.
+
+Num observation channels: 7
+Num target channels: 2
+
+
+Single operation channel (SOC)
+==============================
+
+operation: 0-3 (normalized: 0 = nop, 1 = malloc, 2 = write, 3 = free)
+
+Rest is the same as IOC.
+
+Num observation channels: 6
+Num target channels: 2
+
+
+Single operation channel with combined data-address channel (SOC-DAC)
+=====================================================================
+
+data and address combined into one channel (0-255 normalized)
+
+Rest is the same as SOC.
+
+Num observation channels: 5
+Num target channels: 2
+
+
+Single operation channel with combined data-address channel and parameter separator channel (SOC-DAC-PSC)
+=========================================================================================================
+
+param sep: 0/1. for write instruction, set to 1 after address is provided and before data is provided. 0 otherwise.
+
+Rest is the same as SOC-DAC.
+
+Num observation channels: 6
+Num target channels: 2
+
+
+Single operation channel with combined data-address channel (SOC-DASC)
+=====================================================================
+
+data, address, and size combined into one channel. Size is represented as sequence
+of ASCII hex codes representing the integer size. Eg 5 is 0x35 and 10 is 0x31 0x30
+
+Rest is the same as SOC.
+
+Num observation channels: 4
+Num target channels: 2
+
+
+Single operation channel with combined data-address channel and parameter separator channel (SOC-DASC-PSC)
+==========================================================================================================
+
+param sep: 0/1. for write instruction, set to 1 after address is provided and before data is provided. 0 otherwise.
+
+Rest is the same as SOC-DASC.
+
+Num observation channels: 5
+Num target channels: 2
+
+
+Example trace
+=============
+
+malloc 5
+write 0x7000fa10 0x404040
+malloc 5
+write 0x7000fa20 0x41414141
+free 0x7000fa10
+free 0x7000fa20
+
+(for the 8B versions, addresses are 0x7000fa10deadbeef and 0x7000fa20cafebabe
+
+Expected output
+===============
+
+a
+5
+l
+0
+aaa
+a
+5
+l
+1
+bbbb
+f
+0
+f
+1
+
+IOC
+===
+
+time       : >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+mask       : 0 0 0 0 0  0  0  0  0  0  0  0 0 0 0  0  0  0  0  0  0  0  0 0  0  0  0  0 0  0  0  0  0 1 1  1 1  1 1  1 1  1 1 1 1  1 1  1 1  1 1  1 1  1 1 1 1 1  1 1  1 1  1 1  1 1  1
+-----------:---------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+start      : 1
+malloc     :   1                          1
+write      :       1                          1
+free       :                                                            1             1
+size       :     5                          5
+address    :         70 00 fa 10                70 00 fa 20               70 00 fa 10   70 00 fa 20
+data       :                     40 40 40                   41 41 41 41
+end input  :                                                                                        1
+-----------:---------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+output     :                                                                                          a \n 5 \n l \n 0 \n a a a \n a \n 5 \n l \n 1 \n b b b b \n f \n 0 \n f \n 1 \n
+end output :                                                                                                                                                                          1
+-----------:---------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+mask       : 0 0 0 0 0  0  0  0  0  0  0  0 0 0 0  0  0  0  0  0  0  0  0 0  0  0  0  0 0  0  0  0  0 1 1  1 1  1 1  1 1  1 1 1 1  1 1  1 1  1 1  1 1  1 1 1 1 1  1 1  1 1  1 1  1 1  1
+
+START = 1
+END_INPUT = 1
+END_OUTPUT = 1
+
+num_digits(n) = floor(log_10(n)) + 1
+NUM_TOTAL_MALLOC_SIZE_DIGITS = sum_{m \in mallocs} num_digits(m.size)
+MALLOCS_LENGTH = count(mallocs) + NUM_TOTAL_MALLOC_SIZE_DIGITS
+
+TOTAL_WRITES_ADDRESS_LENGTH = 8 * count(writes)
+TOTAL_WRITES_DATA_LENGTH = sum_{w \in writes} length(w.data)
+WRITES_LENGTH = count(writes) + TOTAL_WRITES_ADDRESS_LENGTH + TOTAL_WRITES_DATA_LENGTH
+
+TOTAL_FREES_ADDRESS_LENGTH = 8 * count(frees)
+FREES_LENGTH = count(frees) + TOTAL_FREES_ADDRESS_LENGTH
+
+OBSERVATION_LENGTH = START + MALLOCS_LENGTH + WRITES_LENGTH + FREES_LENGTH + END_INPUT
+TARGET_LENGTH = length(output) + END_OUTPUT
+
+LENGTH = OBSERVATION_LENGTH + TARGET_LENGTH
+
+IOC-DAC
+=======
+
+time       : >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+mask       : 0 0 0 0 0  0  0  0  0  0  0  0 0 0 0  0  0  0  0  0  0  0  0 0  0  0  0  0 0  0  0  0  0 1 1  1 1  1 1  1 1  1 1 1 1  1 1  1 1  1 1  1 1  1 1 1 1 1  1 1  1 1  1 1  1 1  1
+-----------:---------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+start      : 1
+malloc     :   1                          1
+write      :       1                          1
+free       :                                                            1             1
+size       :     5                          5
+dac        :         70 00 fa 10 40 40 40       70 00 fa 20 41 41 41 41   70 00 fa 10   70 00 fa 20
+end input  :                                                                                        1
+-----------:---------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+output     :                                                                                          a \n 5 \n l \n 0 \n a a a \n a \n 5 \n l \n 1 \n b b b b \n f \n 0 \n f \n 1 \n
+end output :                                                                                                                                                                          1
+-----------:---------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+mask       : 0 0 0 0 0  0  0  0  0  0  0  0 0 0 0  0  0  0  0  0  0  0  0 0  0  0  0  0 0  0  0  0  0 1 1  1 1  1 1  1 1  1 1 1 1  1 1  1 1  1 1  1 1  1 1 1 1 1  1 1  1 1  1 1  1 1  1
+
+START = 1
+END_INPUT = 1
+END_OUTPUT = 1
+
+num_digits(n) = floor(log_10(n)) + 1
+NUM_TOTAL_MALLOC_SIZE_DIGITS = sum_{m \in mallocs} num_digits(m.size)
+MALLOCS_LENGTH = count(mallocs) + NUM_TOTAL_MALLOC_SIZE_DIGITS
+
+TOTAL_WRITES_ADDRESS_LENGTH = 8 * count(writes)
+TOTAL_WRITES_DATA_LENGTH = sum_{w \in writes} length(w.data)
+WRITES_LENGTH = count(writes) + TOTAL_WRITES_ADDRESS_LENGTH + TOTAL_WRITES_DATA_LENGTH
+
+TOTAL_FREES_ADDRESS_LENGTH = 8 * count(frees)
+FREES_LENGTH = count(frees) + TOTAL_FREES_ADDRESS_LENGTH
+
+OBSERVATION_LENGTH = START + MALLOCS_LENGTH + WRITES_LENGTH + FREES_LENGTH + END_INPUT
+TARGET_LENGTH = length(output) + END_OUTPUT
+
+LENGTH = OBSERVATION_LENGTH + TARGET_LENGTH
+
+IOC-DAC-PSC
+===========
+
+time       : >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+mask       : 0 0 0 0 0  0  0  0  0 0  0  0  0 0 0 0  0  0  0  0 0  0  0  0  0 0  0  0  0  0 0  0  0  0  0 1 1  1 1  1 1  1 1  1 1 1 1  1 1  1 1  1 1  1 1  1 1 1 1 1  1 1  1 1  1 1  1 1  1
+-----------:-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+start      : 1
+malloc     :   1                            1
+write      :       1                            1
+free       :                                                                1             1
+size       :     5                            5
+dac        :         70 00 fa 10   40 40 40       70 00 fa 20   41 41 41 41   70 00 fa 10   70 00 fa 20
+psc        :                     1                            1
+end input  :                                                                                            1
+-----------:-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+output     :                                                                                              a \n 5 \n l \n 0 \n a a a \n a \n 5 \n l \n 1 \n b b b b \n f \n 0 \n f \n 1 \n
+end output :                                                                                                                                                                              1
+-----------:-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+mask       : 0 0 0 0 0  0  0  0  0 0  0  0  0 0 0 0  0  0  0  0 0  0  0  0  0 0  0  0  0  0 0  0  0  0  0 1 1  1 1  1 1  1 1  1 1 1 1  1 1  1 1  1 1  1 1  1 1 1 1 1  1 1  1 1  1 1  1 1  1
+
+START = 1
+END_INPUT = 1
+END_OUTPUT = 1
+
+num_digits(n) = floor(log_10(n)) + 1
+NUM_TOTAL_MALLOC_SIZE_DIGITS = sum_{m \in mallocs} num_digits(m.size)
+MALLOCS_LENGTH = count(mallocs) + NUM_TOTAL_MALLOC_SIZE_DIGITS
+
+TOTAL_WRITES_ADDRESS_LENGTH = 8 * count(writes)
+TOTAL_WRITES_DATA_LENGTH = sum_{w \in writes} length(w.data)
+TOTAL_WRITES_PARAM_SEP_LENGTH = count(writes)
+WRITES_LENGTH = count(writes) + TOTAL_WRITES_ADDRESS_LENGTH + TOTAL_WRITES_PARAM_SEP_LENGTH + TOTAL_WRITES_DATA_LENGTH
+
+TOTAL_FREES_ADDRESS_LENGTH = 8 * count(frees)
+FREES_LENGTH = count(frees) + TOTAL_FREES_ADDRESS_LENGTH
+
+OBSERVATION_LENGTH = START + MALLOCS_LENGTH + WRITES_LENGTH + FREES_LENGTH + END_INPUT
+TARGET_LENGTH = length(output) + END_OUTPUT
+
+LENGTH = OBSERVATION_LENGTH + TARGET_LENGTH
+
+IOC-DASC
+========
+
+time       : >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+mask       : 0 0 0  0 0  0  0  0  0  0  0  0 0  0 0  0  0  0  0  0  0  0  0 0  0  0  0  0 0  0  0  0  0 1 1  1 1  1 1  1 1  1 1 1 1  1 1  1 1  1 1  1 1  1 1 1 1 1  1 1  1 1  1 1  1 1  1
+-----------:-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+start      : 1
+malloc     :   1                           1
+write      :        1                           1
+free       :                                                              1             1
+dasc       :     35   70 00 fa 10 40 40 40   35   70 00 fa 20 41 41 41 41   70 00 fa 10   70 00 fa 20
+end input  :                                                                                          1
+-----------:-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+output     :                                                                                            a \n 5 \n l \n 0 \n a a a \n a \n 5 \n l \n 1 \n b b b b \n f \n 0 \n f \n 1 \n
+end output :                                                                                                                                                                            1
+-----------:-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+mask       : 0 0 0  0 0  0  0  0  0  0  0  0 0  0 0  0  0  0  0  0  0  0  0 0  0  0  0  0 0  0  0  0  0 1 1  1 1  1 1  1 1  1 1 1 1  1 1  1 1  1 1  1 1  1 1 1 1 1  1 1  1 1  1 1  1 1  1
+
+START = 1
+END_INPUT = 1
+END_OUTPUT = 1
+
+num_digits(n) = floor(log_10(n)) + 1
+NUM_TOTAL_MALLOC_SIZE_DIGITS = sum_{m \in mallocs} num_digits(m.size)
+MALLOCS_LENGTH = count(mallocs) + NUM_TOTAL_MALLOC_SIZE_DIGITS
+
+TOTAL_WRITES_ADDRESS_LENGTH = 8 * count(writes)
+TOTAL_WRITES_DATA_LENGTH = sum_{w \in writes} length(w.data)
+WRITES_LENGTH = count(writes) + TOTAL_WRITES_ADDRESS_LENGTH + TOTAL_WRITES_DATA_LENGTH
+
+TOTAL_FREES_ADDRESS_LENGTH = 8 * count(frees)
+FREES_LENGTH = count(frees) + TOTAL_FREES_ADDRESS_LENGTH
+
+OBSERVATION_LENGTH = START + MALLOCS_LENGTH + WRITES_LENGTH + FREES_LENGTH + END_INPUT
+TARGET_LENGTH = length(output) + END_OUTPUT
+
+LENGTH = OBSERVATION_LENGTH + TARGET_LENGTH
+
+IOC-DASC-PSC
+============
+
+time       : >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+mask       : 0 0 0  0 0  0  0  0  0 0  0  0  0 0  0 0  0  0  0  0 0  0  0  0  0 0  0  0  0  0 0  0  0  0  0 1 1  1 1  1 1  1 1  1 1 1 1  1 1  1 1  1 1  1 1  1 1 1 1 1  1 1  1 1  1 1  1 1  1
+-----------:---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+start      : 1
+malloc     :   1                             1
+write      :        1                             1
+free       :                                                                  1             1
+size       :     35                            35
+dasc       :          70 00 fa 10   40 40 40        70 00 fa 20   41 41 41 41   70 00 fa 10   70 00 fa 20
+psc        :                      1                             1
+end input  :                                                                                              1
+-----------:---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+output     :                                                                                                a \n 5 \n l \n 0 \n a a a \n a \n 5 \n l \n 1 \n b b b b \n f \n 0 \n f \n 1 \n
+end output :                                                                                                                                                                                1
+-----------:---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+mask       : 0 0 0  0 0  0  0  0  0 0  0  0  0 0  0 0  0  0  0  0 0  0  0  0  0 0  0  0  0  0 0  0  0  0  0 1 1  1 1  1 1  1 1  1 1 1 1  1 1  1 1  1 1  1 1  1 1 1 1 1  1 1  1 1  1 1  1 1  1
+
+START = 1
+END_INPUT = 1
+END_OUTPUT = 1
+
+num_digits(n) = floor(log_10(n)) + 1
+NUM_TOTAL_MALLOC_SIZE_DIGITS = sum_{m \in mallocs} num_digits(m.size)
+MALLOCS_LENGTH = count(mallocs) + NUM_TOTAL_MALLOC_SIZE_DIGITS
+
+TOTAL_WRITES_ADDRESS_LENGTH = 8 * count(writes)
+TOTAL_WRITES_DATA_LENGTH = sum_{w \in writes} length(w.data)
+TOTAL_WRITES_PARAM_SEP_LENGTH = count(writes)
+WRITES_LENGTH = count(writes) + TOTAL_WRITES_ADDRESS_LENGTH + TOTAL_WRITES_PARAM_SEP_LENGTH + TOTAL_WRITES_DATA_LENGTH
+
+TOTAL_FREES_ADDRESS_LENGTH = 8 * count(frees)
+FREES_LENGTH = count(frees) + TOTAL_FREES_ADDRESS_LENGTH
+
+OBSERVATION_LENGTH = START + MALLOCS_LENGTH + WRITES_LENGTH + FREES_LENGTH + END_INPUT
+TARGET_LENGTH = length(output) + END_OUTPUT
+
+LENGTH = OBSERVATION_LENGTH + TARGET_LENGTH
+
+SOC
+===
+
+time       : >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+mask       : 0 0 0 0 0  0  0  0  0  0  0  0 0 0 0  0  0  0  0  0  0  0  0 0  0  0  0  0 0  0  0  0  0 1 1  1 1  1 1  1 1  1 1 1 1  1 1  1 1  1 1  1 1  1 1 1 1 1  1 1  1 1  1 1  1 1  1
+-----------:---------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+start      : 1
+operation  :   1   2                      1   2                         3             3
+size       :     5                          5
+address    :         70 00 fa 10                70 00 fa 20               70 00 fa 10   70 00 fa 20
+data       :                     40 40 40                   41 41 41 41
+end input  :                                                                                        1
+-----------:-------------------------------------------------------------------------------------------------------------------------------
+output     :                                                                                          a \n 5 \n l \n 0 \n a a a \n a \n 5 \n l \n 1 \n b b b b \n f \n 0 \n f \n 1 \n
+end output :                                                                                                                                                                          1
+-----------:---------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+mask       : 0 0 0 0 0  0  0  0  0  0  0  0 0 0 0  0  0  0  0  0  0  0  0 0  0  0  0  0 0  0  0  0  0 1 1  1 1  1 1  1 1  1 1 1 1  1 1  1 1  1 1  1 1  1 1 1 1 1  1 1  1 1  1 1  1 1  1
+
+Length is same as IOC.
+
+SOC-DAC
+=======
+
+time       : >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+mask       : 0 0 0 0 0  0  0  0  0  0  0  0 0 0 0  0  0  0  0  0  0  0  0 0  0  0  0  0 0  0  0  0  0 1 1  1 1  1 1  1 1  1 1 1 1  1 1  1 1  1 1  1 1  1 1 1 1 1  1 1  1 1  1 1  1 1  1
+-----------:---------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+start      : 1
+operation  :   1   2                      1   2                         3             3
+size       :     5                          5
+dac        :         70 00 fa 10 40 40 40       70 00 fa 20 41 41 41 41   70 00 fa 10   70 00 fa 20
+end input  :                                                                                        1
+-----------:---------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+output     :                                                                                          a \n 5 \n l \n 0 \n a a a \n a \n 5 \n l \n 1 \n b b b b \n f \n 0 \n f \n 1 \n
+end output :                                                                                                                                                                          1
+-----------:---------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+mask       : 0 0 0 0 0  0  0  0  0  0  0  0 0 0 0  0  0  0  0  0  0  0  0 0  0  0  0  0 0  0  0  0  0 1 1  1 1  1 1  1 1  1 1 1 1  1 1  1 1  1 1  1 1  1 1 1 1 1  1 1  1 1  1 1  1 1  1
+
+Length is same as IOC-DAC.
+
+SOC-DAC-PSC
+===========
+
+time       : >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+mask       : 0 0 0 0 0  0  0  0  0 0  0  0  0 0 0 0  0  0  0  0 0  0  0  0  0 0  0  0  0  0 0  0  0  0  0 1 1  1 1  1 1  1 1  1 1 1 1  1 1  1 1  1 1  1 1  1 1 1 1 1  1 1  1 1  1 1  1 1  1
+-----------:-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+start      : 1
+operation  :   1   2                        1   2                           3             3
+size       :     5                            5
+dac        :         70 00 fa 10   40 40 40       70 00 fa 20   41 41 41 41   70 00 fa 10   70 00 fa 20
+psc        :                     1                            1
+end input  :                                                                                            1
+-----------:-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+output     :                                                                                              a \n 5 \n l \n 0 \n a a a \n a \n 5 \n l \n 1 \n b b b b \n f \n 0 \n f \n 1 \n
+end output :                                                                                                                                                                              1
+-----------:-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+mask       : 0 0 0 0 0  0  0  0  0 0  0  0  0 0 0 0  0  0  0  0 0  0  0  0  0 0  0  0  0  0 0  0  0  0  0 1 1  1 1  1 1  1 1  1 1 1 1  1 1  1 1  1 1  1 1  1 1 1 1 1  1 1  1 1  1 1  1 1  1
+
+Length is same as IOC-DAC-PSC.
+
+SOC-DASC
+========
+
+time       : >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+mask       : 0 0 0  0 0  0  0  0  0  0  0  0 0  0 0  0  0  0  0  0  0  0  0 0  0  0  0  0 0  0  0  0  0 1 1  1 1  1 1  1 1  1 1 1 1  1 1  1 1  1 1  1 1  1 1 1 1 1  1 1  1 1  1 1  1 1  1
+-----------:-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+start      : 1
+operation  :   1    2                      1    2                         3             3
+dasc       :     35   70 00 fa 10 40 40 40   35   70 00 fa 20 41 41 41 41   70 00 fa 10   70 00 fa 20
+end input  :                                                                                          1
+-----------:-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+output     :                                                                                            a \n 5 \n l \n 0 \n a a a \n a \n 5 \n l \n 1 \n b b b b \n f \n 0 \n f \n 1 \n
+end output :                                                                                                                                                                            1
+-----------:-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+mask       : 0 0 0  0 0  0  0  0  0  0  0  0 0  0 0  0  0  0  0  0  0  0  0 0  0  0  0  0 0  0  0  0  0 1 1  1 1  1 1  1 1  1 1 1 1  1 1  1 1  1 1  1 1  1 1 1 1 1  1 1  1 1  1 1  1 1  1
+
+Length is same as IOC-DASC.
+
+SOC-DASC-PSC
+============
+
+time       : >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+mask       : 0 0 0  0 0  0  0  0  0 0  0  0  0 0  0 0  0  0  0  0 0  0  0  0  0 0  0  0  0  0 0  0  0  0  0 1 1  1 1  1 1  1 1  1 1 1 1  1 1  1 1  1 1  1 1  1 1 1 1 1  1 1  1 1  1 1  1 1  1
+-----------:---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+start      : 1
+operation  :   1    2                        1    2                           3             3
+size       :     35                            35
+dasc       :          70 00 fa 10   40 40 40        70 00 fa 20   41 41 41 41   70 00 fa 10   70 00 fa 20
+psc        :                      1                             1
+end input  :                                                                                              1
+-----------:---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+output     :                                                                                                a \n 5 \n l \n 0 \n a a a \n a \n 5 \n l \n 1 \n b b b b \n f \n 0 \n f \n 1 \n
+end output :                                                                                                                                                                                1
+-----------:---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+mask       : 0 0 0  0 0  0  0  0  0 0  0  0  0 0  0 0  0  0  0  0 0  0  0  0  0 0  0  0  0  0 0  0  0  0  0 1 1  1 1  1 1  1 1  1 1 1 1  1 1  1 1  1 1  1 1  1 1 1 1 1  1 1  1 1  1 1  1 1  1
+
+Length is same as IOC-DASC-PSC.
+
+Paddings
+========
+
+Assume maximum total length is MAX_LENGTH.
+
+For each instance, we have:
+
+OBSERVATIONS_END_PADDING_LENGTH = OUTPUT_LENGTH + (MAX_LENGTH - LENGTH)
+TARGET_OFFSET_PADDING_LENGTH = INPUT_LENGTH
+TARGET_END_PADDING_LENGTH = (MAX_LENGTH - LENGTH)
+
+MASK_END_PADDING_LENGTH = (MAX_LENGTH - LENGTH)
+
+This gives us (obs, targ, mask) tensors, all of which have the same shape within a batch.
+
+Notes:
+
+ - Another option, perhaps, is to expand each data channel into eight components; one for each bit of the byte. This is probably best to do with the DASC variants because with the vanilla and DAC variants you will have 24 and 16 additional dimensions respectively.
+
+ - Going by the repeat copy example, which presents the entire bit pattern in a single time-step, You could have either four address channels (if you are presenting normalized bytes) or 64 (if you are presenting a bit pattern). This would be problematic for arbitrary length data though, because that would mean having as many channels as size(data) in bytes or size(data) * 8 in bits. The same for the output. This doesn't seem like a good approach. So you could try the bit-pattern approach to see if that helps the network store data better, but that would also take additional memory as you would be storing things (literally) bit by bit. Anyways, let's try the approaches you have documented above. I think you have the right idea.
+
+ - If we assume that no memory operation ever uses an address value that includes part of an input (due to a buffer overflow), that is, if we assume that a write address or a freed address can never be tainted, then we can simply use placeholders for written data and keep the data to a fixed value and length. This should make it easier for the network to learn. To get the actual output, we just need to perform an additional step where we use the original trace to resolve the actual data value. We can use a 64-bit data channel like the address, start with:
+
+   - 00 00 00 00  00 00 00 01
+   - 00 00 00 00  00 00 00 02
+
+   and so on. This allows us to identify 2^64 - 1 pieces of data. We can have IOC and SOC variants, and try it with combined data and address (DAC) and combined data and address with parameter separator (PSC). We could do something similar for the size as well. We don't need placeholders, but we can use additional 4 channels to represent the size as a 32-bit value. Or we could use DASC with all three channels combined, where upper 4 channels would always be zero when we are representing a size. One problem here though, is that if we represent the size as a hex value, we basically hope the network is able to convert from hex to a sequence of decimal ascii. To reduce complexity, we could, instead, have 8 channels for size, but where each channel represents the hex ascii code for the corresponding digit of the size, so the max possible representable value is 9,999,9999 bytes. For non-DASC (i.e., where size is by itself) we can present the actual digits by themselves (0-9 normalized). This does mean the network needs to learn to convert them into the ascii representation in the output, but this is a straight addition to the numeric value and so should be easy to learn. But it would be interesting to see if learning rate is faster if we use straight ascii codes.
+
+ - Without placeholders, that is, if we are going to have the network contend with the full data, we can still use this architecture. But we would basically chunk the data 8 bytes at a time and present it that way (compared to a byte at a time). That is an option to consider. Similarly we can have the output presented 8 bytes at a time too.
+
+ - I don't know what to call these. It's basically presenting the arguments to malloc, write, free in one time slice instead over multiple. Maybe we call the original ones 1B (one byte at a time) and these ones 8B (8 bytes at a time)?
+
+ - With these 8 bytes at a time channels, channel 0 will hold the least significant byte and channel 7 the most significant.
+
+ - I'm not going to document the placeholder variations, but basically the only difference is in the length we calculate. For non placeholder variants, we will have to calculate the length by ceil(sizeof(data) / 8) to figure out how many sequences we need to represent the whole data. For placeholders we only need a sequence of length 1 to present all 8 bytes of the placeholder.
+
+ - We are going to be emitting output 8 bytes at a time. I wonder if this is ok? Will this be difficult for the network to learn? The thing is that when we chunk the output, the data is essentially split across sequences. Can the network know that if there are only 4 bytes remaining after writing out l \n 0 \n, and the data being written is 8 bytes, that it needs to emit the first 4 bytes, and then the next 4 bytes? The information would be inside one memory location. can the network only read part of a location and not the other part? Another option is to emit the output as a stream of bytes instead of a chunk...?
+
+ - For data and address, we will present in the order MSB to LSB. so address0 is MSB. If we have a value in data that is less than 8 bytes, for example, let's say we had a 4-byte value b0-b3. Then we would have data4-data7 with b0, b1, b2, b3.
+
+ - !!!IMPORTANT!!! Take the example of infantheap. One issue we have is that inputs may contain sequences of commands that are basically NOPs, because they are invalid (e.g., invalid options, invalid size, etc.). In this case the program prints an error message and and shows the options again. This also means that no memory operations are done, so they will not be part of the trace. This is a problem because there is no way the network can predict what sequences of NOP commands it can output. There is not enough information in the trace for that. The quickest option for infantheap now is to simply exit with a custom error code on an invalid option -- this basically treats the invalid options as crashes and so we can ignore those inputs. However, it would be useful to investigate how we can provide information to the network to figure out what NOP sequences there might be. To do this we would keep track of the STDERR and STDOUT of the program as well, and then feed that into the network. We could, as we are doing now, simply provide it as a byte stream or 8 bytes at a time. However, a better option would be to vectorize the text contents of STDERR and STDOUT. So one part of training is to gather all the STDERR and STDOUT text, take out stopwords, punctuation, etc, and then vectorize it through word2vec. This shouldn't take too long since the vocabulary would be really small. There is the question of dimensions. We could probably start at 25 dimensions because there aren't so many words. Or even lower. Then when training the DNC, we have two channels -- STDERR and STDOUT -- and we present it on there. We do lose temporal information in this case, or basically it is up to the network to figure out the association between the traces and the STDERR/STDOUT content. This could be hard. So see if there is a way write an instrumenter that will intercept STDIN, STDOUT, and STDERR. Maybe with angr, actually, you could do this? Then you could make it part of the trace. OH WAIT ONE PROBLEM. You won't have STDERR and STDOUT when you get a trace from HeapHopper arggh. So we can't actually do this. So I guess the only thing to do is weed out input that contains NOPs. you could maybe do this with statistical analysis? Plot a histogram of the ratio of input size to trace size in bytes. You should see distinct populations. There should be a pretty good correlation between input size and trace size for the most part. So the "good" inputs will be clustered there. But you will also cases where you have a very large input with a small trace size; this is the case when the input might have a lot of NOPs, or stuff that doesn't cause memory operations to happen. It could also include cases where the program exited early due to an erroneous input. While the fuzzer may store the entire input, it doesn't mean the program necessary uses all of it. Could we identify these in angr?
+ - !!!!IMPORTANT!!! you need to intercept reads. and you need a channel for reads. but make it simple. you don't care about the data that is read. just keep track of the address that is read. so in angr you need to intercept reads. so the read will basically be like a free in the models you have here. so you just need to add one more channel in the IOC variants, and one more value in SOC variants.
+ - !!!!IMPORTANT!!! >>> DONE! non-crashing input is kept even if coverage didn't change. if you don't get enough training data from the fuzzer, you need to modify afl-fuzz to keep inputs even if they don't change coverage.
+ - !!!!!! TODO !!!!!!! >>> trace files aren't getting copied over properly after your new keep_everything change. maybe it's not such a big deal because you aren't going to use the trace files anyway. you're going to have angr do it. but would be good to solve.
+
+Individual operation channels 8B (IOC-8B)
+=========================================
+
+start: 0/1
+malloc: 0/1
+free: 0/1
+write: 0/1
+size0: 0-9 normalized (try with 0-255 normalized; each ends up representing ascii code)
+size1: 0-9 normalized
+size2: 0-9 normalized
+size3: 0-9 normalized
+size4: 0-9 normalized
+size5: 0-9 normalized
+size6: 0-9 normalized
+size7: 0-9 normalized
+address0: 0-255 normalized
+address1: 0-255 normalized
+address2: 0-255 normalized
+address3: 0-255 normalized
+address4: 0-255 normalized
+address5: 0-255 normalized
+address6: 0-255 normalized
+address7: 0-255 normalized
+data0: 0-255 normalized
+data1: 0-255 normalized
+data2: 0-255 normalized
+data3: 0-255 normalized
+data4: 0-255 normalized
+data5: 0-255 normalized
+data6: 0-255 normalized
+data7: 0-255 normalized
+end input: 0/1
+output0: 0-255 normalized
+output1: 0-255 normalized
+output2: 0-255 normalized
+output3: 0-255 normalized
+output4: 0-255 normalized
+output5: 0-255 normalized
+output6: 0-255 normalized
+output7: 0-255 normalized
+end output: 0/1
+
+Num observation channels: 29 (1 start channel, 3 op channels, 8 size channels, 8 address channels, 8 data channels, and 1 end-input channel)
+Num target channels: 9 (8 output channels and one end-output channel)
+
+Individual operation channels with combined data-address channel 8B (IOC-DAC-8B)
+================================================================================
+
+data and address combined into dac0, .., dac7. Each one has value 0-255 normalized.
+
+Rest is the same as IOC-8B
+
+Num observation channels: 21 (1 start channel, 3 op channels, 8 size channels, 8 dac channels, and 1 end-input channel)
+Num target channels: 9
+
+Individual operation channels with combined data-address channel and parameter separator channel 8B (IOC-DAC-PSC-8B)
+====================================================================================================================
+
+param sep: 0/1. for write instruction, set to 1 after address is provided and before data is provided. 0 otherwise.
+
+Rest is the same as IOC-DAC-8B.
+
+Num observation channels: 22 (1 start channel, 3 op channels, 8 size channels, 8 dac channels, 1 param-sep channel, and 1 end-input channel)
+Num target channels: 9
+
+Individual operation channels with combined data-address-size channel 8B (IOC-DASC-8B)
+======================================================================================
+
+data, address, and size combined into one channel. Size is represented as ASCII hex
+codes representing the integer size. Eg 5 is 0x35 and 10 is 0x31 0x30
+
+Rest is same as IOC.
+
+Num observation channels: 13 (1 start channel, 3 op channels, 8 dasc channels, and 1 end-input channel)
+Num target channels: 9
+
+Individual operation channels with combined data-address-size channel and parameter separator channel 8B (IOC-DASC-PSC-8B)
+==========================================================================================================================
+
+param sep: 0/1. for write instruction, set to 1 after address is provided and before data is provided. 0 otherwise.
+
+Rest is same as IOC-DASC.
+
+Num observation channels: 14 (1 start channel, 3 op channels, 8 dasc channels, 1 param-sep channel, and 1 end-input channel)
+Num target channels: 9
+
+Single operation channel 8B (SOC-8B)
+====================================
+
+operation: 0-3 (normalized: 0 = nop, 1 = malloc, 2 = write, 3 = free)
+
+Rest is the same as IOC-8B.
+
+Num observation channels: 27 channels
+Num target channels: 9
+
+Single operation channel with combined data-address channel 8B (SOC-DAC-8B)
+===========================================================================
+
+data and address combined into dac0, .., dac7. Each one has value 0-255 normalized.
+
+Rest is the same as SOC-8B
+
+Num observation channels: 19
+Num target channels: 9
+
+Single operation channels with combined data-address channel and parameter separator channel 8B (SOC-DAC-PSC-8B)
+================================================================================================================
+
+param sep: 0/1. for write instruction, set to 1 after address is provided and before data is provided. 0 otherwise.
+
+Rest is the same as SOC-DAC-8B.
+
+Num observation channels: 20
+Num target channels: 9
+
+Single operation channels with combined data-address-size channel 8B (SOC-DASC-8B)
+==================================================================================
+
+data, address, and size combined into one channel. Size is represented as ASCII hex
+codes representing the integer size. Eg 5 is 0x35 and 10 is 0x31 0x30
+
+Rest is same as SOC.
+
+Num observation channels: 11
+Num target channels: 9
+
+Single operation channels with combined data-address-size channel and parameter separator channel 8B (SOC-DASC-PSC-8B)
+==========================================================================================================================
+
+param sep: 0/1. for write instruction, set to 1 after address is provided and before data is provided. 0 otherwise.
+
+Rest is same as SOC-DASC.
+
+Num observation channels: 12
+Num target channels: 9
+
+Examples
+========
+
+IOC-8B
+======
+
+time       : >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+mask       : 0 0 0 0 0  0  0 0 0 0  0  0  0 0  0 0  0 1  1  1  1  1
+-----------:-------------------------------------------------------
+start      : 1
+malloc     :   1           1
+write      :       1           1
+free       :                           1       1
+size0      :     5           5
+size1      :
+size2      :
+size3      :
+size4      :
+size5      :
+size6      :
+size7      :
+address0   :         70          70         70   70
+address1   :         00          00         00   00
+address2   :         fa          fa         fa   fa
+address3   :         10          20         10   20
+address4   :         de          ca         de   ca
+address5   :         ad          fe         ad   fe
+address6   :         be          ba         be   ba
+address7   :         ef          be         ef   be
+data0      :            40          41
+data1      :            40          41
+data2      :            40          41
+data3      :
+data4      :
+data5      :
+data6      :
+data7      :
+end input  :                                        1
+-----------:-------------------------------------------------------
+output0    :                                          a  a  l  f
+output1    :                                          \n a  \n \n
+output2    :                                          5  a  1  0
+output3    :                                          \n \n \n \n
+output4    :                                          l  a  b  f
+output5    :                                          \n \n b  \n
+output6    :                                          0  5  b  1
+output7    :                                          \n \n \n \n
+end output :                                                      1
+-----------:-------------------------------------------------------
+mask       : 0 0 0 0 0  0  0 0 0 0  0  0  0 0  0 0  0 1  1  1  1  1
+
+START = 1
+END_INPUT = 1
+END_OUTPUT = 1
+
+MALLOCS_LENGTH = 2 * count(mallocs) (one for op, one for size)
+
+WRITES_LENGTH = 2 * count(writes) + ceil(sizeof(data) / 8)
+                3 * count(writes) # for placeholder version
+
+FREES_LENGTH = 2 * count(frees)
+
+OBSERVATION_LENGTH = START + MALLOCS_LENGTH + WRITES_LENGTH + FREES_LENGTH + END_INPUT
+TARGET_LENGTH = ceil(sizeof(output) / 8) + END_OUTPUT
+
+LENGTH = OBSERVATION_LENGTH + TARGET_LENGTH
+
+IOC-DAC-8B
+==========
+
+time       : >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+mask       : 0 0 0 0 0  0  0 0 0 0  0  0  0 0  0 0  0 1  1  1  1  1
+-----------:-------------------------------------------------------
+start      : 1
+malloc     :   1           1
+write      :       1           1
+free       :                           1       1
+size0      :     5           5
+size1      :
+size2      :
+size3      :
+size4      :
+size5      :
+size6      :
+size7      :
+dac0       :         70 40       70 41      70   70
+dac1       :         00 40       00 41      00   00
+dac2       :         fa 40       fa 41      fa   fa
+dac3       :         10          10         10   20
+dac4       :         de          ca         de   ca
+dac5       :         ad          fe         ad   fe
+dac6       :         be          ba         be   ba
+dac7       :         ef          be         ef   be
+end input  :                                        1
+-----------:-------------------------------------------------------
+output0    :                                          a  a  l  f
+output1    :                                          \n a  \n \n
+output2    :                                          5  a  1  0
+output3    :                                          \n \n \n \n
+output4    :                                          l  a  b  f
+output5    :                                          \n \n b  \n
+output6    :                                          0  5  b  1
+output7    :                                          \n \n \n \n
+end output :                                                      1
+-----------:-------------------------------------------------------
+mask       : 0 0 0 0 0  0  0 0 0 0  0  0  0 0  0 0  0 1  1  1  1  1
+
+Length same as IOC-8B.
+
+IOC-DAC-PSC-8B
+==============
+
+time       : >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+mask       : 0 0 0 0 0  0 0  0 0 0 0  0 0  0  0 0  0 0  0 1  1  1  1  1
+-----------:-----------------------------------------------------------
+start      : 1
+malloc     :   1             1
+write      :       1             1
+free       :                               1       1
+size0      :     5             5
+size1      :
+size2      :
+size3      :
+size4      :
+size5      :
+size6      :
+size7      :
+dac0       :         70   40       70   41      70   70
+dac1       :         00   40       00   41      00   00
+dac2       :         fa   40       fa   41      fa   fa
+dac3       :         10            10           10   20
+dac4       :         de            ca           de   ca
+dac5       :         ad            fe           ad   fe
+dac6       :         be            ba           be   ba
+dac7       :         ef            be           ef   be
+psc        :            1             1
+end input  :                                            1
+-----------:-----------------------------------------------------------
+output0    :                                              a  a  l  f
+output1    :                                              \n a  \n \n
+output2    :                                              5  a  1  0
+output3    :                                              \n \n \n \n
+output4    :                                              l  a  b  f
+output5    :                                              \n \n b  \n
+output6    :                                              0  5  b  1
+output7    :                                              \n \n \n \n
+end output :                                                          1
+-----------:-----------------------------------------------------------
+mask       : 0 0 0 0 0  0 0  0 0 0 0  0 0  0  0 0  0 0  0 1  1  1  1  1
+
+START = 1
+END_INPUT = 1
+END_OUTPUT = 1
+
+MALLOCS_LENGTH = 2 * count(mallocs) (one for op, one for size)
+
+WRITES_LENGTH = 3 * count(writes) + ceil(sizeof(data) / 8)
+                4 * count(writes) # for placeholder version
+
+FREES_LENGTH = 2 * count(frees)
+
+OBSERVATION_LENGTH = START + MALLOCS_LENGTH + WRITES_LENGTH + FREES_LENGTH + END_INPUT
+TARGET_LENGTH = ceil(sizeof(output) / 8) + END_OUTPUT
+
+LENGTH = OBSERVATION_LENGTH + TARGET_LENGTH
+
+IOC-DASC-8B
+===========
+
+time       : >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+mask       : 0 0 0  0 0  0  0 0  0 0  0  0  0 0  0 0  0 1  1  1  1  1
+-----------:--------------------------------------------------------
+start      : 1
+malloc     :   1            1
+write      :        1            1
+free       :                            1       1
+dasc0      :     35   70 40   35   70 41      70   70
+dasc1      :          00 40        00 41      00   00
+dasc2      :          fa 40        fa 41      fa   fa
+dasc3      :          10           20         10   20
+dasc4      :          de           ca         de   ca
+dasc5      :          ad           fe         ad   fe
+dasc6      :          be           ba         be   ba
+dasc7      :          ef           be         ef   be
+end input  :                                          1
+-----------:---------------------------------------------------------
+output0    :                                            a  a  l  f
+output1    :                                            \n a  \n \n
+output2    :                                            5  a  1  0
+output3    :                                            \n \n \n \n
+output4    :                                            l  a  b  f
+output5    :                                            \n \n b  \n
+output6    :                                            0  5  b  1
+output7    :                                            \n \n \n \n
+end output :                                                        1
+-----------:---------------------------------------------------------
+mask       : 0 0 0  0 0  0  0 0  0 0  0  0  0 0  0 0  0 1  1  1  1  1
+
+Length same as IOC-8B.
+
+IOC-DASC-PSC-8B
+===============
+
+time       : >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+mask       : 0 0 0  0 0  0 0  0 0  0 0  0 0  0  0 0  0 0  0 1  1  1  1  1
+-----------:-----------------------------------------------------------
+start      : 1
+malloc     :   1              1
+write      :        1              1
+free       :                                 1       1
+dasc0      :     35   70   40   35   70   41      70   70
+dasc1      :          00   40        00   41      00   00
+dasc2      :          fa   40        fa   41      fa   fa
+dasc3      :          10             20           10   20
+dasc4      :          de             ca           de   ca
+dasc5      :          ad             fe           ad   fe
+dasc6      :          be             ba           be   ba
+dasc7      :          ef             be           ef   be
+psc        :             1              1
+end input  :                                              1
+-----------:-------------------------------------------------------------
+output0    :                                                a  a  l  f
+output1    :                                                \n a  \n \n
+output2    :                                                5  a  1  0
+output3    :                                                \n \n \n \n
+output4    :                                                l  a  b  f
+output5    :                                                \n \n b  \n
+output6    :                                                0  5  b  1
+output7    :                                                \n \n \n \n
+end output :                                                            1
+-----------:-------------------------------------------------------------
+mask       : 0 0 0  0 0  0 0  0 0  0 0  0 0  0  0 0  0 0  0 1  1  1  1  1
+
+Length same as IOC-DAC-PSC-8B.
+
+SOC-8B
+======
+
+time       : >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+mask       : 0 0 0 0 0  0  0 0 0 0  0  0  0 0  0 0  0 1  1  1  1  1
+-----------:-------------------------------------------------------
+start      : 1
+operation  :   1   2       1   2       3       3
+size0      :     5           5
+size1      :
+size2      :
+size3      :
+size4      :
+size5      :
+size6      :
+size7      :
+address0   :         70          70         70   70
+address1   :         00          00         00   00
+address2   :         fa          fa         fa   fa
+address3   :         10          20         10   20
+address4   :         de          ca         de   ca
+address5   :         ad          fe         ad   fe
+address6   :         be          ba         be   ba
+address7   :         ef          be         ef   be
+data0      :            40          41
+data1      :            40          41
+data2      :            40          41
+data3      :
+data4      :
+data5      :
+data6      :
+data7      :
+end input  :                                        1
+-----------:-------------------------------------------------------
+output0    :                                          a  a  l  f
+output1    :                                          \n a  \n \n
+output2    :                                          5  a  1  0
+output3    :                                          \n \n \n \n
+output4    :                                          l  a  b  f
+output5    :                                          \n \n b  \n
+output6    :                                          0  5  b  1
+output7    :                                          \n \n \n \n
+end output :                                                      1
+-----------:-------------------------------------------------------
+mask       : 0 0 0 0 0  0  0 0 0 0  0  0  0 0  0 0  0 1  1  1  1  1
+
+Length same as IOC-8B.
+
+SOC-DAC-8B
+==========
+
+time       : >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+mask       : 0 0 0 0 0  0  0 0 0 0  0  0  0 0  0 0  0 1  1  1  1  1
+-----------:-------------------------------------------------------
+start      : 1
+operation  :   1   2       1   2       3       3
+size0      :     5           5
+size1      :
+size2      :
+size3      :
+size4      :
+size5      :
+size6      :
+size7      :
+dac0       :         70 40       70 41      70   70
+dac1       :         00 40       00 41      00   00
+dac2       :         fa 40       fa 41      fa   fa
+dac3       :         10          10         10   20
+dac4       :         de          ca         de   ca
+dac5       :         ad          fe         ad   fe
+dac6       :         be          ba         be   ba
+dac7       :         ef          be         ef   be
+end input  :                                        1
+-----------:-------------------------------------------------------
+output0    :                                          a  a  l  f
+output1    :                                          \n a  \n \n
+output2    :                                          5  a  1  0
+output3    :                                          \n \n \n \n
+output4    :                                          l  a  b  f
+output5    :                                          \n \n b  \n
+output6    :                                          0  5  b  1
+output7    :                                          \n \n \n \n
+end output :                                                      1
+-----------:-------------------------------------------------------
+mask       : 0 0 0 0 0  0  0 0 0 0  0  0  0 0  0 0  0 1  1  1  1  1
+
+Length same as IOC-8B
+
+SOC-DAC-PSC-8B
+==============
+
+time       : >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+mask       : 0 0 0 0 0  0 0  0 0 0 0  0 0  0  0 0  0 0  0 1  1  1  1  1
+-----------:-----------------------------------------------------------
+start      : 1
+operation  :   1   2         1   2         3       3
+size0      :     5             5
+size1      :
+size2      :
+size3      :
+size4      :
+size5      :
+size6      :
+size7      :
+dac0       :         70   40       70   41      70   70
+dac1       :         00   40       00   41      00   00
+dac2       :         fa   40       fa   41      fa   fa
+dac3       :         10            10           10   20
+dac4       :         de            ca           de   ca
+dac5       :         ad            fe           ad   fe
+dac6       :         be            ba           be   ba
+dac7       :         ef            be           ef   be
+psc        :            1             1
+end input  :                                            1
+-----------:-----------------------------------------------------------
+output0    :                                              a  a  l  f
+output1    :                                              \n a  \n \n
+output2    :                                              5  a  1  0
+output3    :                                              \n \n \n \n
+output4    :                                              l  a  b  f
+output5    :                                              \n \n b  \n
+output6    :                                              0  5  b  1
+output7    :                                              \n \n \n \n
+end output :                                                          1
+-----------:-----------------------------------------------------------
+mask       : 0 0 0 0 0  0 0  0 0 0 0  0 0  0  0 0  0 0  0 1  1  1  1  1
+
+Length same as IOC-DAC-PSC-8B.
+
+SOC-DASC-8B
+===========
+
+time       : >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+mask       : 0 0 0  0 0  0  0 0  0 0  0  0  0 0  0 0  0 1  1  1  1  1
+-----------:--------------------------------------------------------
+start      : 1
+operation  :   1    2       1    2       3       3
+dasc0      :     35   70 40   35   70 41      70   70
+dasc1      :          00 40        00 41      00   00
+dasc2      :          fa 40        fa 41      fa   fa
+dasc3      :          10           20         10   20
+dasc4      :          de           ca         de   ca
+dasc5      :          ad           fe         ad   fe
+dasc6      :          be           ba         be   ba
+dasc7      :          ef           be         ef   be
+end input  :                                          1
+-----------:---------------------------------------------------------
+output0    :                                            a  a  l  f
+output1    :                                            \n a  \n \n
+output2    :                                            5  a  1  0
+output3    :                                            \n \n \n \n
+output4    :                                            l  a  b  f
+output5    :                                            \n \n b  \n
+output6    :                                            0  5  b  1
+output7    :                                            \n \n \n \n
+end output :                                                        1
+-----------:---------------------------------------------------------
+mask       : 0 0 0  0 0  0  0 0  0 0  0  0  0 0  0 0  0 1  1  1  1  1
+
+Length same as IOC-8B.
+
+SOC-DASC-PSC-8B
+===============
+
+time       : >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+mask       : 0 0 0  0 0  0 0  0 0  0 0  0  0  0 0  0 0  0 1  1  1  1  1
+-----------:-----------------------------------------------------------
+start      : 1
+operation  :   1    2         1    2       3       3
+dasc0      :     35   70   40   35   70   41      70   70
+dasc1      :          00   40        00   41      00   00
+dasc2      :          fa   40        fa   41      fa   fa
+dasc3      :          10             20           10   20
+dasc4      :          de             ca           de   ca
+dasc5      :          ad             fe           ad   fe
+dasc6      :          be             ba           be   ba
+dasc7      :          ef             be           ef   be
+psc        :             1
+end input  :                                            1
+-----------:-----------------------------------------------------------
+output0    :                                              a  a  l  f
+output1    :                                              \n a  \n \n
+output2    :                                              5  a  1  0
+output3    :                                              \n \n \n \n
+output4    :                                              l  a  b  f
+output5    :                                              \n \n b  \n
+output6    :                                              0  5  b  1
+output7    :                                              \n \n \n \n
+end output :                                                          1
+-----------:-----------------------------------------------------------
+mask       : 0 0 0  0 0  0 0  0 0  0 0  0  0  0 0  0 0  0 1  1  1  1  1
+
+Length same as IOC-DAC-PSC-8B.
+

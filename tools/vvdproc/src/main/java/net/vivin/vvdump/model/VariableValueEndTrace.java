@@ -5,6 +5,9 @@ import lombok.Getter;
 import lombok.ToString;
 
 import java.math.BigInteger;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.function.Supplier;
 
 /**
  * Created on 11/10/20 at 12:15 PM
@@ -13,9 +16,9 @@ import java.math.BigInteger;
  */
 
 @Getter
-@AllArgsConstructor
 @ToString
 public class VariableValueEndTrace {
+
     private final String experimentName;
     private final String subject;
     private final String binaryContext;
@@ -23,6 +26,26 @@ public class VariableValueEndTrace {
     private final int pid;
     private final String exitStatus;
     private final BigInteger inputSize;
+
+    private final Map<String, Supplier<Object>> tableFieldToGetter = new HashMap<>();
+
+    public VariableValueEndTrace(String experimentName, String subject, String binaryContext, String execContext, int pid, String exitStatus, BigInteger inputSize) {
+        this.experimentName = experimentName;
+        this.subject = subject;
+        this.binaryContext = binaryContext;
+        this.execContext = execContext;
+        this.pid = pid;
+        this.exitStatus = exitStatus;
+        this.inputSize = inputSize;
+
+        tableFieldToGetter.put("experiment", this::getExperimentName);
+        tableFieldToGetter.put("subject", this::getSubject);
+        tableFieldToGetter.put("binary", this::getBinaryContext);
+        tableFieldToGetter.put("execution", this::getExecContext);
+        tableFieldToGetter.put("pid", this::getPid);
+        tableFieldToGetter.put("exit_status", this::getExitStatus);
+        tableFieldToGetter.put("input_size", this::getInputSize);
+    }
 
     private enum Components {
         EXPERIMENT_NAME,
@@ -56,5 +79,13 @@ public class VariableValueEndTrace {
             components[Components.EXIT_STATUS.index],
             new BigInteger(components[Components.INPUT_SIZE.index])
         );
+    }
+
+    public Object get(final String tableFieldName) {
+        if (!tableFieldToGetter.containsKey(tableFieldName)) {
+            throw new IllegalArgumentException("Invalid field name: " + tableFieldName);
+        }
+
+        return tableFieldToGetter.get(tableFieldName).get();
     }
 }

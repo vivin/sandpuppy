@@ -1,0 +1,21 @@
+Vectorization approach 1:
+
+ - 0: number of mallocs
+ - 1: number of callocs
+ - 2: number of frees
+ - 3: number of unique sizes
+ - 4: number of unique addresses
+
+Vectorizaion approach 2 is approach 1 plus:
+
+ - 5-66: number of chunks allocated with size 16, 24, ..., 504
+ - 67: chunks with size greater than 512K??
+
+OR we use a logarithmic bins? 1-16, 17-48, 49-112 and so on?
+
+Vectorization approach 3:
+
+Like 1, but we split up by basic block. so 0...n is number of malloc calls, but per basic block.
+
+
+

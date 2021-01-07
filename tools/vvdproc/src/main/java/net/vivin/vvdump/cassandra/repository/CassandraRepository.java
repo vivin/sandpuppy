@@ -1,6 +1,7 @@
 package net.vivin.vvdump.cassandra.repository;
 
 import lombok.extern.slf4j.Slf4j;
+import net.vivin.vvdump.cassandra.config.CassandraConfiguration;
 import net.vivin.vvdump.model.VariableValueEndTrace;
 import net.vivin.vvdump.model.VariableValueTrace;
 import net.vivin.vvdump.repository.VariableValueTraceRepository;
@@ -9,6 +10,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.cassandra.core.CassandraOperations;
 import org.springframework.stereotype.Repository;
+
+import java.math.BigInteger;
 
 /**
  * Created on 12/2/20 at 8:36 PM
@@ -20,57 +23,76 @@ import org.springframework.stereotype.Repository;
 @Repository("cassandra")
 public class CassandraRepository implements VariableValueTraceRepository {
 
+    @Value("${vvdump.sql.cassandra.delete-processes-query}")
+    private String deleteProcessesQuery;
+
+    @Value("${vvdump.sql.cassandra.delete-process-variable-value-traces-query}")
+    private String deleteProcessVariableValueTracesQuery;
+
     private final CassandraOperations cassandraOperations;
+    private final CassandraConfiguration cassandraConfiguration;
 
     @Autowired
-    public CassandraRepository(CassandraOperations cassandraOperations) {
+    public CassandraRepository(CassandraOperations cassandraOperations, CassandraConfiguration cassandraConfiguration) {
         this.cassandraOperations = cassandraOperations;
+        this.cassandraConfiguration = cassandraConfiguration;
     }
 
     private static final String PID_SUFFIX = RandomStringUtils.randomAlphabetic(6);
 
-    @Value("${vvdump.sql.cassandra.insert-variable-value-trace-query}")
-    private String insertVariableValueTraceQuery;
-
-    @Value("${vvdump.sql.cassandra.insert-fuzzed-process-info-query}")
-    private String insertFuzzedProcessInfoQuery;
-
-    @Value("${vvdump.sql.cassandra.delete-variable-value-traces-query}")
-    private String deleteVariableValueTracesQuery;
-
     @Override
     public void insertVariableValueTrace(VariableValueTrace variableValueTrace) {
-        cassandraOperations.getCqlOperations().execute(
-            insertVariableValueTraceQuery,
-            variableValueTrace.getExperimentName(),
-            variableValueTrace.getSubject(),
-            variableValueTrace.getBinaryContext(),
-            variableValueTrace.getExecContext(),
-            String.format("%d-%s", variableValueTrace.getPid(), PID_SUFFIX),
-            variableValueTrace.getFilename(),
-            variableValueTrace.getFunctionName(),
-            variableValueTrace.getVariableType(),
-            variableValueTrace.getVariableName(),
-            variableValueTrace.getDeclaredLine(),
-            variableValueTrace.getTimestamp().longValueExact(),
-            variableValueTrace.getModifiedLine(),
-            variableValueTrace.getVariableValue()
-        );
-        log.info("Inserted trace");
+        cassandraConfiguration.getTraceTableFields().forEach((table, fields) -> {
+            final String query = String.format(
+                "INSERT INTO %s (%s) VALUES (%s%s)",
+                table,
+                String.join(", ", fields),
+                fields.contains("id") ? "uuid(), " : "",
+                "?, ".repeat(fields.contains("id") ? fields.size() - 1 : fields.size()).replaceFirst(", $", "")
+            );
+
+            final Object[] values = fields.stream().filter(field -> !field.equals("id")).map(field -> {
+                Object value = variableValueTrace.get(field);
+
+                if (field.equals("pid")) {
+                    value = String.format("%s-%s", value, PID_SUFFIX);
+                } else if (value instanceof BigInteger) {
+                    value = ((BigInteger) value).longValue();
+                }
+
+                return value;
+            }).toArray();
+
+            cassandraOperations.getCqlOperations().execute(query, values);
+        });
     }
 
     @Override
     public void insertFuzzedProcessInfo(VariableValueEndTrace variableValueEndTrace) {
-        cassandraOperations.getCqlOperations().execute(
-            insertFuzzedProcessInfoQuery,
-            variableValueEndTrace.getExperimentName(),
-            variableValueEndTrace.getSubject(),
-            variableValueEndTrace.getBinaryContext(),
-            variableValueEndTrace.getExecContext(),
-            String.format("%d-%s", variableValueEndTrace.getPid(), PID_SUFFIX),
-            variableValueEndTrace.getExitStatus(),
-            variableValueEndTrace.getInputSize().longValueExact()
-        );
+        cassandraConfiguration.getProcessTableFields().forEach((table, fields) -> {
+            final String query = String.format(
+                "INSERT INTO %s (%s) VALUES (%s%s)",
+                table,
+                String.join(", ", fields),
+                fields.contains("id") ? "uuid(), " : "",
+                "?, ".repeat(fields.contains("id") ? fields.size() - 1 : fields.size()).replaceFirst(", $", "")
+            );
+
+            final Object[] values = fields.stream().filter(field -> !field.equals("id")).map(field -> {
+                Object value = variableValueEndTrace.get(field);
+
+                if (field.equals("pid")) {
+                    value = String.format("%s-%s", value, PID_SUFFIX);
+                } else if (value instanceof BigInteger) {
+                    value = ((BigInteger) value).longValue();
+                }
+
+                return value;
+            }).toArray();
+
+            cassandraOperations.getCqlOperations().execute(query, values);
+        });
+
         log.info("Inserted info for pid {}", variableValueEndTrace.getPid());
     }
 
@@ -78,11 +100,15 @@ public class CassandraRepository implements VariableValueTraceRepository {
     public void deleteVariableValueTraces(VariableValueEndTrace variableValueEndTrace) {
         log.info("Deleting traces for killed process {}", variableValueEndTrace.getPid());
         cassandraOperations.getCqlOperations().execute(
-            deleteVariableValueTracesQuery,
+            deleteProcessesQuery,
             variableValueEndTrace.getExperimentName(),
             variableValueEndTrace.getSubject(),
             variableValueEndTrace.getBinaryContext(),
             variableValueEndTrace.getExecContext(),
+            String.format("%d-%s", variableValueEndTrace.getPid(), PID_SUFFIX)
+        );
+        cassandraOperations.getCqlOperations().execute(
+            deleteProcessVariableValueTracesQuery,
             String.format("%d-%s", variableValueEndTrace.getPid(), PID_SUFFIX)
         );
     }
