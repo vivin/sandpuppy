@@ -3,7 +3,6 @@ package net.vivin.vvdump.service;
 import lombok.extern.slf4j.Slf4j;
 import net.vivin.vvdump.model.VariableValueEndTrace;
 import net.vivin.vvdump.model.VariableValueTrace;
-import net.vivin.vvdump.postgres.repository.PostgresRepository;
 import net.vivin.vvdump.repository.VariableValueTraceRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;

@@ -1,6 +1,5 @@
 package net.vivin.vvdump.model;
 
-import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.ToString;
 

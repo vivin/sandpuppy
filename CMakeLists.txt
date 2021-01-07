@@ -79,7 +79,6 @@ add_executable(PhD
         tools/FuzzFactory/reducers.c
         tools/FuzzFactory/test-instr.c
         tools/FuzzFactory/types.h
-        tools/FuzzFactory/include/lftrace.h
         tools/FuzzFactory/include/vvdump.h
         tools/FuzzFactory/llvm_mode/basefeedback.hpp tools/FuzzFactory/llvm_mode/shared-opts.cc)
 

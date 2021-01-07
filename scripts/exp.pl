@@ -119,7 +119,7 @@ my $log = Log::Simple::Color->new;
           close $writer;
           $SIG{INT} = 'IGNORE';
 
-          my $STARTUP_TIME = 10; # about the time it takes to start up vvdproc and the fuzzer
+          my $STARTUP_TIME = 13; # about the time it takes to start up vvdproc and the fuzzer
           my $FUZZ_TIME = 300 + $STARTUP_TIME;
           my $killed = 0;
           my $start_time = time();

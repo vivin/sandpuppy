@@ -107,8 +107,7 @@ EXP_ST u8 *in_dir,                    /* Input directory with test cases  */
           *in_bitmap,                 /* Input bitmap                     */
           *doc_path,                  /* Path to documentation dir        */
           *target_path,               /* Path to target binary            */
-          *orig_cmdline,              /* Original command line            */
-          *trace_dir;                 /* Where trace files live           */
+          *orig_cmdline;              /* Original command line            */
 
 EXP_ST u32 exec_tmout = EXEC_TIMEOUT; /* Configurable exec timeout (ms)   */
 static u32 hang_tmout = EXEC_TIMEOUT; /* Timeout used for hang det (ms)   */
@@ -142,7 +141,6 @@ EXP_ST u8  skip_deterministic,        /* Skip deterministic stages?       */
            persistent_mode,           /* Running in persistent mode?      */
            dsf_enabled,               /* Domain-specific fuzzing          */
            save_everything,           /* save all inputs with something in perf_map */
-           keep_everything,           /* save all noncrashing inputs!     */
            deferred_mode,             /* Deferred forkserver mode?        */
            fast_cal;                  /* Try to calibrate faster?         */
 
@@ -2564,7 +2562,6 @@ static u8 run_target(char** argv, u32 timeout) {
 
     }
 
-    //DEBUG("last_child_pid before calling forkserver is %d\n", last_child_pid);
     if ((res = read(fsrv_st_fd, &child_pid, 4)) != 4) {
 
       if (stop_soon) return 0;
@@ -2572,7 +2569,6 @@ static u8 run_target(char** argv, u32 timeout) {
 
     }
 
-    //DEBUG("\nchild_pid received from forkserver is %d\n", child_pid);
     if (child_pid <= 0) FATAL("Fork server is misbehaving (OOM?)");
     last_child_pid = child_pid;
 
@@ -2604,15 +2600,7 @@ static u8 run_target(char** argv, u32 timeout) {
 
   }
 
-  /*u8 *trace_file = alloc_printf("%s/pid-%d.trace", trace_dir, last_child_pid);
-  if (access(trace_file, F_OK) != -1) {
-      DEBUG("after running child pid %d, trace file %s exists\n", child_pid, trace_file);
-  } else {
-      DEBUG("after running child pid %d, could not find trace file %s\n", child_pid, trace_file);
-  }*/
-
   if (!WIFSTOPPED(status)) child_pid = 0;
-  //DEBUG("child_pid is now %d and last_child_pid is now %d\n\n", child_pid, last_child_pid);
 
   getitimer(ITIMER_REAL, &it);
   exec_ms = (u64) timeout - (it.it_value.tv_sec * 1000 +
@@ -2744,60 +2732,6 @@ static void write_with_gap(void* mem, u32 len, u32 skip_at, u32 skip_len) {
 
 }
 
-//TODO: we don't seem to be copying this over for every test case??
-
-static void copy(u8* source, u8* dest) {
-    s32 sfd = open(source, O_RDONLY);
-    s32 dfd = open(dest, O_WRONLY | O_CREAT | O_EXCL, 0600);
-
-    u8* tmp = ck_alloc(64 * 1024);
-
-    s32 i;
-    while ((i = read(sfd, tmp, 64 * 1024)) > 0)
-        ck_write(dfd, tmp, i, dest);
-
-    ck_free(tmp);
-    close(sfd);
-    close(dfd);
-}
-
-static void copy_trace_for_test_case(u8 *fn) {
-    //DEBUG("last_child_pid is %d\n", last_child_pid);
-
-    if (trace_dir) {
-        u8 *trace_file = alloc_printf("%s/pid-%d.trace", trace_dir, last_child_pid);
-        u8 *new_trace_file = alloc_printf("%s.trace", fn);
-
-        if (access(trace_file, F_OK) != -1) {
-            //DEBUG("source trace file %s exists\n", trace_file);
-            copy(trace_file, new_trace_file);
-        } else {
-            DEBUG("could not find source trace file %s\n", trace_file);
-        }
-
-        if (access(new_trace_file, F_OK) == -1) {
-            DEBUG("could not find new trace file %s\n", new_trace_file);
-        }
-
-        //DEBUG("created %s from trace file %s\n", new_trace_file, trace_file);
-
-        ck_free(trace_file);
-        ck_free(new_trace_file);
-    }
-}
-
-static void delete_trace_file_for_pid(s32 pid) {
-    if (trace_dir) {
-        u8 *trace_file = alloc_printf("%s/pid-%d.trace", trace_dir, pid);
-        //DEBUG("removing trace file %s\n", trace_file);
-        remove(trace_file);
-        ck_free(trace_file);
-    }
-}
-
-static void delete_trace_file() {
-    delete_trace_file_for_pid(last_child_pid);
-}
 
 static void write_vvdump_end_trace(u8 fault, s32 input_size) {
     if (!vvdump_named_pipe_available || !vvdump_env_vars_available) {
@@ -2940,11 +2874,8 @@ static u8 calibrate_case(char** argv, struct queue_entry* q, u8* use_mem,
     /* stop_soon is set by the handler for Ctrl+C. When it's pressed,
        we want to bail out quickly. */
 
-    // we won't delete trace files in these cases because always want to keep the trace from the last run_target
-    // call.
     if (stop_soon || fault != crash_mode) goto abort_calibration;
 
-    // same as above
     if (!dumb_mode && !stage_cur && !count_bytes(trace_bits)) {
       fault = FAULT_NOINST;
       goto abort_calibration;
@@ -2987,10 +2918,6 @@ static u8 calibrate_case(char** argv, struct queue_entry* q, u8* use_mem,
 
     }
 
-    // Only keep the trace file if we are on the very last stage
-    if (stage_cur != stage_max - 1) {
-        delete_trace_file();
-    }
   }
 
   stop_us = get_cur_time_us();
@@ -3095,8 +3022,6 @@ static void perform_dry_run(char** argv) {
 
     //DEBUG("\nbefore perform_dry_run->calibrate_case. last_child_pid is %d\n", last_child_pid);
     res = calibrate_case(argv, q, use_mem, 0, 1);
-    copy_trace_for_test_case(q->fname);
-    delete_trace_file();
     //DEBUG("after perform_dry_run->calibrate_case. last_child_pid is %d\n\n", last_child_pid);
 
     ck_free(use_mem);
@@ -3521,13 +3446,6 @@ static void save_as_perf_input(void * mem, u32 len) {
    save or queue the input test case for further analysis if so. Returns 1 if
    entry is saved, 0 otherwise. */
 
-// TODO: some inputs in the queue directory do not have trace files. not sure why that is.
-// TODO: also need to verify that traces are accurate. (so make sure you compare .trace with output trace file
-// TODO: after running). i think it has to do with calibrate_case or whatever where it writes data to the case file.
-// TODO: i dunno. you have to check.
-// TODO: anyway so preliminary comparison of copied trace seems to match input. so you just need to see which cases
-// TODO: you're missing. see when save_if_interesting is called. maybe there is a code path where it is not called.
-
 static u8 save_if_interesting(char** argv, void* mem, u32 len, u8 fault) {
 
   u8  *fn = "";
@@ -3542,9 +3460,6 @@ static u8 save_if_interesting(char** argv, void* mem, u32 len, u8 fault) {
     /* Keep only if there are new bits in the map, add to queue for
        future fuzzing, etc. DSF: also keep if there is a new max*/
 
-    // TODO: introduce a new option that saves literally every input as long as it's not a crash or hang.
-    // TODO: obv this would be slower. but it's for training data.
-
     u8 dsf_changed = 0;
     if (dsf_enabled) dsf_changed = has_dsf_changed();
     if (save_everything) {
@@ -3556,7 +3471,7 @@ static u8 save_if_interesting(char** argv, void* mem, u32 len, u8 fault) {
 #ifndef SIMPLE_FILES
 
     fn = alloc_printf("%s/queue/id:%06u,%s%s", out_dir, queued_paths,
-                      describe_op(hnb), (dsf_enabled && (dsf_changed || keep_everything)) ? ",+dsf" : "" );
+                      describe_op(hnb), (dsf_enabled && dsf_changed) ? ",+dsf" : "" );
 
 #else
 
@@ -3566,36 +3481,8 @@ static u8 save_if_interesting(char** argv, void* mem, u32 len, u8 fault) {
 
     if (!hnb && (!dsf_enabled || !dsf_changed)) {
         if (crash_mode) total_crashes++;
-
-        // If the keep_everything flag is on, we want to keep this input even though it didn't affect coverage. I'm
-        // adding a suffix to it because for some reason (that I haven't cared to figure out yet) a file with the
-        // same name may already exist. It's fine though because it is nice to distinguish those inputs where
-        // coverage didn't change.
-        if (keep_everything) {
-            fn = alloc_printf("%s+kept", fn);
-
-            if (access(fn, F_OK) != -1) {
-                return 0;
-            }
-
-            fd = open(fn, O_WRONLY | O_CREAT | O_EXCL, 0600);
-            if (fd < 0) PFATAL("Unable to create '%s'", fn);
-            ck_write(fd, mem, len, fn);
-            close(fd);
-
-            /** copy trace file over to <fn>.trace **/
-            copy_trace_for_test_case(fn);
-        }
-
-        delete_trace_file();
         return 0;
     }
-
-    // We will delete the trace because we are going to call calibrate_case, which will store the trace from the final
-    // stage where it called run_target. This means that we don't need the trace we got from the run_target call that
-    // was made before save_if_interesting was called. Note that we don't want to delete it outright (outside the if)
-    // because we may need to copy it for a crash or hang input.
-    delete_trace_file();
 
     //DEBUG("adding %s to queue\n", fn);
 
@@ -3627,9 +3514,6 @@ static u8 save_if_interesting(char** argv, void* mem, u32 len, u8 fault) {
 
     keeping = 1;
 
-    /** copy trace file over to <fn>.trace **/
-    copy_trace_for_test_case(fn);
-    delete_trace_file();
   }
 
   switch (fault) {
@@ -3644,7 +3528,6 @@ static u8 save_if_interesting(char** argv, void* mem, u32 len, u8 fault) {
       total_tmouts++;
 
       if (unique_hangs >= KEEP_UNIQUE_HANG) {
-          delete_trace_file();
           return keeping;
       }
 
@@ -3657,7 +3540,6 @@ static u8 save_if_interesting(char** argv, void* mem, u32 len, u8 fault) {
 #endif /* ^WORD_SIZE_64 */
 
         if (!has_new_bits(virgin_tmout)) {
-            delete_trace_file();
             return keeping;
         }
 
@@ -3670,7 +3552,6 @@ static u8 save_if_interesting(char** argv, void* mem, u32 len, u8 fault) {
          is already generous). */
 
       s32 prev_last_child_pid = last_child_pid;
-
       if (exec_tmout < hang_tmout) {
 
         u8 new_fault;
@@ -3685,20 +3566,13 @@ static u8 save_if_interesting(char** argv, void* mem, u32 len, u8 fault) {
            so. */
 
         if (!stop_soon && new_fault == FAULT_CRASH) {
-            // Delete the previous trace file because we have a new one
-            delete_trace_file_for_pid(prev_last_child_pid);
             goto keep_as_crash;
         }
 
         if (stop_soon || new_fault != FAULT_TMOUT) {
-            // Delete both trace files
-            delete_trace_file();
-            delete_trace_file_for_pid(prev_last_child_pid);
             return keeping;
         }
 
-        // Nothing really changed so let's delete the latest trace file and reset the value of last_child_pid
-        delete_trace_file();
         last_child_pid = prev_last_child_pid;
       }
 
@@ -3731,7 +3605,6 @@ keep_as_crash:
       total_crashes++;
 
       if (unique_crashes >= KEEP_UNIQUE_CRASH) {
-          delete_trace_file();
           return keeping;
       }
 
@@ -3744,7 +3617,6 @@ keep_as_crash:
 #endif /* ^WORD_SIZE_64 */
 
         if (!has_new_bits(virgin_crash)) {
-            delete_trace_file();
             return keeping;
         }
 
@@ -3774,7 +3646,6 @@ keep_as_crash:
     case FAULT_ERROR: FATAL("Unable to execute target application");
 
     default:
-        delete_trace_file();
         return keeping;
 
   }
@@ -3786,10 +3657,6 @@ keep_as_crash:
   if (fd < 0) PFATAL("Unable to create '%s'", fn);
   ck_write(fd, mem, len, fn);
   close(fd);
-
-  /** copy trace file over to <fn>.trace **/
-  copy_trace_for_test_case(fn);
-  delete_trace_file();
 
   ck_free(fn);
 
@@ -5036,7 +4903,6 @@ static u8 trim_case(char** argv, struct queue_entry* q, u8* in_buf) {
 
       //DEBUG("\nbefore stage(%d) trim_case->run_target. last_child_pid is %d\n", stage_cur, last_child_pid);
       fault = run_target(argv, exec_tmout);
-      delete_trace_file();
       //DEBUG("after stage(%d) trim_case->run_target. last_child_pid is %d\n\n", stage_cur, last_child_pid);
       trim_execs++;
 
@@ -5142,7 +5008,6 @@ EXP_ST u8 common_fuzz_stuff(char** argv, u8* out_buf, u32 len) {
   //DEBUG("after common_fuzz_stuff->run_target. last_child_pid is %d\n\n", last_child_pid);
 
   if (stop_soon) {
-      delete_trace_file();
       return 1;
   }
 
@@ -5150,7 +5015,6 @@ EXP_ST u8 common_fuzz_stuff(char** argv, u8* out_buf, u32 len) {
 
     if (subseq_tmouts++ > TMOUT_LIMIT) {
       cur_skipped_paths++;
-      delete_trace_file();
       return 1;
     }
 
@@ -5163,7 +5027,6 @@ EXP_ST u8 common_fuzz_stuff(char** argv, u8* out_buf, u32 len) {
 
      skip_requested = 0;
      cur_skipped_paths++;
-     delete_trace_file();
      return 1;
 
   }
@@ -7301,14 +7164,12 @@ static void sync_fuzzers(char** argv) {
         write_vvdump_end_trace(fault, st.st_size);
         //DEBUG("after sync_fuzzers->run_target. last_child_pid is %d\n\n", last_child_pid);
         if (stop_soon) {
-            delete_trace_file();
             return;
         }
 
         syncing_party = sd_ent->d_name;
 
         //DEBUG("\nbefore sync_fuzzers->save_if_interesting. last_child_pid is %d\n", last_child_pid);
-        // save_if_interesting will take care of cleaning up the trace files
         queued_imported += save_if_interesting(argv, mem, st.st_size, fault);
         //DEBUG("after sync_fuzzers->save_if_interesting. last_child_pid is %d\n\n", last_child_pid);
 
@@ -8356,17 +8217,12 @@ int main(int argc, char** argv) {
         save_everything = 1;
         break;
 
-      case 'e':
-        SAYF("Keeping every non-crashing input. May be slower.\n");
-        keep_everything = 1;
-        break;
-
       case 'p':
         SAYF("Domain specific fuzzing...\n");
         dsf_enabled = 1;
         break;
 
-     case 'N':
+      case 'N':
         if (sscanf(optarg, "%llu", &max_file_len) != 1) FATAL("-N argument should be a positive integer");
         break;
 
@@ -8532,11 +8388,6 @@ int main(int argc, char** argv) {
 
         if (!mem_limit_given) mem_limit = MEM_LIMIT_QEMU;
 
-        break;
-
-      case 'R': /* trace directory */
-        if (trace_dir) FATAL("Multiple -R options not supported");
-        trace_dir = optarg;
         break;
 
       default:

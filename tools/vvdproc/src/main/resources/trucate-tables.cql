@@ -1,0 +1,10 @@
+TRUNCATE TABLE experiments;
+TRUNCATE TABLE experiment_subjects;
+TRUNCATE TABLE experiment_subject_binaries;
+TRUNCATE TABLE experiment_subject_binary_executions;
+TRUNCATE TABLE subject_files;
+TRUNCATE TABLE subject_file_functions;
+TRUNCATE TABLE subject_file_function_variables;
+TRUNCATE TABLE subject_file_function_variables_by_declaration_order;
+TRUNCATE TABLE processes;
+TRUNCATE TABLE process_variable_value_traces;

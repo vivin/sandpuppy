@@ -58,15 +58,16 @@ vvdump:
           - subject
           - filename
           - function_name
+          - variable_type
+          - variable_name
+          - declared_line
+        subject_file_function_variables_by_declaration_order:
+          - subject
+          - filename
+          - function_name
           - declared_line
           - variable_type
           - variable_name
-        processes:
-          - experiment
-          - subject
-          - binary
-          - execution
-          - pid
         process_variable_value_traces:
           - id
           - pid
@@ -79,7 +80,11 @@ vvdump:
           - modified_line
           - variable_value
       process-table-fields:
-        process_info:
+        processes:
+          - experiment
+          - subject
+          - binary
+          - execution
           - pid
           - exit_status
           - input_size
