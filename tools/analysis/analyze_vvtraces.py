@@ -35,7 +35,7 @@ def main(experiment, subject, binary, execution):
             print("    Function {function} has {num} int variables\n".format(function=function, num=len(variables)))
 
             for variable in variables:
-                print("      Analyzing value traces for {file}::{function}::{type} {name}:{line}\n".format(
+                print("      Analyzing value traces for {file}::{function}::{type} {name}:{line}".format(
                     file=filename,
                     function=function,
                     type=variable["type"],
@@ -43,8 +43,14 @@ def main(experiment, subject, binary, execution):
                     line=variable["declared_line"]
                 ))
 
+                # Querying in this way is really inefficient because you are basically doing a join manually here. There
+                # is a relation in the data. the problem is that we don't know the exit status until the end of the
+                # process, and so the way we are inserting values immediately right now, we can't really create a table
+                # that includes both the exit code and the values. one way around this perhaps is to keep all the traces
+                # for a process in memory and then store them in cassandra at the end... 
+                variable["traces"] = []
                 for pid in pids:
-                    traces = get_variable_value_traces(
+                    trace = get_variable_value_trace(
                         session,
                         pid,
                         filename,
@@ -54,24 +60,27 @@ def main(experiment, subject, binary, execution):
                         variable["name"]
                     )
 
-                    print("        {pid} has {num} value traces for {file}::{function}::{type} {name}:{line}".format(
-                        pid=pid,
-                        num=len(traces),
-                        file=filename,
-                        function=function,
-                        type=variable["type"],
-                        name=variable["name"],
-                        line=variable["declared_line"]
-                    ))
-                    # This is where you can start analyzing all these traces. Pass this information into another
-                    # function and you can put it into a pandas dataframe I think. Then you can do things like graph
-                    # a histogram or maybe heatmap of values the variable takes on where it is declared and then each
-                    # line where it is modified. You can also draw a 3d "path" where x coordinate is the delta between
-                    # declared line and modified line, y coordinate is the value, and z is a time coordinate that
-                    # increases strictly monotonically (we get traces back in ascending order of time anyway so this is
-                    # easy to do). You could potentially graph a bunch of these traces together, but you may need to
-                    # normalize both deltas and values. That is if you are graphing multiple variables at the same time.
-                    # For the same variable you may not need to. Experiment and see.
+                    if len(trace) > 0:
+                        variable["traces"].append(trace)
+
+                # This is where you can start analyzing all these traces. Pass this information into another
+                # function and you can put it into a pandas dataframe I think. Then you can do things like graph
+                # a histogram or maybe heatmap of values the variable takes on where it is declared and then each
+                # line where it is modified. You can also draw a 3d "path" where x coordinate is the delta between
+                # declared line and modified line, y coordinate is the value, and z is a time coordinate that
+                # increases strictly monotonically (we get traces back in ascending order of time anyway so this is
+                # easy to do). You could potentially graph a bunch of these traces together, but you may need to
+                # normalize both deltas and values. That is if you are graphing multiple variables at the same time.
+                # For the same variable you may not need to. Experiment and see.
+
+                print("      {file}::{function}::{type} {name}:{line} has {num} traces".format(
+                    file=filename,
+                    function=function,
+                    type=variable["type"],
+                    name=variable["name"],
+                    line=variable["declared_line"],
+                    num=len(variable["traces"])
+                ))
 
             print("")
 
@@ -147,8 +156,8 @@ def get_subject_file_function_variables_of_type(session, subject, filename, func
     return variables
 
 
-def get_variable_value_traces(session, pid, filename, function, declared_line, variable_type, variable_name):
-    traces_statement = session.prepare(
+def get_variable_value_trace(session, pid, filename, function, declared_line, variable_type, variable_name):
+    trace_statement = session.prepare(
         "SELECT modified_line, variable_value FROM process_variable_value_traces WHERE pid = ? "
         "AND filename = ? "
         "AND function_name = ? "
@@ -156,18 +165,18 @@ def get_variable_value_traces(session, pid, filename, function, declared_line, v
         "AND variable_type = ? "
         "AND variable_name = ? "
     )
-    traces_statement.fetch_size = FETCH_SIZE
+    trace_statement.fetch_size = FETCH_SIZE
 
-    rows = session.execute(traces_statement, [pid, filename, function, declared_line, variable_type, variable_name])
+    rows = session.execute(trace_statement, [pid, filename, function, declared_line, variable_type, variable_name])
 
-    traces = []
+    trace = []
     for row in rows:
-        traces.append({
+        trace.append({
             'modified_line': row[0],
             'value': row[1]
         })
 
-    return traces
+    return trace
 
 
 if __name__ == "__main__":
