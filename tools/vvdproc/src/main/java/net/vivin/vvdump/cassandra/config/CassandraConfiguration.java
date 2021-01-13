@@ -18,5 +18,4 @@ import java.util.Map;
 @Data
 public class CassandraConfiguration {
     private Map<String, List<String>> traceTableFields;
-    private Map<String, List<String>> processTableFields;
 }

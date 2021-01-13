@@ -16,7 +16,7 @@ import java.util.function.Supplier;
 
 @Getter
 @ToString
-public class VariableValueEndTrace {
+public class EndTraceMessage {
 
     private final String experimentName;
     private final String subject;
@@ -28,7 +28,7 @@ public class VariableValueEndTrace {
 
     private final Map<String, Supplier<Object>> tableFieldToGetter = new HashMap<>();
 
-    public VariableValueEndTrace(String experimentName, String subject, String binaryContext, String execContext, int pid, String exitStatus, BigInteger inputSize) {
+    public EndTraceMessage(String experimentName, String subject, String binaryContext, String execContext, int pid, String exitStatus, BigInteger inputSize) {
         this.experimentName = experimentName;
         this.subject = subject;
         this.binaryContext = binaryContext;
@@ -46,7 +46,7 @@ public class VariableValueEndTrace {
         tableFieldToGetter.put("input_size", this::getInputSize);
     }
 
-    private enum Components {
+    public enum Components {
         EXPERIMENT_NAME,
         SUBJECT,
         BINARY_CONTEXT,
@@ -59,17 +59,17 @@ public class VariableValueEndTrace {
             private static int index = 0;
         }
 
-        private final int index;
+        public final int index;
 
         Components() {
             this.index = Components.IndexHolder.index++;
         }
     }
 
-    public static VariableValueEndTrace fromStringTrace(String trace) {
+    public static EndTraceMessage from(String trace) {
         String[] components = trace.split(":");
 
-        return new VariableValueEndTrace(
+        return new EndTraceMessage(
             components[Components.EXPERIMENT_NAME.index],
             components[Components.SUBJECT.index],
             components[Components.BINARY_CONTEXT.index],

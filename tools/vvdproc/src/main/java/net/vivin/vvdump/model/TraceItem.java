@@ -18,7 +18,7 @@ import java.util.function.Supplier;
 @Slf4j
 @Getter
 @ToString
-public class VariableValueTrace {
+public class TraceItem {
 
     private final String experimentName;
     private final String subject;
@@ -36,7 +36,7 @@ public class VariableValueTrace {
 
     private final Map<String, Supplier<Object>> tableFieldToGetter = new HashMap<>();
 
-    public VariableValueTrace(String experimentName, String subject, String binaryContext, String execContext, int pid, String filename, String functionName, String variableName, int declaredLine, int modifiedLine, BigInteger timestamp, String variableType, String variableValue) {
+    public TraceItem(String experimentName, String subject, String binaryContext, String execContext, int pid, String filename, String functionName, String variableName, int declaredLine, int modifiedLine, BigInteger timestamp, String variableType, String variableValue) {
         this.experimentName = experimentName;
         this.subject = subject;
         this.binaryContext = binaryContext;
@@ -66,7 +66,7 @@ public class VariableValueTrace {
         tableFieldToGetter.put("variable_value", this::getVariableValue);
     }
 
-    private enum Components {
+    public enum Components {
         EXPERIMENT_NAME,
         SUBJECT,
         BINARY_CONTEXT,
@@ -85,17 +85,17 @@ public class VariableValueTrace {
             private static int index = 0;
         }
 
-        private final int index;
+        public final int index;
 
         Components() {
             this.index = IndexHolder.index++;
         }
     }
 
-    public static VariableValueTrace fromStringTrace(String trace) {
+    public static TraceItem fromString(String trace) {
         String[] components = trace.split(":");
 
-        return new VariableValueTrace(
+        return new TraceItem(
             components[Components.EXPERIMENT_NAME.index],
             components[Components.SUBJECT.index],
             components[Components.BINARY_CONTEXT.index],

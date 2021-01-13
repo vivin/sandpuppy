@@ -68,18 +68,6 @@ vvdump:
           - declared_line
           - variable_type
           - variable_name
-        process_variable_value_traces:
-          - id
-          - pid
-          - filename
-          - function_name
-          - declared_line
-          - variable_type
-          - variable_name
-          - timestamp
-          - modified_line
-          - variable_value
-      process-table-fields:
         processes:
           - experiment
           - subject
@@ -88,8 +76,23 @@ vvdump:
           - pid
           - exit_status
           - input_size
-      delete-processes-query: "DELETE FROM processes WHERE experiment = ? AND subject = ? AND binary = ? AND execution = ? AND pid = ?"
-      delete-process-variable-value-traces-query: "DELETE FROM process_variable_value_traces WHERE pid = ?"
+        process_variable_value_traces:
+          - id
+          - experiment
+          - subject
+          - binary
+          - execution
+          - pid
+          - exit_status
+          - input_size
+          - filename
+          - function_name
+          - declared_line
+          - variable_type
+          - variable_name
+          - timestamp
+          - modified_line
+          - variable_value
 
 logging:
   file:

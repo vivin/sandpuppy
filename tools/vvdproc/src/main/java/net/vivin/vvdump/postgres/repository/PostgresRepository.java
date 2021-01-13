@@ -1,9 +1,8 @@
 package net.vivin.vvdump.postgres.repository;
 
 import lombok.extern.slf4j.Slf4j;
-import net.vivin.vvdump.model.VariableValueEndTrace;
-import net.vivin.vvdump.model.VariableValueTrace;
-import net.vivin.vvdump.repository.VariableValueTraceRepository;
+import net.vivin.vvdump.model.EndTraceMessage;
+import net.vivin.vvdump.model.TraceItem;
 import org.apache.commons.lang3.RandomStringUtils;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Repository;
@@ -20,7 +19,7 @@ import javax.transaction.Transactional;
 
 @Slf4j
 @Repository("postgres")
-public class PostgresRepository implements VariableValueTraceRepository {
+public class PostgresRepository {
 
     private static final String PID_SUFFIX = RandomStringUtils.randomAlphabetic(6);
 
@@ -37,8 +36,7 @@ public class PostgresRepository implements VariableValueTraceRepository {
     private EntityManager entityManager;
 
     @Transactional
-    @Override
-    public void insertVariableValueTrace(VariableValueTrace variableValueTrace) {
+    public void insertVariableValueTrace(TraceItem variableValueTrace) {
         entityManager.createNativeQuery(insertVariableValueTraceQuery)
             .setParameter(1, variableValueTrace.getExperimentName())
             .setParameter(2, variableValueTrace.getSubject())
@@ -59,8 +57,7 @@ public class PostgresRepository implements VariableValueTraceRepository {
     }
 
     @Transactional
-    @Override
-    public void insertFuzzedProcessInfo(VariableValueEndTrace variableValueEndTrace) {
+    public void insertFuzzedProcessInfo(EndTraceMessage variableValueEndTrace) {
         entityManager.createNativeQuery(insertFuzzedProcessInfoQuery)
             .setParameter(1, variableValueEndTrace.getExperimentName())
             .setParameter(2, variableValueEndTrace.getSubject())
@@ -75,8 +72,7 @@ public class PostgresRepository implements VariableValueTraceRepository {
     }
 
     @Transactional
-    @Override
-    public void deleteVariableValueTraces(VariableValueEndTrace variableValueEndTrace) {
+    public void deleteVariableValueTraces(EndTraceMessage variableValueEndTrace) {
         log.info("Deleting traces for killed process {}", variableValueEndTrace.getPid());
         entityManager.createNativeQuery(deleteVariableValueTracesQuery)
             .setParameter(1, String.format("%d-%s", variableValueEndTrace.getPid(), PID_SUFFIX))

@@ -54,7 +54,7 @@ CREATE TABLE IF NOT EXISTS subject_file_function_variables_by_declaration_order 
   variable_type text,
   variable_name text,
   PRIMARY KEY (subject, filename, function_name, declared_line, variable_type, variable_name)
-) WITH CLUSTERING ORDER BY (filename ASC, function_name ASC, declared_line ASC);
+);
 
 CREATE TABLE IF NOT EXISTS processes (
   experiment text,
@@ -70,7 +70,13 @@ CREATE INDEX IF NOT EXISTS exit_status_index ON processes (exit_status);
 
 CREATE TABLE IF NOT EXISTS process_variable_value_traces (
   id UUID,
+  experiment text,
+  subject text,
+  binary text,
+  execution text,
   pid text,
+  exit_status text,
+  input_size bigint,
   filename text,
   function_name text,
   declared_line int,
@@ -79,5 +85,5 @@ CREATE TABLE IF NOT EXISTS process_variable_value_traces (
   timestamp bigint,
   modified_line int,
   variable_value text,
-  PRIMARY KEY (pid, filename, function_name, declared_line, variable_type, variable_name, timestamp, id)
-) WITH CLUSTERING ORDER BY (filename ASC, function_name ASC, declared_line ASC, variable_type ASC, variable_name ASC, timestamp ASC);
+  PRIMARY KEY (experiment, subject, binary, execution, exit_status, filename, function_name, declared_line, variable_type, variable_name, pid, timestamp, id)
+);

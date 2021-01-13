@@ -16,10 +16,6 @@ def main(experiment, subject, binary, execution):
     print("Binary:     {binary}".format(binary=binary))
     print("Execution:  {execution}\n".format(execution=execution))
 
-    print("Retrieving pids for successful processes...")
-    pids = get_pids_with_exit_status(session, experiment, subject, binary, execution, 'success')
-    print("Retrieved pids for {num} successful processes\n".format(num=len(pids)))
-
     print("Identifying files for subject {subject}".format(subject=subject))
     filenames = get_subject_filenames(session, subject)
     print("Subject {subject} has {num} files\n".format(subject=subject, num=len(filenames)))
@@ -43,25 +39,19 @@ def main(experiment, subject, binary, execution):
                     line=variable["declared_line"]
                 ))
 
-                # Querying in this way is really inefficient because you are basically doing a join manually here. There
-                # is a relation in the data. the problem is that we don't know the exit status until the end of the
-                # process, and so the way we are inserting values immediately right now, we can't really create a table
-                # that includes both the exit code and the values. one way around this perhaps is to keep all the traces
-                # for a process in memory and then store them in cassandra at the end... 
-                variable["traces"] = []
-                for pid in pids:
-                    trace = get_variable_value_trace(
-                        session,
-                        pid,
-                        filename,
-                        function,
-                        variable["declared_line"],
-                        variable["type"],
-                        variable["name"]
-                    )
-
-                    if len(trace) > 0:
-                        variable["traces"].append(trace)
+                variable["traces"] = get_variable_value_traces(
+                    session,
+                    experiment,
+                    subject,
+                    binary,
+                    execution,
+                    'success',
+                    filename,
+                    function,
+                    variable["declared_line"],
+                    variable["type"],
+                    variable["name"]
+                )
 
                 # This is where you can start analyzing all these traces. Pass this information into another
                 # function and you can put it into a pandas dataframe I think. Then you can do things like graph
@@ -156,9 +146,14 @@ def get_subject_file_function_variables_of_type(session, subject, filename, func
     return variables
 
 
-def get_variable_value_trace(session, pid, filename, function, declared_line, variable_type, variable_name):
+def get_variable_value_traces(session, experiment, subject, binary, execution, exit_status, filename, function,
+                              declared_line, variable_type, variable_name):
     trace_statement = session.prepare(
-        "SELECT modified_line, variable_value FROM process_variable_value_traces WHERE pid = ? "
+        "SELECT pid, input_size, modified_line, variable_value FROM process_variable_value_traces WHERE experiment = ? "
+        "AND subject = ? "
+        "AND binary = ? "
+        "AND execution = ? "
+        "AND exit_status = ? "
         "AND filename = ? "
         "AND function_name = ? "
         "AND declared_line = ? "
@@ -167,16 +162,28 @@ def get_variable_value_trace(session, pid, filename, function, declared_line, va
     )
     trace_statement.fetch_size = FETCH_SIZE
 
-    rows = session.execute(trace_statement, [pid, filename, function, declared_line, variable_type, variable_name])
+    rows = session.execute(trace_statement, [experiment, subject, binary, execution, exit_status, filename, function,
+                                             declared_line, variable_type, variable_name])
 
-    trace = []
+    last_pid = None
+    trace = None
+    traces = []
     for row in rows:
+        pid = row[0]
+        if pid != last_pid:
+            if trace is not None:
+                traces.append(trace)
+            trace = []
+
         trace.append({
-            'modified_line': row[0],
-            'value': row[1]
+            'input_size': row[1],
+            'modified_line': row[2],
+            'variable_value': row[3]
         })
 
-    return trace
+        last_pid = pid
+
+    return traces
 
 
 if __name__ == "__main__":

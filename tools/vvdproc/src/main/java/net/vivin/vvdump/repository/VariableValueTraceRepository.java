@@ -1,7 +1,7 @@
 package net.vivin.vvdump.repository;
 
-import net.vivin.vvdump.model.VariableValueEndTrace;
-import net.vivin.vvdump.model.VariableValueTrace;
+import net.vivin.vvdump.model.EndTraceMessage;
+import net.vivin.vvdump.model.TraceItem;
 
 /**
  * Created on 12/2/20 at 10:18 PM
@@ -9,7 +9,7 @@ import net.vivin.vvdump.model.VariableValueTrace;
  * @author vivin
  */
 public interface VariableValueTraceRepository {
-    void insertVariableValueTrace(VariableValueTrace variableValueTrace);
-    void insertFuzzedProcessInfo(VariableValueEndTrace variableValueEndTrace);
-    void deleteVariableValueTraces(VariableValueEndTrace variableValueEndTrace);
+    void insertVariableValueTrace(TraceItem variableValueTrace);
+    void insertFuzzedProcessInfo(EndTraceMessage variableValueEndTrace);
+    void deleteVariableValueTraces(EndTraceMessage variableValueEndTrace);
 }
