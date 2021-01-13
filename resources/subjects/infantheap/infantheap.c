@@ -182,10 +182,9 @@ int main(int argc, char* argv[]) {
 
     int return_value;
     char option;
+    int option_num;
     bool error = false;
     bool done = false;
-    int blue = 0;
-    char* butt = "butts";
     while (!done && !error) {
         printf("Options\n");
         printf("=======\n\n");
@@ -211,24 +210,29 @@ int main(int argc, char* argv[]) {
         option = buffer[0];
 
         switch(option) {
-            case 'a': return_value = do_alloc_chunk();
-                blue++;
+            case 'a':
+                return_value = do_alloc_chunk();
+                option_num = 1;
                 break;
 
-            case 'l': return_value = do_option(&fill_chunk);
-                blue++;
+            case 'l':
+                return_value = do_option(&fill_chunk);
+                option_num = 3;
                 break;
 
-            case 'd': return_value = do_option(&dump_chunk);
-                blue++;
+            case 'd':
+                return_value = do_option(&dump_chunk);
+                option_num = 5;
                 break;
 
-            case 'f': return_value = do_option(&free_chunk);
-                blue++;
+            case 'f':
+                return_value = do_option(&free_chunk);
+                option_num = 7;
                 break;
 
-            case 'x': done = true;
-                blue = 10;
+            case 'x':
+                option_num = 9;
+                done = true;
                 break;
 
             default:
@@ -239,9 +243,7 @@ int main(int argc, char* argv[]) {
         error = error || (return_value != 0);
     }
 
-    printf("Exiting %s\n", butt);
-    return 0;
-//    uncomment for the machine learning stuff if you ever do it. this makes it so that any invalid input is treated
-//    as a crash
-//    return error ? CUSTOM_CRASH : 0;
+    //return 0;
+    //uncomment to treat any invalid input as crash
+    return error ? CUSTOM_CRASH : 0;
 }

@@ -1,6 +1,8 @@
 import sys
+import numpy
 
 from cassandra.cluster import Cluster
+from sparklines import sparklines;
 
 FETCH_SIZE = 2000
 
@@ -39,7 +41,7 @@ def main(experiment, subject, binary, execution):
                     line=variable["declared_line"]
                 ))
 
-                variable["traces"] = get_variable_value_traces(
+                variable["info"] = get_variable_value_traces_info(
                     session,
                     experiment,
                     subject,
@@ -63,16 +65,40 @@ def main(experiment, subject, binary, execution):
                 # normalize both deltas and values. That is if you are graphing multiple variables at the same time.
                 # For the same variable you may not need to. Experiment and see.
 
-                print("      {file}::{function}::{type} {name}:{line} has {num} traces".format(
-                    file=filename,
-                    function=function,
-                    type=variable["type"],
-                    name=variable["name"],
-                    line=variable["declared_line"],
-                    num=len(variable["traces"])
+                variable_values = numpy.array(variable["info"]["variable_values"]).astype(numpy.float)
+
+                print("        Has {num} traces".format(
+                    num=len(variable["info"]["traces"])
+                ))
+                print("        Is modified on {num} lines{line}".format(
+                    num=len(variable["info"]["modified_lines"]),
+                    line=" ({l})".format(l=list(variable["info"]["modified_lines"])[0])
+                    if len(variable["info"]["modified_lines"]) == 1 else ""
                 ))
 
-            print("")
+                print("        Has {num} unique values; mean is {mean} and standard deviation is {stddev}".format(
+                    num=len(set(variable_values)),
+                    mean=numpy.mean(variable_values),
+                    stddev=numpy.std(variable_values)
+                ))
+
+                if len(set(variable_values)) > 1:
+                    hist = numpy.histogram(variable_values, bins=len(set(variable_values)))[0]
+                    for line in sparklines(hist):
+                        print("          {line}".format(line=line))
+
+                if len(variable["info"]["modified_lines"]) > 1:
+                    for modified_line in variable["info"]["modified_line_values"]:
+                        print("          Has {num} unique values on line {line}; mean is {mean} and standard deviation"
+                              " is {stddev}".format(
+                                num=len(set(variable["info"]["modified_line_values"][modified_line])),
+                                line=modified_line,
+                                mean=numpy.mean(numpy.array(variable["info"]["modified_line_values"][modified_line])
+                                                .astype(numpy.float)),
+                                stddev=numpy.std(numpy.array(variable["info"]["modified_line_values"][modified_line])
+                                                 .astype(numpy.float))))
+
+                print("")
 
 
 def get_pids_with_exit_status(session, experiment, subject, binary, execution, exit_status):
@@ -146,8 +172,8 @@ def get_subject_file_function_variables_of_type(session, subject, filename, func
     return variables
 
 
-def get_variable_value_traces(session, experiment, subject, binary, execution, exit_status, filename, function,
-                              declared_line, variable_type, variable_name):
+def get_variable_value_traces_info(session, experiment, subject, binary, execution, exit_status, filename, function,
+                                   declared_line, variable_type, variable_name):
     trace_statement = session.prepare(
         "SELECT pid, input_size, modified_line, variable_value FROM process_variable_value_traces WHERE experiment = ? "
         "AND subject = ? "
@@ -167,23 +193,42 @@ def get_variable_value_traces(session, experiment, subject, binary, execution, e
 
     last_pid = None
     trace = None
-    traces = []
+    info = {
+        'traces': [],
+        'modified_lines': set(),
+        'variable_values': [],
+        'modified_line_values': dict()
+    }
     for row in rows:
         pid = row[0]
         if pid != last_pid:
             if trace is not None:
-                traces.append(trace)
-            trace = []
+                info['traces'].append(trace)
+            trace = {
+                'items': []
+            }
 
-        trace.append({
-            'input_size': row[1],
-            'modified_line': row[2],
-            'variable_value': row[3]
+        input_size = row[1]
+        modified_line = row[2]
+        variable_value = row[3]
+
+        trace['input_size'] = input_size
+        trace['items'].append({
+            'modified_line': modified_line,
+            'variable_value': variable_value
         })
+
+        info['modified_lines'].add(modified_line)
+        info['variable_values'].append(variable_value)
+
+        if modified_line not in info['modified_line_values']:
+            info['modified_line_values'][modified_line] = []
+
+        info['modified_line_values'][modified_line].append(variable_value)
 
         last_pid = pid
 
-    return traces
+    return info
 
 
 if __name__ == "__main__":
