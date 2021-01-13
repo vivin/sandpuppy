@@ -87,6 +87,23 @@ def main(experiment, subject, binary, execution):
                     for line in sparklines(hist):
                         print("          {line}".format(line=line))
 
+                trace_lengths = []
+                for trace in variable["info"]["traces"]:
+                    trace_lengths.append(len(trace["items"]))
+
+                print("        Is modified a minimum of {min} times and a maximum of {max} times per process".format(
+                    min=numpy.min(trace_lengths),
+                    max=numpy.max(trace_lengths)
+                ))
+                print("        Is modified an average of {avg} times per process (standard deviation={stddev})".format(
+                    avg=numpy.mean(trace_lengths),
+                    stddev=numpy.std(trace_lengths)
+                ))
+                if len(set(trace_lengths)) > 1:
+                    hist = numpy.histogram(trace_lengths, bins=len(set(trace_lengths)))[0]
+                    for line in sparklines(hist):
+                        print("          {line}".format(line=line))
+
                 if len(variable["info"]["modified_lines"]) > 1:
                     for modified_line in variable["info"]["modified_line_values"]:
                         print("          Has {num} unique values on line {line}; mean is {mean} and standard deviation"
