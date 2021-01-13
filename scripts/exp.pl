@@ -120,7 +120,7 @@ my $log = Log::Simple::Color->new;
           $SIG{INT} = 'IGNORE';
 
           my $STARTUP_TIME = 13; # about the time it takes to start up vvdproc and the fuzzer
-          my $FUZZ_TIME = 30 + $STARTUP_TIME;
+          my $FUZZ_TIME = 300 + $STARTUP_TIME;
           my $killed = 0;
           my $start_time = time();
           my $fuzzer_pid = &{$tasks->{fuzz}}($experiment_name, $subject, $context, $waypoints, $binary_context, 0);
