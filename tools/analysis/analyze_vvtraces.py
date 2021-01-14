@@ -208,20 +208,18 @@ def get_variable_value_traces_info(session, experiment, subject, binary, executi
     rows = session.execute(trace_statement, [experiment, subject, binary, execution, exit_status, filename, function,
                                              declared_line, variable_type, variable_name])
 
-    last_pid = None
-    trace = None
     info = {
         'traces': [],
+        'pid_traces': dict(),
         'modified_lines': set(),
         'variable_values': [],
         'modified_line_values': dict()
     }
+
     for row in rows:
         pid = row[0]
-        if pid != last_pid:
-            if trace is not None:
-                info['traces'].append(trace)
-            trace = {
+        if pid not in info["pid_traces"]:
+            info["pid_traces"][pid] = {
                 'items': []
             }
 
@@ -229,8 +227,8 @@ def get_variable_value_traces_info(session, experiment, subject, binary, executi
         modified_line = row[2]
         variable_value = row[3]
 
-        trace['input_size'] = input_size
-        trace['items'].append({
+        info['pid_traces'][pid]['input_size'] = input_size
+        info['pid_traces'][pid]['items'].append({
             'modified_line': modified_line,
             'variable_value': variable_value
         })
@@ -243,7 +241,7 @@ def get_variable_value_traces_info(session, experiment, subject, binary, executi
 
         info['modified_line_values'][modified_line].append(variable_value)
 
-        last_pid = pid
+    info['traces'] = info['pid_traces'].values()
 
     return info
 

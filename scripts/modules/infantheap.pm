@@ -10,13 +10,14 @@ my $BASEPATH = glob "~/Projects/phd";
 my $BASEWORKSPACEPATH = "$BASEPATH/workspace";
 my $TOOLS = "$BASEPATH/tools";
 my $RESOURCES = "$BASEPATH/resources";
-my $SUBJECTS = "$RESOURCES/subjects";
+my $SUBJECTS = "$BASEPATH/subjects";
 
 sub build {
     my $experiment_name = $_[0];
     my $subject = $_[1];
-    my $context = $_[2];
-    my $waypoints = $_[3];
+    my $version = $_[2];
+    my $context = $_[3];
+    my $waypoints = $_[4];
 
     my $workspace = "$BASEWORKSPACEPATH/$experiment_name/$subject";
 
@@ -46,16 +47,6 @@ sub build {
         $build_command .= " -fsanitize=address";
     }
 
-    my $use_trace_dir = ($waypoints =~ /trace/);
-    if ($use_trace_dir) {
-        $build_command .= " -trace_directory=$workspace/traces";
-    }
-
-    my $use_named_pipe = ($waypoints =~ /vardump/);
-    if ($use_named_pipe) {
-        # $build_command .= " -named_pipe=$NAMED_PIPE_PATH";
-    }
-
     # TODO: have to account for WEJON instrumentation waypoint eventually... similar arg like functions file
 
     my $src_dir = "$SUBJECTS/infantheap";
@@ -77,10 +68,11 @@ sub fuzz {
 
     my $experiment_name = $_[0];
     my $subject = $_[1];
-    my $exec_context = $_[2];
-    my $waypoints = $_[3];
-    my $binary_context = $_[4];
-    my $resume = $_[5];
+    my $version = $_[2];
+    my $exec_context = $_[3];
+    my $waypoints = $_[4];
+    my $binary_context = $_[5];
+    my $resume = $_[6];
 
     my $workspace = "$BASEWORKSPACEPATH/$experiment_name/$subject";
     my $results_base = "$workspace/results";
@@ -97,7 +89,6 @@ sub fuzz {
 
             $log->info("Backing up existing results directory to backup version $new_version");
             system ("mv $results_dir $results_base/$exec_context.backup$new_version");
-
         }
 
         make_path($results_dir);
@@ -118,7 +109,6 @@ sub fuzz {
 
     if ($resume) {
         $fuzz_command .= " -i-"
-
     } else {
         my $seeds_directory = "$RESOURCES/seeds/infantheap/non-crashing";
         $fuzz_command .= " -i $seeds_directory";

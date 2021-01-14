@@ -9,6 +9,7 @@ use Time::HiRes qw(time);
 use POSIX;
 use infantheap;
 use rarebug;
+use libpng;
 
   if (! -e "/tmp/vvdump") {
       POSIX::mkfifo("/tmp/vvdump", 0700) or die "Could not create /tmp/vvdump";
@@ -20,7 +21,7 @@ my $log = Log::Simple::Color->new;
   my $BASEWORKSPACEPATH = "$BASEPATH/workspace";
   my $TOOLS = "$BASEPATH/tools";
   my $RESOURCES = "$BASEPATH/resources";
-  my $SUBJECTS = "$RESOURCES/subjects";
+  my $SUBJECTS = "$BASEPATH/subjects";
 
   my $subjects = {
       "infantheap" => {
@@ -35,6 +36,12 @@ my $log = Log::Simple::Color->new;
               "fuzz"  => \&rarebug::fuzz
           }
       },
+      "libpng" => {
+          "tasks" => {
+              "build" => \&libpng::build,
+              "fuzz"  => \&libpng::fuzz
+          }
+      }
   };
 
   if (scalar @ARGV < 5) {
@@ -42,13 +49,21 @@ my $log = Log::Simple::Color->new;
   }
 
   my $experiment_name = $ARGV[0];
-  my $subject = $ARGV[1]; # this single param should let me identify source dir for building
+  my $full_subject = $ARGV[1]; # this single param should let me identify source dir for building
+  my $original_subject = $full_subject;
+  my $subject = $full_subject;
+  my $version;
   my $waypoints = $ARGV[2];
   my $context = $ARGV[3];
   my $task = $ARGV[4];
   my $binary_context = $ARGV[6];
 
-  my $workspace = "$BASEWORKSPACEPATH/$experiment_name/$subject";
+  if ($full_subject =~ /:/) {
+      ($subject, $version) = split(/:/, $full_subject);
+      $full_subject =~ s/:/-/;
+  }
+
+  my $workspace = "$BASEWORKSPACEPATH/$experiment_name/$full_subject";
 
   if (! -d $workspace) {
       $log->info("Creating $workspace");
@@ -81,14 +96,14 @@ my $log = Log::Simple::Color->new;
           die "No build task for $subject.";
       }
 
-      &{$tasks->{build}}($experiment_name, $subject, $context, $waypoints);
+      &{$tasks->{build}}($experiment_name, $subject, $version, $context, $waypoints);
   } elsif ($task eq "fuzz") {
       if ($ARGV[5] ne "using") {
-          die "Expected \"using\":\n  $0 $experiment_name $subject $context $waypoints $task using <binary-context>";
+          die "Expected \"using\":\n  $0 $experiment_name $original_subject $context $waypoints $task using <binary-context>";
       }
 
       if (!$ARGV[6]) {
-          die "Expected <binary-context>:\n  $0 $experiment_name $subject $context $waypoints $task using <binary-context>";
+          die "Expected <binary-context>:\n  $0 $experiment_name $original_subject $context $waypoints $task using <binary-context>";
       }
 
       if (!$tasks->{fuzz}) {
@@ -96,7 +111,7 @@ my $log = Log::Simple::Color->new;
       }
 
       $ENV{"__VVD_EXP_NAME"} = $experiment_name;
-      $ENV{"__VVD_SUBJECT"} = $subject;
+      $ENV{"__VVD_SUBJECT"} = $full_subject;
       $ENV{"__VVD_BIN_CONTEXT"} = $binary_context;
       $ENV{"__VVD_EXEC_CONTEXT"} = $context;
 
@@ -123,7 +138,7 @@ my $log = Log::Simple::Color->new;
           my $FUZZ_TIME = 300 + $STARTUP_TIME;
           my $killed = 0;
           my $start_time = time();
-          my $fuzzer_pid = &{$tasks->{fuzz}}($experiment_name, $subject, $context, $waypoints, $binary_context, 0);
+          my $fuzzer_pid = &{$tasks->{fuzz}}($experiment_name, $subject, $version, $context, $waypoints, $binary_context, 0);
           my $start_printing = 0;
           while (<$reader>) {
               if (!$start_printing) {

@@ -17,6 +17,7 @@ import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.RandomAccessFile;
 import java.io.UncheckedIOException;
+import java.time.Duration;
 import java.util.ArrayDeque;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -26,8 +27,11 @@ import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+
+import static org.awaitility.Awaitility.await;
 
 @Slf4j
 @Service
@@ -42,8 +46,7 @@ public class TraceProcessingService {
     private final ApplicationContext applicationContext;
     private final CassandraRepository cassandraRepository;
     private final ExecutorService pipeReaderExecutor;
-    private final ExecutorService dbQueryExecutor;
-    private final ExecutorService traceConsumerExecutor;
+    private final ExecutorService traceInsertionExecutor;
 
     private final Set<Integer> pids = new HashSet<>();
     private final Map<Integer, Queue<String>> processTraces = new HashMap<>();
@@ -53,8 +56,7 @@ public class TraceProcessingService {
         this.applicationContext = applicationContext;
         this.cassandraRepository = cassandraRepository;
         this.pipeReaderExecutor = Executors.newSingleThreadExecutor();
-        this.dbQueryExecutor = Executors.newFixedThreadPool(32);
-        this.traceConsumerExecutor = Executors.newFixedThreadPool(16);
+        this.traceInsertionExecutor = Executors.newFixedThreadPool(32);
     }
 
     @PostConstruct
@@ -67,14 +69,15 @@ public class TraceProcessingService {
                 ((ConfigurableApplicationContext) applicationContext).close();
             });
     }
-    // TODO: look at this: https://stackoverflow.com/questions/8183205/what-could-be-the-cause-of-rejectedexecutionexception/8183463
-    // TODO: rejected execution might be happening due to queue saturation.
+
     private void readPipe() {
-        final AtomicInteger traceCount = new AtomicInteger(0);
+        final var traceCount = new AtomicInteger();
 
         try {
             var pipe = new RandomAccessFile(namedPipePath, "rw");
             log.info("Listening...");
+
+            long lastLoggedTime = System.currentTimeMillis();
 
             String line;
             while ((line = pipe.readLine()) != null && !END_TRACE_MARKER.equals(line)) {
@@ -83,12 +86,10 @@ public class TraceProcessingService {
                     var pid = Integer.parseInt(components[TraceItem.Components.PID.index]);
 
                     if (!pids.contains(pid)) {
-                        log.info("Recording traces for new process {}", pid);
                         processTraces.put(pid, new ArrayDeque<>());
                         pids.add(pid);
                     }
 
-                    traceCount.incrementAndGet();
                     processTraces.get(pid).add(line);
                 } else {
                     // Only insert the traces if the process wasn't killed and if we have seen at least one trace from
@@ -101,16 +102,22 @@ public class TraceProcessingService {
                         var traceItems = processTraces.remove(pid);
                         var endTrace = line;
 
-                        traceConsumerExecutor.submit(() -> {
+                        traceCount.addAndGet(traceItems.size());
+                        traceInsertionExecutor.submit(() -> {
+                            var size = traceItems.size();
                             String traceItem;
                             while ((traceItem = traceItems.poll()) != null) {
                                 var fullTraceItem = FullTraceItem.from(traceItem, endTrace);
-                                dbQueryExecutor.submit(() -> {
-                                    cassandraRepository.insertFullTraceItem(fullTraceItem);
-                                    traceCount.decrementAndGet();
-                                });
+                                cassandraRepository.insertFullTraceItem(fullTraceItem);
                             }
+
+                            traceCount.addAndGet(-size);
                         });
+
+                        if (System.currentTimeMillis() - lastLoggedTime > 5000) {
+                            log.info("{} trace items from {} processes remain to be saved...", traceCount.get(), getRemainingProcesses());
+                            lastLoggedTime = System.currentTimeMillis();
+                        }
                     }
                 }
             }
@@ -122,24 +129,20 @@ public class TraceProcessingService {
         }
 
         log.info("Fuzzer has shut down. No more incoming traces.");
-        traceConsumerExecutor.shutdown();
-        while (!traceConsumerExecutor.isTerminated()) {
-            try {
-                log.info("{} trace items remain to be saved...", traceCount.get());
-                traceConsumerExecutor.awaitTermination(5, TimeUnit.SECONDS);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-            }
-        }
+        traceInsertionExecutor.shutdown();
+        await()
+            .atMost(Duration.ofMinutes(10))
+            .with().pollInterval(Duration.ofSeconds(5))
+            .until(() -> {
+                log.info("{} trace items from {} processes remain to be saved...", traceCount.get(), getRemainingProcesses());
+                return traceInsertionExecutor.isTerminated();
+            });
+    }
 
-        dbQueryExecutor.shutdown();
-        try {
-            if (!dbQueryExecutor.awaitTermination(30, TimeUnit.SECONDS)) {
-                dbQueryExecutor.shutdownNow();
-            }
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-        }
+    private long getRemainingProcesses() {
+        long taskCount = ((ThreadPoolExecutor) traceInsertionExecutor).getTaskCount();
+        long completedTaskCount = ((ThreadPoolExecutor) traceInsertionExecutor).getCompletedTaskCount();
+        return (taskCount - completedTaskCount);
     }
 
     @PreDestroy

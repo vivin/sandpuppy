@@ -33,7 +33,7 @@ include_directories(tools/FuzzFactory/llvm_mode)
 #        NO_DEFAULT_PATH)
 
 add_executable(PhD
-        resources/subjects/infantheap/infantheap.c
+        subjects/infantheap/infantheap.c
         tools/FuzzFactory/demo/demo-manual.c
         tools/FuzzFactory/demo/demo.c
         tools/FuzzFactory/include/afl_valid.h
@@ -83,4 +83,4 @@ add_executable(PhD
         tools/FuzzFactory/llvm_mode/basefeedback.hpp tools/FuzzFactory/llvm_mode/shared-opts.cc)
 
 add_executable(rarebug
-        resources/subjects/rarebug/rarebug.c)
+        subjects/rarebug/rarebug.c)

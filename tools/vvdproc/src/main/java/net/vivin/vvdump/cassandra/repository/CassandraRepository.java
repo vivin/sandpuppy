@@ -1,11 +1,15 @@
 package net.vivin.vvdump.cassandra.repository;
 
+import com.datastax.oss.driver.api.core.CqlSession;
 import lombok.extern.slf4j.Slf4j;
 import net.vivin.vvdump.cassandra.config.CassandraConfiguration;
 import net.vivin.vvdump.model.FullTraceItem;
 import org.apache.commons.lang3.RandomStringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.cassandra.core.AsyncCassandraOperations;
+import org.springframework.data.cassandra.core.AsyncCassandraTemplate;
 import org.springframework.data.cassandra.core.CassandraOperations;
+import org.springframework.data.cassandra.core.CassandraTemplate;
 import org.springframework.stereotype.Repository;
 
 import java.math.BigInteger;
@@ -24,8 +28,8 @@ public class CassandraRepository {
     private final CassandraConfiguration cassandraConfiguration;
 
     @Autowired
-    public CassandraRepository(CassandraOperations cassandraOperations, CassandraConfiguration cassandraConfiguration) {
-        this.cassandraOperations = cassandraOperations;
+    public CassandraRepository(CqlSession cqlSession, CassandraConfiguration cassandraConfiguration) {
+        this.cassandraOperations = new CassandraTemplate(cqlSession);
         this.cassandraConfiguration = cassandraConfiguration;
     }
 
