@@ -168,8 +168,7 @@ static void edit_params(u32 argc, char** argv) {
   char* comma = ",";
   char* domain = strtok(domains, comma);
 
-  int include_trace_dir = 0;
-  int include_functions_file = 0;
+  int include_variables_file = 0;
 
   while (domain != NULL) {
     printf("Found domain: %s\n", domain);
@@ -180,13 +179,8 @@ static void edit_params(u32 argc, char** argv) {
     cc_params[cc_par_cnt++] = alloc_printf("%s/waypoints-%s-pass.so", obj_path, domain);
     cc_params[cc_par_cnt++] = alloc_printf("%s/waypoints-%s-rt.o", obj_path, domain);
 
-    if (strcmp(domain, "trace") == 0) {
-        include_trace_dir = 1;
-        include_functions_file = 1;
-    }
-
-    if (strcmp(domain, "lff") == 0 || strcmp(domain, "lfbbf") == 0 || strcmp(domain, "lfcof") == 0) {
-        include_functions_file = 1;
+    if (strcmp(domain, "vvperm") == 0) {
+        include_variables_file = 1;
     }
 
     domain = strtok(NULL, comma);
@@ -206,11 +200,7 @@ static void edit_params(u32 argc, char** argv) {
     if (!strncmp(cur, "-target_locations", 17))
       cc_params[cc_par_cnt++] = "-mllvm";
 
-    if (!strncmp(cur, "-trace_directory", 16) && include_trace_dir == 1) {
-        cc_params[cc_par_cnt++] = "-mllvm";
-    }
-
-    if (!strncmp(cur, "-functions_file", 15) && include_functions_file == 1) {
+    if (!strncmp(cur, "-variables_file", 15) && include_variables_file == 1) {
         cc_params[cc_par_cnt++] = "-mllvm";
     }
 

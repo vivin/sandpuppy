@@ -2460,7 +2460,7 @@ static u8 run_target(char** argv, u32 timeout) {
      territory. */
 
   memset(trace_bits, 0, MAP_SIZE);
-  if (dsf_enabled || save_everything) { 
+  if (dsf_enabled || save_everything) {
     memset(dsf_map, 0, dsf_len_actual * sizeof(u32));
   }
   MEM_BARRIER();
@@ -2735,7 +2735,7 @@ static void write_with_gap(void* mem, u32 len, u32 skip_at, u32 skip_len) {
 
 static void write_vvdump_end_trace(u8 fault, s32 input_size) {
     if (!vvdump_named_pipe_available || !vvdump_env_vars_available) {
-        DEBUG("failed writing end trace! pipe avail: %d env avail: %d\n", vvdump_named_pipe_available, vvdump_env_vars_available);
+        //DEBUG("failed writing end trace! pipe avail: %d env avail: %d\n", vvdump_named_pipe_available, vvdump_env_vars_available);
         return;
     }
 
@@ -2781,7 +2781,7 @@ static void write_vvdump_end_trace(u8 fault, s32 input_size) {
 
 void write_kill_trace() {
     if (!vvdump_named_pipe_available || !vvdump_env_vars_available) {
-        DEBUG("failed writing kill trace! pipe avail: %d env avail: %d\n", vvdump_named_pipe_available, vvdump_env_vars_available);
+        //DEBUG("failed writing kill trace! pipe avail: %d env avail: %d\n", vvdump_named_pipe_available, vvdump_env_vars_available);
         return;
     }
 
@@ -2806,7 +2806,7 @@ void write_kill_trace() {
 
 void write_vvdump_named_pipe_end_message() {
     if (!vvdump_named_pipe_available || !vvdump_env_vars_available) {
-        DEBUG("failed writing kill trace! pipe avail: %d env avail: %d\n", vvdump_named_pipe_available, vvdump_env_vars_available);
+        //DEBUG("failed writing kill trace! pipe avail: %d env avail: %d\n", vvdump_named_pipe_available, vvdump_env_vars_available);
         return;
     }
 

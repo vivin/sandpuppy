@@ -38,11 +38,13 @@ itanium-demangler==1.0
 joblib==0.16.0
 Keras-Preprocessing==1.1.2
 kiwisolver==1.2.0
+llvmlite==0.35.0
 lz4==3.1.1
 Markdown==3.2.2
 matplotlib==3.2.2
 mulpyplexer==0.8
 networkx==2.4
+numba==0.52.0
 numpy==1.19.0
 oauthlib==3.1.0
 opt-einsum==3.2.1
@@ -79,6 +81,7 @@ sortedcontainers==2.1.0
 sparklines==0.4.2
 termcolor==1.1.0
 threadpoolctl==2.1.0
+tslearn==0.4.1
 unicorn==1.0.2rc4
 urllib3==1.25.9
 vext==0.7.3

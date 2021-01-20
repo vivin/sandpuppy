@@ -61,7 +61,6 @@
 #  define CONST_PRIO 1 // Let domain-specific front-ends initialize before forkserver
 #endif /* ^USE_TRACE_PC */
 
-
 /* Globals needed by the injected instrumentation. The __afl_area_initial region
    is used for instrumentation output before __afl_map_shm() has a chance to run.
    It will end up as .comm, so it shouldn't be too wasteful. */
@@ -388,6 +387,7 @@ void __fuzzfactory_dsf_bitwise_or(dsf_t id, u32 key, u32 value) {
 
 void __fuzzfactory_dsf_increment(dsf_t id, u32 key, u32 value) {
   int idx = key_idx(id, key);
+  printf("incrementing key %d (idx: %d) by %d\n", key, idx, value);
   __fuzzfactory_dsf_map[idx] += value;
 }
 
@@ -405,6 +405,14 @@ void __fuzzfactory_dsfp_bitwise_or(dsf_t* p, u32 key, u32 value) {
 
 void __fuzzfactory_dsfp_increment(dsf_t* p, u32 key, u32 value) {
   __fuzzfactory_dsf_increment(*p, key, value);
+}
+
+u32 __shift_add(u32 old_value, u32 shift_width, u32 new_value) {
+    return (old_value << shift_width) + new_value;
+}
+
+void __print_val(u32 value) {
+    printf("permuted value: %d\n", value);
 }
 
 void __init_vvdump() {

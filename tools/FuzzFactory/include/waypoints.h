@@ -38,9 +38,6 @@
 extern "C" {
 #endif
 
-/* Conditionally declare external functions if compiling with AFL compiler */
-#if defined(__AFL_COMPILER) || defined(AFL_PATH)
-
 /* Type of DSF map reference */
 typedef int dsf_t;
 
@@ -89,18 +86,6 @@ dsf_t __fuzzfactory_new_domain(u32 size, enum fuzzfactory_reducer reducer, u32 i
   name = __fuzzfactory_new_domain(size, reducer, initial); \
 } \
 
-#else // Not compiling with AFL
-
-// Redefine macros as no-ops
-#define AFL_WAYPOINT(key, val, agg)
-#define AFL_WAYPOINTS_SET_STATE(state)
-#define FUZZFACTORY_DSF_MAX(id, k, v)
-#define FUZZFACTORY_DSF_BIT(id, k, v)
-#define FUZZFACTORY_DSF_SET(id, k, v)
-#define FUZZFACTORY_DSF_INC(id, k, v)
-#define FUZZFACTORY_DSF_NEW(name, size, reducer, initial)
-
-#endif // __AFL_COMPILER || AFL_PATH
 
 #ifdef __cplusplus
 }

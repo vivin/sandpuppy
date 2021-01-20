@@ -4,13 +4,13 @@
 
 #include "fuzzfactory.hpp"
 
-std::string FunctionsFile;
+std::string VariablesFile;
 
 using namespace fuzzfactory;
 
-static cl::opt<std::string, true> FunctionsFileOption(
-    "functions_file",
-    cl::desc("File containing list of library functions to intercept."),
-    cl::value_desc("functions_file"),
-    cl::location(FunctionsFile)
+static cl::opt<std::string, true> VariablesFileOption(
+    "variables_file",
+    cl::desc("File containing list of variables to target for value permutation fuzzing"),
+    cl::value_desc("variables_file"),
+    cl::location(VariablesFile)
 );

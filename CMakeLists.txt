@@ -60,6 +60,8 @@ add_executable(PhD
         tools/FuzzFactory/llvm_mode/waypoints-varprint-rt.c
         tools/FuzzFactory/llvm_mode/waypoints-vvdump-pass.cc
         tools/FuzzFactory/llvm_mode/waypoints-vvdump-rt.c
+        tools/FuzzFactory/llvm_mode/waypoints-vvperm-pass.cc
+        tools/FuzzFactory/llvm_mode/waypoints-vvperm-rt.c
         tools/FuzzFactory/afl-analyze.c
         tools/FuzzFactory/afl-as.c
         tools/FuzzFactory/afl-as.h
@@ -80,7 +82,7 @@ add_executable(PhD
         tools/FuzzFactory/test-instr.c
         tools/FuzzFactory/types.h
         tools/FuzzFactory/include/vvdump.h
-        tools/FuzzFactory/llvm_mode/basefeedback.hpp tools/FuzzFactory/llvm_mode/shared-opts.cc)
+        tools/FuzzFactory/llvm_mode/shared-opts.cc)
 
 add_executable(rarebug
         subjects/rarebug/rarebug.c)

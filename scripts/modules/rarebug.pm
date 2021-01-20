@@ -47,6 +47,11 @@ sub build {
         $build_command .= " -fsanitize=address";
     }
 
+    my $use_vvperm = ($waypoints =~ /vvperm/);
+    if ($use_vvperm) {
+        $build_command .= " -variables_file=$RESOURCES/rarebug_variables_file.txt"
+}
+
     # TODO: have to account for WEJON instrumentation waypoint eventually... similar arg like functions file
 
     my $src_dir = "$SUBJECTS/rarebug";

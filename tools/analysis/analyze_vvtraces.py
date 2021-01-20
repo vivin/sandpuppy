@@ -1,10 +1,18 @@
 import sys
+import re
 import numpy
+import pandas
 
 from cassandra.cluster import Cluster
-from sparklines import sparklines;
+from sparklines import sparklines
+
+from sklearn.preprocessing import minmax_scale
+from tslearn.clustering import TimeSeriesKMeans
 
 FETCH_SIZE = 2000
+
+
+# TODO: in the vvdump instrumenter maybe you can only focus on int. would result in much less traces.
 
 
 def main(experiment, subject, binary, execution):
@@ -21,6 +29,10 @@ def main(experiment, subject, binary, execution):
     print("Identifying files for subject {subject}".format(subject=subject))
     filenames = get_subject_filenames(session, subject)
     print("Subject {subject} has {num} files\n".format(subject=subject, num=len(filenames)))
+
+    # each element is a dict. has two fields: name and trace. trace is a list of arrays:
+    # [value, modified - declared]. name is the fully qualified name of the variable.
+    all_traces = []
 
     for filename in filenames:
         print("  Identifying functions in file {file}".format(file=filename))
@@ -65,6 +77,10 @@ def main(experiment, subject, binary, execution):
                 # normalize both deltas and values. That is if you are graphing multiple variables at the same time.
                 # For the same variable you may not need to. Experiment and see.
 
+                # Try KNN with dynamic time warping. I think you will have to normalize every value in a trace with
+                # respect to the trace itself (so that everything is between 0 and 1). This includes the "distance"
+                # metric (modified - declared). I think using this you should be able to classify families of traces.
+
                 variable_values = numpy.array(variable["info"]["variable_values"]).astype(numpy.float)
 
                 print("        Has {num} traces".format(
@@ -91,6 +107,22 @@ def main(experiment, subject, binary, execution):
                 for trace in variable["info"]["traces"]:
                     trace_lengths.append(len(trace["items"]))
 
+                    trace_items = []
+                    t = 0
+                    for trace_item in trace["items"]:
+                        #trace_items.append([
+                        #    int(trace_item["variable_value"]),
+                        #    trace_item["modified_line"] - variable["declared_line"]
+                        #])
+                        trace_items.append(int(trace_item["variable_value"]))
+
+                        t += 1
+
+                    all_traces.append({
+                        'name': variable["fqn"],
+                        'trace': minmax_scale(trace_items)      # MinMaxScaler().fit_transform(trace_items)
+                    })
+
                 print("        Is modified a minimum of {min} times and a maximum of {max} times per process".format(
                     min=numpy.min(trace_lengths),
                     max=numpy.max(trace_lengths)
@@ -116,6 +148,41 @@ def main(experiment, subject, binary, execution):
                                                  .astype(numpy.float))))
 
                 print("")
+
+    # TODO: ok, so just see if you can cluster using just values. the timeseries kmeans expects the data to be in some
+    # TODO: weird fucking format. like a single series with the values 1, 2, 3 should be [[1],[2],[3]] or some shit??
+    # TODO: then to cluster you need [ [[1], [2], [3]], [[4], [5], [6]] ] for multiple series. ugh.
+    # TODO: figure out multidimensional dynamic time warping. this way you can include modified-declared. but these
+    # TODO: "shapes" of the path won't really describe a "family" for enum type variables. it can for counters though.
+    # TODO: this is because a path can be any path representing a unique combination of values. don't spend too much
+    # TODO: time on this. start out with the manual approaches described below and then do this later.
+    #
+    # TODO: so how many classes of vars do we even have? we just have "counter". can't classify enums directly. but
+    # TODO: may be possible to do based on manual calculation of values. also counter class is same as loop variable
+    # TODO: we could tell a variable is a size variable maybe, by comparing to input size? those are the only types
+    # TODO: of int variables we have. can't think of anything else. oh yeah... something could be an index. but how
+    # TODO: do we tell? can't really tell (but can tell from source). so don't worry about index. so that is basically
+    # TODO: it. we can filter out counters and loop variables. oh and constants too. filter those out.
+    #
+    # TODO: that is all we can classify and i don't know if we can really do it with time series classification or
+    # TODO: something like that. will probably be manual.
+    #
+    # TODO: look at which variables are modified close together (as in location). for testbed, provide a "maze" program.
+    # TODO: input is just u d l r which moves the character. you can instrument a "hash" that takes the hash of two
+    # TODO: variables (or more). but it has to be in a way that hash(x, y) != hash(y, x).
+    #
+    # TODO: other things you can do: compare trace of variable with trace of another variable. see if one is proper
+    # TODO: subset maybe? compare timestampts too?
+
+    df = pandas.DataFrame(all_traces)
+    combined_value_traces = numpy.array(df['trace'].values)
+
+    print(combined_value_traces)
+    model = TimeSeriesKMeans(n_clusters=3, metric="dtw", max_iter=10)
+    model.fit(combined_value_traces)
+
+    print(model.labels_)
+    print(model.cluster_centers_)
 
 
 def get_pids_with_exit_status(session, experiment, subject, binary, execution, exit_status):
@@ -183,6 +250,13 @@ def get_subject_file_function_variables_of_type(session, subject, filename, func
         variables.append({
             'type': row[0],
             'name': row[1],
+            'fqn' : "{filename}:{function}:{variable_type}:{variable_name}:{declared_line}".format(
+                filename=re.sub("^.*/", "", filename),
+                function=function,
+                variable_type=variable_type,
+                variable_name=row[1],
+                declared_line=row[2]
+            ),
             'declared_line': row[2]
         })
 

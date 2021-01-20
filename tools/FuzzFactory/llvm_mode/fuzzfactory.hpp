@@ -27,7 +27,7 @@
 #ifndef FUZZFACTORY_H
 #define FUZZFACTORY_H
 
-extern std::string FunctionsFile;
+extern std::string VariablesFile;
 
 namespace fuzzfactory {
 

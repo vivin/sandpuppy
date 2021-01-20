@@ -14,7 +14,7 @@ using namespace fuzzfactory;
  * a cache of variable names. Then we look for all store insts and check to see if any operands are variables that we
  * have seen. if so we report that as a change of the variable's value.
  */
-class VariableValueDumpFeedback : public fuzzfactory::DomainFeedback<VariableValueDumpFeedback> {
+class VariableValuePermuteFeedback : public fuzzfactory::DomainFeedback<VariableValuePermuteFeedback> {
 
     std::map<StringRef, int> varToDeclaredLine;
     std::map<StringRef, Value*> varToValueFormatString;
@@ -43,7 +43,7 @@ class VariableValueDumpFeedback : public fuzzfactory::DomainFeedback<VariableVal
         }
     }
 
-    void dumpVariableUsage(Function* function, StoreInst *store) {
+    void instrumentIfNecessary(Function* function, StoreInst *store) {
         std::string sourceFileName= store->getModule()->getSourceFileName();
         std::string functionName = function->getName();
 
@@ -123,7 +123,7 @@ class VariableValueDumpFeedback : public fuzzfactory::DomainFeedback<VariableVal
     }
 
 public:
-    VariableValueDumpFeedback(llvm::Module& M) : fuzzfactory::DomainFeedback<VariableValueDumpFeedback>(M, "__afl_vvdump_dsf") {
+    VariableValuePermuteFeedback(llvm::Module& M) : fuzzfactory::DomainFeedback<VariableValuePermuteFeedback>(M, "__afl_vvdump_dsf") {
         dumpVariableValueFunction = this->resolveFunction(
             "__dump_variable_value",
             this->getVoidTy(),
@@ -156,7 +156,7 @@ public:
         for (inst_iterator I = inst_begin(function), E = inst_end(function); I != E; ++I) {
             Instruction& instruction = *I;
             if (instruction.hasMetadata() && isa<StoreInst>(instruction)) {
-                dumpVariableUsage(&function, cast<StoreInst>(&instruction));
+                instrumentIfNecessary(&function, cast<StoreInst>(&instruction));
             }
         }
 
@@ -168,4 +168,4 @@ public:
 
 };
 
-FUZZFACTORY_REGISTER_DOMAIN(VariableValueDumpFeedback);
+FUZZFACTORY_REGISTER_DOMAIN(VariableValuePermuteFeedback);

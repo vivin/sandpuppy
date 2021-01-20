@@ -9,10 +9,18 @@
 #define CUSTOM_CRASH 83
 
 const int MIN_MESSAGE_TYPE = 1;
-const int MAX_MESSAGE_TYPE = 20;
+const int MAX_MESSAGE_TYPE = 8;
 
 // If we get a sequence of four messages with types 9 4 11 3 in that order, it will trigger a bug.
-const unsigned int MAGIC_SEQUENCE = (9u << (3u * WIDTH)) + (4u << (2u * WIDTH)) + (11u << (1u * WIDTH)) + (3u << (0u * WIDTH));
+
+const unsigned int TYPE_1 = 8u;
+const unsigned int TYPE_2 = 4u;
+const unsigned int TYPE_3 = 7u;
+const unsigned int TYPE_4 = 3u;
+const unsigned int MAGIC_SEQUENCE = (TYPE_1 << (3u * WIDTH)) +
+                                    (TYPE_2 << (2u * WIDTH)) +
+                                    (TYPE_3 << (1u * WIDTH)) +
+                                    (TYPE_4 << (0u * WIDTH));
 const char delimiter = ':';
 
 unsigned int current_sequence = 0u;
@@ -32,6 +40,7 @@ int process_message(const char* message_type_str, const char* message) {
 
     int message_type = (int) value;
     current_sequence = (current_sequence << WIDTH) + message_type;
+    printf("magic is: %d the current sequence is: %d\n", MAGIC_SEQUENCE, current_sequence);
     if (current_sequence == MAGIC_SEQUENCE) {
         printf("You got the magic sequence!\n");
         char *buffer = malloc(5);
@@ -46,8 +55,11 @@ int process_message(const char* message_type_str, const char* message) {
 int main(int argc, char* argv[]) {
     char *line = NULL;
     size_t bufsize;
+    float val = 0.0f;
+    double one = 1.0;
 
     int exit_code = 0;
+    int value = 10;
 
     while (exit_code == 0 && getline(&line, &bufsize, stdin)) {
         unsigned int size = strlen(line) - 1; // Ignore newline in size
