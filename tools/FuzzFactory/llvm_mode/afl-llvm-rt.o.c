@@ -475,15 +475,14 @@ void __dump_variable_value(const char* filename, const char* function_name, cons
     u8* var_val = malloc(var_val_len + 1);
     vsprintf((char *) var_val, var_val_format, var_val_vsprintf);
 
-    // get timestamp in milliseconds
+    // get timestamp in microseconds
     struct timeval tv;
 
     gettimeofday(&tv, NULL);
 
     unsigned long long timestamp =
-        (unsigned long long)(tv.tv_sec) * 1000 +
-        (unsigned long long)(tv.tv_usec) / 1000;
-    //unsigned long timestamp = time(NULL);
+        (unsigned long long)(tv.tv_sec) * (unsigned long long)1000000 +
+        (unsigned long long)(tv.tv_usec);
 
     // Now build the rest of it.
 
