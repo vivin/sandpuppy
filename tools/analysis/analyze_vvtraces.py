@@ -30,10 +30,6 @@ def main(experiment, subject, binary, execution):
     filenames = get_subject_filenames(session, subject)
     print("Subject {subject} has {num} files\n".format(subject=subject, num=len(filenames)))
 
-    # each element is a dict. has two fields: name and trace. trace is a list of arrays:
-    # [value, modified - declared]. name is the fully qualified name of the variable.
-    all_traces = []
-
     for filename in filenames:
         print("  Identifying functions in file {file}".format(file=filename))
         functions = get_subject_file_functions(session, subject, filename)
@@ -67,87 +63,23 @@ def main(experiment, subject, binary, execution):
                     variable["name"]
                 )
 
-                # This is where you can start analyzing all these traces. Pass this information into another
-                # function and you can put it into a pandas dataframe I think. Then you can do things like graph
-                # a histogram or maybe heatmap of values the variable takes on where it is declared and then each
-                # line where it is modified. You can also draw a 3d "path" where x coordinate is the delta between
-                # declared line and modified line, y coordinate is the value, and z is a time coordinate that
-                # increases strictly monotonically (we get traces back in ascending order of time anyway so this is
-                # easy to do). You could potentially graph a bunch of these traces together, but you may need to
-                # normalize both deltas and values. That is if you are graphing multiple variables at the same time.
-                # For the same variable you may not need to. Experiment and see.
+            # This is where you can start analyzing all these traces. Pass this information into another
+            # function and you can put it into a pandas dataframe I think. Then you can do things like graph
+            # a histogram or maybe heatmap of values the variable takes on where it is declared and then each
+            # line where it is modified. You can also draw a 3d "path" where x coordinate is the delta between
+            # declared line and modified line, y coordinate is the value, and z is a time coordinate that
+            # increases strictly monotonically (we get traces back in ascending order of time anyway so this is
+            # easy to do). You could potentially graph a bunch of these traces together, but you may need to
+            # normalize both deltas and values. That is if you are graphing multiple variables at the same time.
+            # For the same variable you may not need to. Experiment and see.
 
-                # Try KNN with dynamic time warping. I think you will have to normalize every value in a trace with
-                # respect to the trace itself (so that everything is between 0 and 1). This includes the "distance"
-                # metric (modified - declared). I think using this you should be able to classify families of traces.
+            # Try KNN with dynamic time warping. I think you will have to normalize every value in a trace with
+            # respect to the trace itself (so that everything is between 0 and 1). This includes the "distance"
+            # metric (modified - declared). I think using this you should be able to classify families of traces.
 
-                variable_values = numpy.array(variable["info"]["variable_values"]).astype(numpy.float)
+            #print_variables_info(variables)
 
-                print("        Has {num} traces".format(
-                    num=len(variable["info"]["traces"])
-                ))
-                print("        Is modified on {num} lines{line}".format(
-                    num=len(variable["info"]["modified_lines"]),
-                    line=" ({l})".format(l=list(variable["info"]["modified_lines"])[0])
-                    if len(variable["info"]["modified_lines"]) == 1 else ""
-                ))
-
-                print("        Has {num} unique values; mean is {mean} and standard deviation is {stddev}".format(
-                    num=len(set(variable_values)),
-                    mean=numpy.mean(variable_values),
-                    stddev=numpy.std(variable_values)
-                ))
-
-                if len(set(variable_values)) > 1:
-                    hist = numpy.histogram(variable_values, bins=len(set(variable_values)))[0]
-                    for line in sparklines(hist):
-                        print("          {line}".format(line=line))
-
-                trace_lengths = []
-                for trace in variable["info"]["traces"]:
-                    trace_lengths.append(len(trace["items"]))
-
-                    trace_items = []
-                    t = 0
-                    for trace_item in trace["items"]:
-                        #trace_items.append([
-                        #    int(trace_item["variable_value"]),
-                        #    trace_item["modified_line"] - variable["declared_line"]
-                        #])
-                        trace_items.append(int(trace_item["variable_value"]))
-
-                        t += 1
-
-                    all_traces.append({
-                        'name': variable["fqn"],
-                        'trace': minmax_scale(trace_items)      # MinMaxScaler().fit_transform(trace_items)
-                    })
-
-                print("        Is modified a minimum of {min} times and a maximum of {max} times per process".format(
-                    min=numpy.min(trace_lengths),
-                    max=numpy.max(trace_lengths)
-                ))
-                print("        Is modified an average of {avg} times per process (standard deviation={stddev})".format(
-                    avg=numpy.mean(trace_lengths),
-                    stddev=numpy.std(trace_lengths)
-                ))
-                if len(set(trace_lengths)) > 1:
-                    hist = numpy.histogram(trace_lengths, bins=len(set(trace_lengths)))[0]
-                    for line in sparklines(hist):
-                        print("          {line}".format(line=line))
-
-                if len(variable["info"]["modified_lines"]) > 1:
-                    for modified_line in variable["info"]["modified_line_values"]:
-                        print("          Has {num} unique values on line {line}; mean is {mean} and standard deviation"
-                              " is {stddev}".format(
-                                num=len(set(variable["info"]["modified_line_values"][modified_line])),
-                                line=modified_line,
-                                mean=numpy.mean(numpy.array(variable["info"]["modified_line_values"][modified_line])
-                                                .astype(numpy.float)),
-                                stddev=numpy.std(numpy.array(variable["info"]["modified_line_values"][modified_line])
-                                                 .astype(numpy.float))))
-
-                print("")
+            enum_vars = identify_enum_vars(variables)
 
     # TODO: ok, so just see if you can cluster using just values. the timeseries kmeans expects the data to be in some
     # TODO: weird fucking format. like a single series with the values 1, 2, 3 should be [[1],[2],[3]] or some shit??
@@ -174,15 +106,160 @@ def main(experiment, subject, binary, execution):
     # TODO: other things you can do: compare trace of variable with trace of another variable. see if one is proper
     # TODO: subset maybe? compare timestampts too?
 
-    df = pandas.DataFrame(all_traces)
-    combined_value_traces = numpy.array(df['trace'].values)
 
-    print(combined_value_traces)
-    model = TimeSeriesKMeans(n_clusters=3, metric="dtw", max_iter=10)
-    model.fit(combined_value_traces)
+def identify_enum_vars(variables):
+    print("")
 
-    print(model.labels_)
-    print(model.cluster_centers_)
+    enum_vars = []
+    for variable in variables:
+        analysis = analyze_variable(variable)
+
+        if analysis['num_traces'] < 10:
+            print("      Ignoring {fqn}. Too few traces: {num}".format(fqn=variable['fqn'], num=analysis['num_traces']))
+            break
+
+        if analysis['num_modified_lines'] == 1 and analysis['num_unique_values'] == 1:
+            print("      Ignoring {fqn}. Is effectively a constant.".format(fqn=variable['fqn']))
+            break
+
+        if analysis['modified_max'] > 1:
+
+            is_counter = True
+            for trace in variable["info"]["traces"]:
+
+                deltas = []
+                index = 0
+                prev_sign = 0
+                while index < len(trace["items"]) - 1 and is_counter:
+                    current_value = int(trace["items"][index]["variable_value"])
+                    next_value = int(trace["items"][index + 1]["variable_value"])
+
+                    delta = next_value - current_value
+                    if index == 0:
+                        prev_sign = delta / (abs(delta) if delta != 0 else 1)
+
+                    sign = delta / (abs(delta) if delta != 0 else 1)
+                    if sign == prev_sign:
+                        deltas.append(abs(delta))
+                    elif len(deltas) > 1:
+                        total_delta = numpy.sum(deltas)
+                        if total_delta == numpy.round(len(deltas) * numpy.mean(deltas)):
+                            deltas = []
+                        else:
+                            is_counter = False
+                    else:
+                        is_counter = False
+
+                    index += 1
+
+                if not is_counter:
+                    break
+
+            if is_counter:
+                print("      Ignoring {fqn}. Is effectively a counter.".format(fqn=variable['fqn']))
+
+        # TODO: why is num_bytes:78 in png.c a counter?
+        # TODO: why is save_flags:77 in png.c a counter?
+        # TODO: why is size:392 in pngmem.c a counter?
+        # TODO: why is chunk_name:811 in pngread.c a counter?
+        # TODO: double check row_bytes:3909 in pngrutil.c. Classified as a counter and it probably is (byte index)
+        # TODO: ok. so. if we check for variables that have been modified at least 3 times instead of 2, we end up
+        # TODO: getting rid of everything up there except chunk_name. We also lose some variables. maybe because we
+        # TODO: don't have enough traces? because from looking at the code, the one var that it misses (pngset.c line
+        # TODO: 1022) is a loop variable.
+        # TODO: ok i think you need to incorporate declared line and modified line. because if it is always getting
+        # TODO: set the same place where it is declared then it is probably not a counter maybe... uhhh fuck. i dunno.
+        # TODO: coz if you have a for loop you have declaration and modification on same line. so you can't tell that
+        # TODO: it is different from a case where you just a have a func with a variable and it just sets it to some
+        # TODO: value based on the argument it gets. if the argument is sort of counter like or something in it that
+        # TODO: has to do with counting, then this variable ends up being a proxy for it and also being a counter.
+        # TODO: so declared and modified line won't help i don't think. oh well. anyways. next see if you can identify
+        # TODO: size variables. see how value relates to input size. and then finally you can figure out the enum
+        # TODO: vars. limit it to variables that have max 16 unique values?? or maybe 255 unique vals. check to see if
+        # TODO: it is modified in one place. if it takes 255 unique vals and is set in one place then maybe it is a
+        # TODO: candidate. another way is if it is set in multiple places, but each place it is set to a unique value.
+        # TODO: and the union of all the values it gets set to at each modified location is the same as the total set of
+        # TODO: values the var takes on. then it is an enum var i think.
+        #
+        # TODO: how many false negatives do we have??? need to make a test program with all kinds of counters... see
+        # TODO: which ones aren't picked up
+
+    print("")
+
+    return enum_vars
+
+
+def analyze_variable(variable):
+    analysis = dict()
+
+    analysis['num_traces'] = len(variable["info"]["traces"])
+    analysis['num_modified_lines'] = len(variable["info"]["modified_lines"])
+    analysis['num_unique_values'] = len(set(variable["info"]["variable_values"]))
+
+    trace_lengths = []
+    for trace in variable["info"]["traces"]:
+        trace_lengths.append(len(trace["items"]))
+
+    analysis['modified_min'] = numpy.min(trace_lengths)
+    analysis['modified_max'] = numpy.max(trace_lengths)
+
+    return analysis
+
+
+def print_variables_info(variables):
+
+    for variable in variables:
+        print("      {fqn}".format(fqn=variable["fqn"]))
+
+        analysis = analyze_variable(variable)
+
+        variable_values = numpy.array(variable["info"]["variable_values"]).astype(numpy.float)
+        print("        Has {num} traces".format(num=analysis['num_traces']))
+        print("        Is modified on {num} lines{line}".format(
+            num=analysis['num_modified_lines'],
+            line=" ({l})".format(l=list(variable["info"]["modified_lines"])[0])
+            if analysis['num_modified_lines'] == 1 else ""
+        ))
+        print("        Has {num} unique values; mean is {mean} and standard deviation is {stddev}".format(
+            num=analysis['num_unique_values'],
+            mean=numpy.mean(variable_values),
+            stddev=numpy.std(variable_values)
+        ))
+        if len(set(variable_values)) > 1:
+            hist = numpy.histogram(variable_values, bins=len(set(variable_values)))[0]
+            for line in sparklines(hist):
+                print("          {line}".format(line=line))
+
+        trace_lengths = []
+        for trace in variable["info"]["traces"]:
+            trace_lengths.append(len(trace["items"]))
+
+        print("        Is modified a minimum of {min} times and a maximum of {max} times per process".format(
+            min=numpy.min(trace_lengths),
+            max=numpy.max(trace_lengths)
+        ))
+        print("        Is modified an average of {avg} times per process (standard deviation={stddev})".format(
+            avg=numpy.mean(trace_lengths),
+            stddev=numpy.std(trace_lengths)
+        ))
+
+        if len(set(trace_lengths)) > 1:
+            hist = numpy.histogram(trace_lengths, bins=len(set(trace_lengths)))[0]
+            for line in sparklines(hist):
+                print("          {line}".format(line=line))
+
+        if len(variable["info"]["modified_lines"]) > 1:
+            for modified_line in variable["info"]["modified_line_values"]:
+                print("          Has {num} unique values on line {line}; mean is {mean} and standard deviation"
+                      " is {stddev}".format(
+                       num=len(set(variable["info"]["modified_line_values"][modified_line])),
+                       line=modified_line,
+                       mean=numpy.mean(numpy.array(variable["info"]["modified_line_values"][modified_line])
+                                       .astype(numpy.float)),
+                       stddev=numpy.std(numpy.array(variable["info"]["modified_line_values"][modified_line])
+                                        .astype(numpy.float))))
+
+        print("")
 
 
 def get_pids_with_exit_status(session, experiment, subject, binary, execution, exit_status):
@@ -250,7 +327,7 @@ def get_subject_file_function_variables_of_type(session, subject, filename, func
         variables.append({
             'type': row[0],
             'name': row[1],
-            'fqn' : "{filename}:{function}:{variable_type}:{variable_name}:{declared_line}".format(
+            'fqn': "{filename}:{function}:{variable_type}:{variable_name}:{declared_line}".format(
                 filename=re.sub("^.*/", "", filename),
                 function=function,
                 variable_type=variable_type,
@@ -266,7 +343,8 @@ def get_subject_file_function_variables_of_type(session, subject, filename, func
 def get_variable_value_traces_info(session, experiment, subject, binary, execution, exit_status, filename, function,
                                    declared_line, variable_type, variable_name):
     trace_statement = session.prepare(
-        "SELECT pid, input_size, modified_line, variable_value FROM process_variable_value_traces WHERE experiment = ? "
+        "SELECT pid, input_size, modified_line, variable_value, timestamp FROM process_variable_value_traces "
+        "WHERE experiment = ? "
         "AND subject = ? "
         "AND binary = ? "
         "AND execution = ? "
@@ -304,7 +382,8 @@ def get_variable_value_traces_info(session, experiment, subject, binary, executi
         info['pid_traces'][pid]['input_size'] = input_size
         info['pid_traces'][pid]['items'].append({
             'modified_line': modified_line,
-            'variable_value': variable_value
+            'variable_value': variable_value,
+            'ts': row[4]
         })
 
         info['modified_lines'].add(modified_line)
