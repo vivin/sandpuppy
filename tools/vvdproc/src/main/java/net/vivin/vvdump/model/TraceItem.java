@@ -18,7 +18,7 @@ import java.util.function.Supplier;
 @Slf4j
 @Getter
 @ToString
-public class TraceItem {
+public class TraceItem implements Entity {
 
     private final String experimentName;
     private final String subject;

@@ -10,13 +10,13 @@ import java.util.function.Supplier;
  *
  * @author vivin
  */
-public class FullTraceItem {
+public class FullTraceItem implements Entity {
 
     private final TraceItem traceItem;
     private final EndTraceMessage endTraceMessage;
     private final Map<String, Supplier<Object>> tableFieldToGetter = new HashMap<>();
 
-    FullTraceItem(TraceItem traceItem, EndTraceMessage endTraceMessage) {
+    public FullTraceItem(TraceItem traceItem, EndTraceMessage endTraceMessage) {
         this.traceItem = traceItem;
         this.endTraceMessage = endTraceMessage;
 

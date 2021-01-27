@@ -1,5 +1,6 @@
 package net.vivin.vvdump.model;
 
+import lombok.Builder;
 import lombok.Getter;
 import lombok.ToString;
 
@@ -16,7 +17,8 @@ import java.util.function.Supplier;
 
 @Getter
 @ToString
-public class EndTraceMessage {
+@Builder
+public class EndTraceMessage implements Entity {
 
     private final String experimentName;
     private final String subject;
