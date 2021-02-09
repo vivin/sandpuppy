@@ -358,7 +358,8 @@ enum {
   /* 02 */ FAULT_CRASH,
   /* 03 */ FAULT_ERROR,
   /* 04 */ FAULT_NOINST,
-  /* 05 */ FAULT_NOBITS
+  /* 05 */ FAULT_NOBITS,
+  /* 06 */ FAULT_FAILURE
 };
 
 void DEBUG (char const *fmt, ...) {
@@ -2659,6 +2660,10 @@ static u8 run_target(char** argv, u32 timeout) {
     slowest_exec_ms = exec_ms;
   }
 
+  if (WIFEXITED(status) && WEXITSTATUS(status) != 0) {
+      return FAULT_FAILURE;
+  }
+
   return FAULT_NONE;
 
 }
@@ -2755,6 +2760,10 @@ static void write_vvdump_end_trace(u8 fault, s32 input_size) {
 
             case FAULT_CRASH:
                 fault_str = "crash";
+                break;
+
+            case FAULT_FAILURE:
+                fault_str = "failure";
                 break;
 
             default:
@@ -3035,6 +3044,7 @@ static void perform_dry_run(char** argv) {
     switch (res) {
 
       case FAULT_NONE:
+      case FAULT_FAILURE:
 
         if (q == queue) check_map_coverage();
 

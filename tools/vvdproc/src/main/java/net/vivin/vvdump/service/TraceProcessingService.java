@@ -56,7 +56,7 @@ public class TraceProcessingService {
         this.applicationContext = applicationContext;
         this.cassandraRepository = cassandraRepository;
         this.pipeReaderExecutor = Executors.newSingleThreadExecutor();
-        this.traceInsertionExecutor = Executors.newFixedThreadPool(32);
+        this.traceInsertionExecutor = Executors.newFixedThreadPool(96);
     }
 
     @PostConstruct
@@ -131,7 +131,7 @@ public class TraceProcessingService {
         log.info("Fuzzer has shut down. No more incoming traces.");
         traceInsertionExecutor.shutdown();
         await()
-            .atMost(Duration.ofMinutes(10))
+            .atMost(Duration.ofHours(3))
             .with().pollInterval(Duration.ofSeconds(5))
             .until(() -> {
                 log.info("{} trace items from {} processes remain to be saved...", traceCount.get(), getRemainingProcesses());

@@ -1,4 +1,4 @@
-package libpng;
+package readelf;
 
 use strict;
 use warnings;
@@ -19,37 +19,33 @@ sub build {
     my $context = $_[3];
     my $waypoints = $_[4];
 
-    my $libpng_src_dir = "$SUBJECTS/libpng/$version";
-    my $libpng_resources = "$RESOURCES/tarballs/libpng";
+    my $binutils_src_dir = "$SUBJECTS/binutils/$version";
+    my $binutils_resources = "$RESOURCES/tarballs/binutils";
 
     $log->info("Checking if source is already unpacked...");
-    if (! -d $libpng_src_dir) {
+    if (! -d $binutils_src_dir) {
         $log->info("Source is not unpacked. Unpacking...");
 
-        my $libpng_src = "$libpng_resources/libpng-$version.tar.gz";
-        if (! -f $libpng_src) {
-            die "Could not find libpng source: $libpng_src";
+        my $binutils_src = "$binutils_resources/binutils-$version.tar.bz2";
+        if (! -f $binutils_src) {
+            die "Could not find binutils source: $binutils_src";
         }
 
-        if (! -d "$SUBJECTS/libpng") {
-            system ("mkdir -p $SUBJECTS/libpng 2> /dev/null") == 0
-                or die "Failed to create $SUBJECTS/libpng";
+        if (! -d "$SUBJECTS/binutils") {
+            system ("mkdir -p $SUBJECTS/binutils 2> /dev/null") == 0
+                or die "Failed to create $SUBJECTS/binutils";
         }
-
-        chdir "$SUBJECTS/libpng";
-        system ("tar -zxvf $libpng_src");
-        rename "libpng-$version", $version;
-
-        #chdir $libpng_src_dir;
-        #system ("patch < $libpng_resources/libpng-nocrc.patch");
+        chdir "$SUBJECTS/binutils";
+        system ("tar -jxvf $binutils_src");
+        rename "binutils-$version", $version;
 
     } else {
         $log->info("Source is already unpacked");
     }
 
-    chdir $libpng_src_dir;
+    chdir $binutils_src_dir;
 
-    if (-f "$libpng_src_dir/Makefile") {
+    if (-f "$binutils_src_dir/Makefile") {
         $log->info("Makefile exists; cleaning.");
         system ("make clean");
     }
@@ -66,7 +62,7 @@ sub build {
 
     if ($waypoints ne "none") {
         $ENV{"WAYPOINTS"} = $waypoints;
-        system ("CC=\"$build_command\" ./configure --disable-shared && make -j4");
+        system ("CC=\"$build_command\" ./configure && make -j4");
         delete $ENV{"WAYPOINTS"};
     } else {
         system $build_command;
@@ -80,7 +76,7 @@ sub build {
 
     my $binary_base = "$workspace/binaries";
     my $binary_dir =  "$binary_base/$context";
-    my $binary = "$binary_dir/readpng";
+    my $binary = "$binary_dir/readelf";
 
     if (-d $binary_dir and -e $binary) {
         my $result = `find $binary_dir -type f -name "*backup[0-9]" | sed -e 's,^.*backup,,' | sort -nr | head -1`;
@@ -96,27 +92,16 @@ sub build {
         make_path($binary_dir);
     }
 
-    my $libpng_lib_version = $version;
-    $libpng_lib_version =~ s/\.[0-9]$//;
-    $libpng_lib_version =~ s/\.//;
+    my $binutils_lib_version = $version;
+    $binutils_lib_version =~ s/\.[0-9]$//;
+    $binutils_lib_version =~ s/\.//;
 
-    my $libpng_lib_file = "$libpng_src_dir/.libs/libpng$libpng_lib_version.a";
-    if (! -f $libpng_lib_file) {
-        die "Could not find build libpng library at $libpng_lib_file";
+    my $readelf_binary = "$binutils_src_dir/binutils/readelf";
+    if (! -f $readelf_binary) {
+        die "Could not find readelf binary at $readelf_binary";
     }
 
-    if (! -f "$libpng_src_dir/contrib/libtests/readpng.c") {
-        system ("cp $libpng_resources/readpng.c $libpng_src_dir/contrib/libtests");
-    }
-
-    chdir "$libpng_src_dir/contrib/libtests";
-
-    $log->info("Building readpng..");
-
-    system ("$build_command ./readpng.c -lm -lz $libpng_lib_file -o $binary");
-    if ($? != 0) {
-        die "Building readpng failed";
-    }
+    system ("cp $readelf_binary $binary")
 }
 
 sub fuzz {
@@ -153,7 +138,7 @@ sub fuzz {
         die "Cannot resume because cannot find results dir at $results_dir";
     }
 
-    my $binary = "$workspace/binaries/$binary_context/readpng";
+    my $binary = "$workspace/binaries/$binary_context/readelf";
     if (! -e $binary) {
         die "Could not find binary for binary context $binary_context at $binary";
     }
@@ -167,9 +152,8 @@ sub fuzz {
     if ($resume) {
         $fuzz_command .= " -i-"
     } else {
-        my $seeds_directory = "$RESOURCES/seeds/libpng/images";
-        my $dictionary_directory = "$RESOURCES/seeds/libpng/dictionary";
-        $fuzz_command .= " -i $seeds_directory -x $dictionary_directory/png.dict";
+        my $seeds_directory = "$RESOURCES/seeds/readelf";
+        $fuzz_command .= " -i $seeds_directory";
     }
 
     $fuzz_command .= " -o $results_dir -T \"$subject-$version-$experiment_name-$exec_context\"";
@@ -184,7 +168,9 @@ sub fuzz {
         $fuzz_command .= " -t 300";
     }
 
-    $fuzz_command .= " $binary";
+    # @@ at the end means that we are passing in the elf file as a command line argument and it is the second argument.
+    # The first argument is the switch -a which means display all information from elf file.
+    $fuzz_command .= " $binary -a \@\@";
 
     # Need to run in shell using exec otherwise it runs it as sh -c $fuzz_command and the pid we get is of sh. So when
     # we try to kill it, it doesn't work.

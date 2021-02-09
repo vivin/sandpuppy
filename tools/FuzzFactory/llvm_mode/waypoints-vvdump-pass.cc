@@ -110,7 +110,7 @@ class VariableValuePermuteFeedback : public fuzzfactory::DomainFeedback<Variable
                 if (integerType->getBitWidth() == 8) {
                     if (auto *constantExpr = dyn_cast<ConstantExpr>(value)) {
                         if (auto *globalVariable = dyn_cast<GlobalVariable>(constantExpr->getOperand(0))) {
-                            if (dyn_cast<ConstantDataArray>(globalVariable->getInitializer())) {
+                            if (globalVariable->hasInitializer() && dyn_cast<ConstantDataArray>(globalVariable->getInitializer())) {
                                 return "string:%s";
                             }
                         }

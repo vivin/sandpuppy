@@ -6,10 +6,11 @@
 // This program has a rare bug.
 
 #define WIDTH    8u
-#define CUSTOM_CRASH 83
+#define CUSTOM_CRASH 1
 
 const int MIN_MESSAGE_TYPE = 1;
 const int MAX_MESSAGE_TYPE = 8;
+const int MAX_MESSAGE_SIZE = 140;
 
 // If we get a sequence of four messages with types 9 4 11 3 in that order, it will trigger a bug.
 
@@ -21,11 +22,16 @@ const unsigned int MAGIC_SEQUENCE = (TYPE_1 << (3u * WIDTH)) +
                                     (TYPE_2 << (2u * WIDTH)) +
                                     (TYPE_3 << (1u * WIDTH)) +
                                     (TYPE_4 << (0u * WIDTH));
+
 const char delimiter = ':';
 
 unsigned int current_sequence = 0u;
 
 int process_message(const char* message_type_str, const char* message) {
+    if (strlen(message) > MAX_MESSAGE_SIZE) {
+        return -1;
+    }
+
     char *endptr;
     errno = 0;
 
@@ -48,18 +54,56 @@ int process_message(const char* message_type_str, const char* message) {
         free(buffer);
     }
 
-    printf ("Message type: %d, Message: %s\n\n", message_type, message);
+    char mt_char;
+    switch (message_type) {
+        case 0:
+            mt_char = 'a';
+            break;
+
+        case 1:
+            mt_char = 'b';
+            break;
+
+        case 2:
+            mt_char = 'c';
+            break;
+
+        case 3:
+            mt_char = 'd';
+            break;
+
+        case 4:
+            mt_char = 'e';
+            break;
+
+        case 5:
+            mt_char = 'f';
+            break;
+
+        case 6:
+            mt_char = 'g';
+            break;
+
+        case 7:
+            mt_char = 'h';
+            break;
+
+        case 8:
+            mt_char = 'i';
+            break;
+
+        default:
+            mt_char = 'j';
+    }
+
+    printf ("Message type: %d%c, Message: %s\n\n", message_type, mt_char, message);
     return 0;
 }
 
 int main(int argc, char* argv[]) {
     char *line = NULL;
     size_t bufsize;
-    float val = 0.0f;
-    double one = 1.0;
-
     int exit_code = 0;
-    int value = 10;
 
     while (exit_code == 0 && getline(&line, &bufsize, stdin)) {
         unsigned int size = strlen(line) - 1; // Ignore newline in size

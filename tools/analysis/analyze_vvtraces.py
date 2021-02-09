@@ -7,7 +7,7 @@ from cassandra.cluster import Cluster
 from sparklines import sparklines
 
 from sklearn.preprocessing import minmax_scale
-from tslearn.clustering import TimeSeriesKMeans
+#from tslearn.clustering import TimeSeriesKMeans
 
 FETCH_SIZE = 2000
 
@@ -77,9 +77,10 @@ def main(experiment, subject, binary, execution):
             # respect to the trace itself (so that everything is between 0 and 1). This includes the "distance"
             # metric (modified - declared). I think using this you should be able to classify families of traces.
 
-            #print_variables_info(variables)
+            # print_variables_info(variables)
 
             enum_vars = identify_enum_vars(variables)
+
 
     # TODO: ok, so just see if you can cluster using just values. the timeseries kmeans expects the data to be in some
     # TODO: weird fucking format. like a single series with the values 1, 2, 3 should be [[1],[2],[3]] or some shit??
@@ -124,6 +125,7 @@ def identify_enum_vars(variables):
 
         if analysis['modified_max'] > 1:
 
+            combined_deltas = []
             is_counter = True
             for trace in variable["info"]["traces"]:
 
@@ -139,9 +141,10 @@ def identify_enum_vars(variables):
                         prev_sign = delta / (abs(delta) if delta != 0 else 1)
 
                     sign = delta / (abs(delta) if delta != 0 else 1)
-                    if sign == prev_sign:
+                    if sign == prev_sign and delta > 0:
                         deltas.append(abs(delta))
-                    elif len(deltas) > 1:
+                        combined_deltas.append(abs(delta))
+                    elif len(deltas) > 0:
                         total_delta = numpy.sum(deltas)
                         if total_delta == numpy.round(len(deltas) * numpy.mean(deltas)):
                             deltas = []
@@ -156,17 +159,93 @@ def identify_enum_vars(variables):
                     break
 
             if is_counter:
-                print("      Ignoring {fqn}. Is effectively a counter.".format(fqn=variable['fqn']))
+                is_counter = numpy.mean(combined_deltas) <= 255 # Ignore things that have huge jumps in value
 
-        # TODO: why is num_bytes:78 in png.c a counter?
-        # TODO: why is save_flags:77 in png.c a counter?
-        # TODO: why is size:392 in pngmem.c a counter?
-        # TODO: why is chunk_name:811 in pngread.c a counter?
-        # TODO: double check row_bytes:3909 in pngrutil.c. Classified as a counter and it probably is (byte index)
-        # TODO: ok. so. if we check for variables that have been modified at least 3 times instead of 2, we end up
-        # TODO: getting rid of everything up there except chunk_name. We also lose some variables. maybe because we
-        # TODO: don't have enough traces? because from looking at the code, the one var that it misses (pngset.c line
-        # TODO: 1022) is a loop variable.
+            if is_counter:
+                print("      Ignoring {fqn}. Is effectively a counter.".format(fqn=variable['fqn']))
+                break
+
+            # Looking for enum-like variables. We are already looking for variables that have been modified more than
+            # once. Since we are looking to maximize the combinations in the input, what can we tell about the var?
+            # Let's maybe first see if there is a correlation between the number of times it is invoked and the input
+            # size? So our data set we will collect will be two arrays. The array will have an entry per process trace.
+            # First array will hold number of times a variable was modified. Second will hold the size of the input for
+            # that process.
+
+            times_modified = [len(trace["items"]) for trace in variable["info"]["traces"]]
+            input_sizes = [trace["input_size"] for trace in variable["info"]["traces"]]
+
+            times_modified_variance = numpy.var(times_modified)
+            input_sizes_variance = numpy.var(input_sizes)
+
+            if times_modified_variance > 0 and input_sizes_variance > 0:
+                r = numpy.corrcoef(times_modified, input_sizes)
+
+                # We will look for Pearson coefficients greater than 0.5 to see if the number of times a variable is
+                # modified is correlated with input size.
+
+                if r[0, 1] >= 0.25 and r[1, 0] >= 0.25:
+                    print("      Number of times {fqn} is modified is correlated with input size "
+                          "(Pearson coefficients are {a} and {b}).".format(fqn=variable["fqn"], a=r[0, 1], b=r[1, 0]))
+
+                    variable_values = numpy.array(variable["info"]["variable_values"]).astype(numpy.float)
+                    ord_mags = [numpy.log10(v) if v > 0 else 0 for v in variable_values]
+
+                    # This is super sketch, and I probably need to mathematically prove it or something. But anyway, the
+                    # assumption is that these enum values come from a small set of values, and even if sequential,
+                    # aren't wildly different in their magnitudes. We have a limit of 255 unique values and so we don't
+                    # expect those to vary wildly in an enum. For example, it's not likely we will have an enum with
+                    # values like 0, 1, 2, and then 12355914 or something. So what we'll do is calculate the standard
+                    # deviation of the log10 of the values and ignore the variable if that value is greater than 1.
+
+                    if numpy.std(ord_mags) > 1:
+                        print("      Ignoring because stddev of log10(values) is greater than one: {std}".format(
+                            std=numpy.std(ord_mags)
+                        ))
+                        break
+
+                    # How many places is this variable modified? We have two cases where a variable can be like an enum
+                    # variable:
+                    #
+                    # First:
+                    #   value = parsed_from_input
+                    #   if value is valid:
+                    #       enum_var = value
+                    #
+                    # Second:
+                    #    value = parsed_from_input
+                    #    if value is equal to something:
+                    #        enum_var = value1
+                    #    elsif value is equal to something else:
+                    #        enum_var = value2
+                    #
+                    # And so on. Basically the second case is like a switch.
+
+                    if analysis["num_modified_lines"] == 1:
+
+                        # Deal with case 1:
+                        print("        {fqn} is modified on only one line".format(fqn=variable["fqn"]))
+
+                        # For now we will limit ourselves to variables that have up to 255 unique values
+                        if analysis["num_unique_values"] <= 255:
+                            print("          {fqn} has {unique} unique values. This may be an enum variable.\n".format(
+                                fqn=variable["fqn"],
+                                unique=analysis["num_unique_values"]
+                            ))
+                        else:
+                            print("           Ignoring {fqn} because it has more than 255 unique values.\n".format(
+                                fqn=variable["fqn"]
+                            ))
+
+                    elif analysis["num_modified_lines"] == analysis["num_unique_values"]:
+
+                        # Deal with case 2. Basically the number of lines it is modified on should equal the number of
+                        # unique values it holds
+                        print("        {fqn} is has {unique} values and is modified on the same number of lines. "
+                              "It is probably an enum variable.\n".format(fqn=variable["fqn"],
+                                                                          unique=analysis["num_unique_values"]))
+
+        # TODO: possible to build libpng so that it errors out on unknown chuks??
         # TODO: ok i think you need to incorporate declared line and modified line. because if it is always getting
         # TODO: set the same place where it is declared then it is probably not a counter maybe... uhhh fuck. i dunno.
         # TODO: coz if you have a for loop you have declaration and modification on same line. so you can't tell that
@@ -200,14 +279,13 @@ def analyze_variable(variable):
     for trace in variable["info"]["traces"]:
         trace_lengths.append(len(trace["items"]))
 
-    analysis['modified_min'] = numpy.min(trace_lengths)
-    analysis['modified_max'] = numpy.max(trace_lengths)
+    analysis['modified_min'] = numpy.min(trace_lengths) if len(trace_lengths) > 0 else 0
+    analysis['modified_max'] = numpy.max(trace_lengths) if len(trace_lengths) > 0 else 0
 
     return analysis
 
 
 def print_variables_info(variables):
-
     for variable in variables:
         print("      {fqn}".format(fqn=variable["fqn"]))
 
@@ -252,12 +330,12 @@ def print_variables_info(variables):
             for modified_line in variable["info"]["modified_line_values"]:
                 print("          Has {num} unique values on line {line}; mean is {mean} and standard deviation"
                       " is {stddev}".format(
-                       num=len(set(variable["info"]["modified_line_values"][modified_line])),
-                       line=modified_line,
-                       mean=numpy.mean(numpy.array(variable["info"]["modified_line_values"][modified_line])
-                                       .astype(numpy.float)),
-                       stddev=numpy.std(numpy.array(variable["info"]["modified_line_values"][modified_line])
-                                        .astype(numpy.float))))
+                    num=len(set(variable["info"]["modified_line_values"][modified_line])),
+                    line=modified_line,
+                    mean=numpy.mean(numpy.array(variable["info"]["modified_line_values"][modified_line])
+                                    .astype(numpy.float)),
+                    stddev=numpy.std(numpy.array(variable["info"]["modified_line_values"][modified_line])
+                                     .astype(numpy.float))))
 
         print("")
 
