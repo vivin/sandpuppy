@@ -9,6 +9,7 @@ use Time::HiRes qw(time);
 use POSIX;
 use infantheap;
 use rarebug;
+use maze;
 use libpng;
 use readelf;
 
@@ -35,6 +36,12 @@ my $log = Log::Simple::Color->new;
           "tasks" => {
               "build" => \&rarebug::build,
               "fuzz"  => \&rarebug::fuzz
+          }
+      },
+      "maze" => {
+          "tasks" => {
+              "build" => \&maze::build,
+              "fuzz"  => \&maze::fuzz
           }
       },
       "libpng" => {

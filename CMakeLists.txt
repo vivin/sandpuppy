@@ -86,3 +86,6 @@ add_executable(PhD
 
 add_executable(rarebug
         subjects/rarebug/rarebug.c)
+
+add_executable(maze
+        subjects/maze/maze.c)

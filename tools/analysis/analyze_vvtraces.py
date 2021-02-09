@@ -81,6 +81,11 @@ def main(experiment, subject, binary, execution):
 
             enum_vars = identify_enum_vars(variables)
 
+            # TODO: next thing to do is to identify vars that are modified close together. build a map where key is
+            # TODO: modified line. start with each var and see what all vars are there in modified_line - 5 to
+            # TODO: modified line + 5. to see if var is related, compare the length of traces for each pid. maybe
+            # TODO: making sure they are exactly the same may be too strict. check instead if the average length of
+            # TODO: trace is close enough. basically both should have been modified around the same number of times.
 
     # TODO: ok, so just see if you can cluster using just values. the timeseries kmeans expects the data to be in some
     # TODO: weird fucking format. like a single series with the values 1, 2, 3 should be [[1],[2],[3]] or some shit??
@@ -117,11 +122,11 @@ def identify_enum_vars(variables):
 
         if analysis['num_traces'] < 10:
             print("      Ignoring {fqn}. Too few traces: {num}".format(fqn=variable['fqn'], num=analysis['num_traces']))
-            break
+            continue
 
         if analysis['num_modified_lines'] == 1 and analysis['num_unique_values'] == 1:
             print("      Ignoring {fqn}. Is effectively a constant.".format(fqn=variable['fqn']))
-            break
+            continue
 
         if analysis['modified_max'] > 1:
 
@@ -163,7 +168,7 @@ def identify_enum_vars(variables):
 
             if is_counter:
                 print("      Ignoring {fqn}. Is effectively a counter.".format(fqn=variable['fqn']))
-                break
+                continue
 
             # Looking for enum-like variables. We are already looking for variables that have been modified more than
             # once. Since we are looking to maximize the combinations in the input, what can we tell about the var?
@@ -202,7 +207,7 @@ def identify_enum_vars(variables):
                         print("      Ignoring because stddev of log10(values) is greater than one: {std}".format(
                             std=numpy.std(ord_mags)
                         ))
-                        break
+                        continue
 
                     # How many places is this variable modified? We have two cases where a variable can be like an enum
                     # variable:
