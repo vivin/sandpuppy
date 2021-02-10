@@ -40,8 +40,8 @@ sub build {
         system ("tar -zxvf $libpng_src");
         rename "libpng-$version", $version;
 
-        #chdir $libpng_src_dir;
-        #system ("patch < $libpng_resources/libpng-nocrc.patch");
+        chdir $libpng_src_dir;
+        system ("patch < $libpng_resources/libpng-nocrc.patch");
 
     } else {
         $log->info("Source is already unpacked");

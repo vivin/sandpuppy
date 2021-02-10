@@ -22,39 +22,42 @@ my $log = Log::Simple::Color->new;
   my $BASEPATH = glob "~/Projects/phd";
   my $BASEWORKSPACEPATH = "$BASEPATH/workspace";
   my $TOOLS = "$BASEPATH/tools";
-  my $RESOURCES = "$BASEPATH/resources";
-  my $SUBJECTS = "$BASEPATH/subjects";
 
   my $subjects = {
-      "infantheap" => {
-          "tasks" => {
-              "build" => \&infantheap::build,
-              "fuzz"  => \&infantheap::fuzz
-          }
+      infantheap => {
+          tasks     => {
+              build => \&infantheap::build,
+              fuzz  => \&infantheap::fuzz
+          },
+          fuzz_time => 300
       },
-      "rarebug" => {
-          "tasks" => {
-              "build" => \&rarebug::build,
-              "fuzz"  => \&rarebug::fuzz
-          }
+      rarebug => {
+          tasks     => {
+              build => \&rarebug::build,
+              fuzz  => \&rarebug::fuzz
+          },
+          fuzz_time => 300
       },
-      "maze" => {
-          "tasks" => {
-              "build" => \&maze::build,
-              "fuzz"  => \&maze::fuzz
-          }
+      maze => {
+          tasks     => {
+              build => \&maze::build,
+              fuzz  => \&maze::fuzz
+          },
+          fuzz_time => 600
       },
-      "libpng" => {
-          "tasks" => {
-              "build" => \&libpng::build,
-              "fuzz"  => \&libpng::fuzz
-          }
+      libpng => {
+          tasks   => {
+              build => \&libpng::build,
+              fuzz  => \&libpng::fuzz
+          },
+          fuzz_time => 3600
       },
-      "readelf" => {
-          "tasks" => {
-              "build" => \&readelf::build,
-              "fuzz"  => \&readelf::fuzz
-          }
+      readelf => {
+          tasks     => {
+              build => \&readelf::build,
+              fuzz  => \&readelf::fuzz
+          },
+          fuzz_time => 3600
       }
   };
 
@@ -151,7 +154,7 @@ my $log = Log::Simple::Color->new;
               $SIG{INT} = 'IGNORE';
 
               my $STARTUP_TIME = 10; # about the time it takes to start up vvdproc and the fuzzer
-              my $FUZZ_TIME = 300 + $STARTUP_TIME;
+              my $FUZZ_TIME = $subjects->{$subject}->{fuzz_time} + $STARTUP_TIME;
               my $killed = 0;
               my $start_time = time();
               my $fuzzer_pid = &{$tasks->{fuzz}}($experiment_name, $subject, $version, $context, $waypoints, $binary_context, 0);
