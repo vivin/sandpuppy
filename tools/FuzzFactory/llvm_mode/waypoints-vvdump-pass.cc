@@ -1,82 +1,70 @@
-#include "fuzzfactory.hpp"
+#include "basevvfeedback.hpp"
 #include "../include/vvdump.h"
 
 using namespace fuzzfactory;
 
-// TODO: in afl-fuzz you need to write to /tmp/vvdump when the program crashes or hangs. i think you should also write
-// TODO: out the size of the program input. you could do the entire input but with named pipes there is a limit on the
-// TODO: size of data you can send before which there may be interleaving between multiple processes. so if you have
-// TODO: multiple afl-fuzz instances there may be issues because program input is likely greater than 512. i guess you
-// TODO: could save all files and then pass in the name of the file. but for right now let us only use size of the input.
-
 /**
  * This ONLY works with -O0 -g -gfull! We look for debug declares to find out where vars are declared. We also maintain
  * a cache of variable names. Then we look for all store insts and check to see if any operands are variables that we
- * have seen. if so we report that as a change of the variable's value.
+ * have seen. if so we report that as a change of the variable's value. We also deal with struct fields.
  */
-class VariableValuePermuteFeedback : public fuzzfactory::DomainFeedback<VariableValuePermuteFeedback> {
+class VariableValueDumpFeedback : public BaseVariableValueFeedback<VariableValueDumpFeedback> {
+    Value *sourceFileNameValue;
+    Value *functionNameValue;
 
-    std::map<StringRef, int> varToDeclaredLine;
-    std::map<StringRef, Value*> varToValueFormatString;
+    std::map<std::string, Value*> variableNameToValue;
+    std::map<std::string, Value*> formatStringToValue;
 
     Function *dumpVariableValueFunction;
 
-    void processLocalVariableDeclaration(DbgDeclareInst* declare) {
-        Value *arg = declare->getAddress();
-        DILocalVariable *var = declare->getVariable();
-
-        if (isa<UndefValue>(arg) || !var) {
-            return;
-        }
-
-        if (var->isArtificial()) {
-            // TODO: this won't work. so what you actually need to do is, you also need to look at getelementptr
-            // TODO: instructions. this is what works on arrays. using this you could print out the string value maybe
-            // TODO: but anyways maybe don't worry about it, because as of now you have gotten the named pipe stuff working
-            // TODO: aww yiss. you just need to throw it into the database.
-            //std::cout << "artificial var " << var->getName().str() << " may actually be " << declare->getOperand(1)->getName().str() << "\n";
-            return;
-        }
-
-        if (varToDeclaredLine.find(var->getName()) == varToDeclaredLine.end()) {
-            varToDeclaredLine[var->getName()] = var->getLine();
-        }
-    }
-
     void instrumentIfNecessary(Function* function, StoreInst *store) {
-        std::string sourceFileName= store->getModule()->getSourceFileName();
-        std::string functionName = function->getName();
+        // Only instrument if the store instruction has debug metadata (without it we won't know what line the variable
+        // is being modified on).
+        if (store->getDebugLoc() && store->getValueOperand()->getType()->isIntegerTy()) {
 
-        for (int i = 0; i < store->getNumOperands(); i++) {
-            Value* variable = store->getOperand(i);
+            std::string sourceFileName= store->getModule()->getSourceFileName();
+            std::string functionName = function->getName();
+
+            // For now only handle int values. In future we can look at doubles, floats, etc., as well as strings. But
+            // strings will be tough (what if the pointer is to garbage? do we print? and also what if the strings are
+            // gigantic? limit to only 256 chars?).
             Value* value = store->getValueOperand();
-            StringRef varName = variable->getName();
-
-            if (!varName.empty() && varToDeclaredLine.find(varName) != varToDeclaredLine.end()) {
-                createDumpVariableValueCall(function, store, variable, value);
+            if (value->getType()->isIntegerTy()) {
+                Value* variable = store->getPointerOperand();
+                std::string variableName = getVariableName(variable);
+                if (!variableName.empty()) {
+                    createDumpVariableValueCall(function, store, variable, variableName, value);
+                }
             }
         }
     }
 
-    void createDumpVariableValueCall(Function* function, StoreInst* store, Value* variable, Value* value) {
+    void createDumpVariableValueCall(Function* function, StoreInst* store, Value* variable, const std::string& variableName, Value* value) {
         auto irb = insert_after(*store);
 
-        Value *sourceFileNameValue = irb.CreateGlobalString(store->getModule()->getSourceFileName());
-        Value *functionNameValue = irb.CreateGlobalString(function->getName());
-        Value *variableNameValue = irb.CreateGlobalString(variable->getName());
-        Value *declaredLineValue = getConst(varToDeclaredLine[variable->getName()]);
+        Value *variableNameValue = variableNameToValue[variableName];
+        if (!variableNameValue) {
+            std::string variableVariableName = "__vvdump_variable_" + function->getName().str() + "." + variableName;
+            variableNameValue = getOrCreateGlobalStringVariable(
+                function->getParent(),
+                variableVariableName,
+                variableName
+            );
+            variableNameToValue[variableName] = variableNameValue;
+        }
+
+        Value *declaredLineValue = getConst(varToDeclaredLine[variableName]);
         Value *modifiedLineValue = getConst((int) store->getDebugLoc()->getLine());
 
-        Value *valueFormatStringValue = varToValueFormatString[variable->getName()];
-        if (!valueFormatStringValue) {
-            std::string valueFormatString = getFormatSpecifierForValue(variable, value);
-            valueFormatStringValue = irb.CreateGlobalString(
-                StringRef(valueFormatString),
-                variable->getName().str() + "FormatString"
+        std::string valueFormatString = getFormatSpecifierForValue(value);
+        Value *formatStringValue = formatStringToValue[valueFormatString];
+        if (!formatStringValue) {
+            formatStringValue = getOrCreateGlobalStringVariable(
+                function->getParent(),
+                "__vvdump_format_string_" + std::regex_replace(valueFormatString, std::regex("[:%\\.]"), "_"),
+                valueFormatString
             );
-
-            varToValueFormatString[variable->getName()] = valueFormatStringValue;
-            //std::cout << function->getName().str() << ": " << variable->getName().str() << ", " << valueFormatString << "\n";
+            formatStringToValue[valueFormatString] = formatStringValue;
         }
 
         // only need to do this if you need to load the value explicitly given a reference to the variable
@@ -90,13 +78,35 @@ class VariableValuePermuteFeedback : public fuzzfactory::DomainFeedback<Variable
         dumpVariableValueArgs.push_back(variableNameValue); // third argument is variable name
         dumpVariableValueArgs.push_back(declaredLineValue); // fourth argument is declared line
         dumpVariableValueArgs.push_back(modifiedLineValue); // fifth argument is modified line
-        dumpVariableValueArgs.push_back(valueFormatStringValue); // fifth argument is format string for value
+        dumpVariableValueArgs.push_back(formatStringValue); // sixth argument is format string for value (includes type)
         dumpVariableValueArgs.push_back(value); // last argument is value
 
         irb.CreateCall(dumpVariableValueFunction, dumpVariableValueArgs);
     }
 
-    static std::string getFormatSpecifierForValue(Value* variable, Value* value) {
+    static GlobalVariable* getOrCreateGlobalStringVariable(Module* module, const std::string& variableName, const std::string& variableValue) {
+        GlobalVariable* globalVariable = module->getGlobalVariable(variableName);
+        if (!globalVariable) {
+            Constant* variableValueConstant = ConstantDataArray::getString(
+                module->getContext(),
+                variableValue
+            );
+
+            globalVariable = (GlobalVariable*) module->getOrInsertGlobal(
+                variableName,
+                variableValueConstant->getType()
+            );
+            globalVariable->setConstant(true);
+            globalVariable->setLinkage(GlobalValue::PrivateLinkage);
+            globalVariable->setUnnamedAddr(GlobalValue::UnnamedAddr::Global);
+            globalVariable->setAlignment(Align(1));
+            globalVariable->setInitializer(variableValueConstant);
+        }
+
+        return globalVariable;
+    }
+
+    static std::string getFormatSpecifierForValue(Value* value) {
         auto *type = value->getType();
         if (type->isIntegerTy()) {
             return "int:%d";
@@ -122,8 +132,37 @@ class VariableValuePermuteFeedback : public fuzzfactory::DomainFeedback<Variable
         return "pointer:%p";
     }
 
+protected:
+    bool shouldProcess(Function &function) override {
+        return true;
+    }
+
+    void processFunction(Function &function) override {
+        Module* module = function.getParent();
+        std::string functionNameVariableName = "__vvdump_function_" + std::regex_replace(
+            module->getSourceFileName(),
+            std::regex("[/\\.]"),
+            "_"
+        ) + "_" + function.getName().str();
+        functionNameValue = getOrCreateGlobalStringVariable(
+            module,
+            functionNameVariableName,
+            function.getName().str()
+        );
+
+        // Instrument store instructions to log variable values
+        for (inst_iterator I = inst_begin(function), E = inst_end(function); I != E; ++I) {
+            Instruction& instruction = *I;
+            if (instruction.hasMetadata() && isa<StoreInst>(instruction)) {
+                instrumentIfNecessary(&function, cast<StoreInst>(&instruction));
+            }
+        }
+
+        variableNameToValue.clear();
+    }
+
 public:
-    VariableValuePermuteFeedback(llvm::Module& M) : fuzzfactory::DomainFeedback<VariableValuePermuteFeedback>(M, "__afl_vvdump_dsf") {
+    explicit VariableValueDumpFeedback(Module& M) : BaseVariableValueFeedback<VariableValueDumpFeedback>(M, "vvdump", "__afl_vvdump_dsf") {
         dumpVariableValueFunction = this->resolveFunction(
             "__dump_variable_value",
             this->getVoidTy(),
@@ -139,33 +178,18 @@ public:
         );
     }
 
-    // Uses code from:
-    // https://github.com/harvard-acc/LLVM-Tracer/blob/master/full-trace/full_trace.cpp
-
-    void visitFunction(llvm::Function &function) {
-        // First we will collect all local variable info from this function.
-        for (inst_iterator I = inst_begin(function), E = inst_end(function); I != E; ++I) {
-            Instruction& instruction = *I;
-            if (isa<DbgDeclareInst>(instruction)) {
-                auto &declare = cast<DbgDeclareInst>(instruction);
-                processLocalVariableDeclaration(&declare);
-            }
-        }
-
-        // Log local variable value after any store instruction that modifies it
-        for (inst_iterator I = inst_begin(function), E = inst_end(function); I != E; ++I) {
-            Instruction& instruction = *I;
-            if (instruction.hasMetadata() && isa<StoreInst>(instruction)) {
-                instrumentIfNecessary(&function, cast<StoreInst>(&instruction));
-            }
-        }
-
-        //std::cout << "\n";
-
-        varToDeclaredLine.clear();
-        varToValueFormatString.clear();
+    void visitModule(Module& module) {
+        std::string sourceFileNameVariableName = "__vvdump_file_" + std::regex_replace(
+            module.getSourceFileName(),
+            std::regex("[/\\.]"),
+            "_"
+        );
+        sourceFileNameValue = getOrCreateGlobalStringVariable(
+            &module,
+            sourceFileNameVariableName,
+            module.getSourceFileName()
+        );
     }
-
 };
 
-FUZZFACTORY_REGISTER_DOMAIN(VariableValuePermuteFeedback);
+FUZZFACTORY_REGISTER_DOMAIN(VariableValueDumpFeedback);

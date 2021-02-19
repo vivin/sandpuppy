@@ -1,0 +1,1 @@
+/home/vivin/Projects/phd/subjects/maze/maze.c:main:player_row:53:player_col:54

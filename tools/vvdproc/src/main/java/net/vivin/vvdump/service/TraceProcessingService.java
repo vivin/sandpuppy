@@ -104,14 +104,12 @@ public class TraceProcessingService {
 
                         traceCount.addAndGet(traceItems.size());
                         traceInsertionExecutor.submit(() -> {
-                            var size = traceItems.size();
                             String traceItem;
                             while ((traceItem = traceItems.poll()) != null) {
                                 var fullTraceItem = FullTraceItem.from(traceItem, endTrace);
                                 cassandraRepository.insertFullTraceItem(fullTraceItem);
+                                traceCount.decrementAndGet();
                             }
-
-                            traceCount.addAndGet(-size);
                         });
 
                         if (System.currentTimeMillis() - lastLoggedTime > 5000) {

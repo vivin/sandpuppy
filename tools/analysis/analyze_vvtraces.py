@@ -184,6 +184,8 @@ def classify_variables(variables):
         combined_deltas = []
         is_counter = True
         for trace in variable['info']['traces']:
+            if len(trace['items']) < 3:
+                continue
 
             deltas = []
             index = 0
@@ -214,7 +216,8 @@ def classify_variables(variables):
             if not is_counter:
                 break
 
-        if is_counter and numpy.mean(combined_deltas) <= 255: # Ignore things that have huge jumps in value
+        # The check for <= 255 is to ignore things that have huge jumps in value
+        if is_counter and len(combined_deltas) > 0 and numpy.mean(combined_deltas) <= 255:
             # print("      {fqn} is effectively a counter.\n".format(fqn=variable['fqn']))
             classified_vars['counters'].append(variable)
             classified_fqns.add(variable['fqn'])
@@ -233,6 +236,10 @@ def classify_variables(variables):
         times_modified_variance = numpy.var(times_modified)
         input_sizes_variance = numpy.var(input_sizes)
 
+        if "ExecCommand" in variable['fqn']:
+            print("times_modified", times_modified)
+            print("input_sizes", input_sizes)
+
         if times_modified_variance == 0 or input_sizes_variance == 0:
             # print("      Ignoring {fqn} as either variance of times modified or input sizes is zero.\n".format(
             #     fqn=variable['fqn']
@@ -244,9 +251,12 @@ def classify_variables(variables):
         # We will look for Pearson coefficients greater than 0.5 to see if the number of times a variable is
         # modified is correlated with input size.
 
-        if r[0, 1] < 0.25 or r[1, 0] < 0.25:
+        if r[0, 1] <= 0 or r[1, 0] <= 0:
             # print("      Ignoring {fqn} as Pearson coefficients of correlation between number of times modified "
             #       "and input size is less than 0.25.\n".format(fqn=variable['fqn']))
+            # print("      Number of times {fqn} is modified is correlated with input size "
+            #       "(Pearson coefficients are {a} and {b}).".format(fqn=variable['fqn'], a=r[0, 1], b=r[1, 0]))
+
             continue
 
         # print("      Number of times {fqn} is modified is correlated with input size "

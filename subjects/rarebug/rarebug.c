@@ -8,6 +8,25 @@
 #define WIDTH    8u
 #define CUSTOM_CRASH 1
 
+struct message_struct {
+    int other;
+    int* mtype;
+};
+
+struct very_cool {
+    struct message_struct ms;
+};
+
+struct super_cool {
+    struct very_cool vc;
+};
+
+typedef int CMDCODE;
+
+typedef struct _COMMAND_ {
+    CMDCODE other;
+} COMMAND;
+
 const int MIN_MESSAGE_TYPE = 1;
 const int MAX_MESSAGE_TYPE = 8;
 const int MAX_MESSAGE_SIZE = 140;
@@ -24,7 +43,6 @@ const unsigned int MAGIC_SEQUENCE = (TYPE_1 << (3u * WIDTH)) +
                                     (TYPE_4 << (0u * WIDTH));
 
 const char delimiter = ':';
-
 unsigned int current_sequence = 0u;
 
 int process_message(const char* message_type_str, const char* message) {
@@ -44,7 +62,41 @@ int process_message(const char* message_type_str, const char* message) {
         return -1;
     }
 
+    const char *thecoolstring;
+    int **foofoofoo;
+    int *barbarbar;
+
     int message_type = (int) value;
+
+    barbarbar = &message_type;
+    foofoofoo = &barbarbar;
+
+    **foofoofoo = message_type;
+
+    struct message_struct ms = { 0, 0 };
+    int *bleh = &ms.other;
+    ms.mtype = bleh;
+
+    *bleh = message_type;
+    ms.other = message_type;
+    *ms.mtype = message_type;
+
+    thecoolstring = message_type_str;
+    /*
+    struct message_struct msg = { 0, 0 };
+    struct very_cool vcool = { msg };
+    struct super_cool scool = { vcool };
+    COMMAND cd = { 0 };
+
+    msg.mtype = message_type;
+    vcool.ms.mtype = message_type;
+    scool.vc.ms.mtype = message_type;
+
+    cd.other = message_type;
+
+    int *blah;
+    *blah = message_type; */
+
     current_sequence = (current_sequence << WIDTH) + message_type;
     printf("magic is: %d the current sequence is: %d\n", MAGIC_SEQUENCE, current_sequence);
     if (current_sequence == MAGIC_SEQUENCE) {

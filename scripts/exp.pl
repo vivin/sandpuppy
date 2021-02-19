@@ -12,6 +12,7 @@ use rarebug;
 use maze;
 use libpng;
 use readelf;
+use libtpms;
 
   if (! -e "/tmp/vvdump") {
       POSIX::mkfifo("/tmp/vvdump", 0700) or die "Could not create /tmp/vvdump";
@@ -25,37 +26,44 @@ my $log = Log::Simple::Color->new;
 
   my $subjects = {
       infantheap => {
-          tasks     => {
+          tasks => {
               build => \&infantheap::build,
               fuzz  => \&infantheap::fuzz
           },
           fuzz_time => 300
       },
       rarebug => {
-          tasks     => {
+          tasks => {
               build => \&rarebug::build,
               fuzz  => \&rarebug::fuzz
           },
           fuzz_time => 300
       },
       maze => {
-          tasks     => {
+          tasks => {
               build => \&maze::build,
               fuzz  => \&maze::fuzz
           },
           fuzz_time => 600
       },
       libpng => {
-          tasks   => {
+          tasks => {
               build => \&libpng::build,
               fuzz  => \&libpng::fuzz
           },
           fuzz_time => 3600
       },
       readelf => {
-          tasks     => {
+          tasks => {
               build => \&readelf::build,
               fuzz  => \&readelf::fuzz
+          },
+          fuzz_time => 3600
+      },
+      libtpms => {
+          tasks     => {
+              build => \&libtpms::build,
+              fuzz  => \&libtpms::fuzz
           },
           fuzz_time => 3600
       }
@@ -103,7 +111,7 @@ my $log = Log::Simple::Color->new;
   }
 
   if (!$subjects->{$subject}) {
-      die "No subject named $subject.";
+      die "No subject named $subject";
   }
 
   my $tasks = $subjects->{$subject}->{tasks};

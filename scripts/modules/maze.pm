@@ -12,6 +12,8 @@ my $TOOLS = "$BASEPATH/tools";
 my $RESOURCES = "$BASEPATH/resources";
 my $SUBJECTS = "$BASEPATH/subjects";
 
+# TODO: maze solved in 11 hours with vvhash. vanilla afl didn't solve it after 19 hours.
+
 sub build {
     my $experiment_name = $_[0];
     my $subject = $_[1];
@@ -49,10 +51,13 @@ sub build {
 
     my $use_vvperm = ($waypoints =~ /vvperm/);
     if ($use_vvperm) {
-        $build_command .= " -variables_file=$RESOURCES/maze_variables_file.txt"
+        $build_command .= " -variables_file=$RESOURCES/maze_vvperm_variables_file.txt"
     }
 
-    # TODO: have to account for WEJON instrumentation waypoint eventually... similar arg like functions file
+    my $use_vvhash = ($waypoints =~ /vvhash/);
+    if ($use_vvhash) {
+        $build_command .= " -variables_file=$RESOURCES/maze_vvhash_variables_file.txt"
+    }
 
     my $src_dir = "$SUBJECTS/maze";
 

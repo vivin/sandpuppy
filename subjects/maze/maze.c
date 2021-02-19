@@ -65,7 +65,7 @@ int main(int argc, char* argv[]) {
     bool error = false;
     bool done = false;
     while (!done && !error) {
-        print_maze(player_row, player_col);
+        //print_maze(player_row, player_col);
         printf("u, d, l, or r: ");
         if (!fgets(buffer, BUFFER_SIZE, stdin)) {
             error = true;

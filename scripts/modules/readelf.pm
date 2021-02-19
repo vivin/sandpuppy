@@ -20,7 +20,7 @@ sub build {
     my $waypoints = $_[4];
 
     my $binutils_src_dir = "$SUBJECTS/binutils/$version";
-    my $binutils_resources = "$RESOURCES/tarballs/binutils";
+    my $binutils_resources = "$RESOURCES/archives/binutils";
 
     $log->info("Checking if source is already unpacked...");
     if (! -d $binutils_src_dir) {
@@ -62,10 +62,10 @@ sub build {
 
     if ($waypoints ne "none") {
         $ENV{"WAYPOINTS"} = $waypoints;
-        system ("CC=\"$build_command\" ./configure && make -j4");
+        system ("CC=\"$build_command\" ./configure && make -j8");
         delete $ENV{"WAYPOINTS"};
     } else {
-        system $build_command;
+        system ("CC=\"$build_command\" ./configure && make -j8");
     }
 
     if ($? != 0) {
@@ -165,7 +165,7 @@ sub fuzz {
     }
 
     if ($waypoints =~ /vvdump/) {
-        $fuzz_command .= " -t 300";
+        $fuzz_command .= " -t 600";
     }
 
     # @@ at the end means that we are passing in the elf file as a command line argument and it is the second argument.

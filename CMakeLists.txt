@@ -44,6 +44,7 @@ add_executable(PhD
         tools/FuzzFactory/llvm_mode/afl-llvm-pass.so.cc
         tools/FuzzFactory/llvm_mode/afl-llvm-rt.o.c
         tools/FuzzFactory/llvm_mode/fuzzfactory.hpp
+        tools/FuzzFactory/llvm_mode/basevvfeedback.hpp
         tools/FuzzFactory/llvm_mode/waypoints-cmp-pass.cc
         tools/FuzzFactory/llvm_mode/waypoints-cmp-rt.c
         tools/FuzzFactory/llvm_mode/waypoints-diff-pass.cc
@@ -62,6 +63,8 @@ add_executable(PhD
         tools/FuzzFactory/llvm_mode/waypoints-vvdump-rt.c
         tools/FuzzFactory/llvm_mode/waypoints-vvperm-pass.cc
         tools/FuzzFactory/llvm_mode/waypoints-vvperm-rt.c
+        tools/FuzzFactory/llvm_mode/waypoints-vvhash-pass.cc
+        tools/FuzzFactory/llvm_mode/waypoints-vvhash-rt.c
         tools/FuzzFactory/afl-analyze.c
         tools/FuzzFactory/afl-as.c
         tools/FuzzFactory/afl-as.h

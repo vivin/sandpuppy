@@ -20,7 +20,7 @@ sub build {
     my $waypoints = $_[4];
 
     my $libpng_src_dir = "$SUBJECTS/libpng/$version";
-    my $libpng_resources = "$RESOURCES/tarballs/libpng";
+    my $libpng_resources = "$RESOURCES/archives/libpng";
 
     $log->info("Checking if source is already unpacked...");
     if (! -d $libpng_src_dir) {
@@ -66,10 +66,10 @@ sub build {
 
     if ($waypoints ne "none") {
         $ENV{"WAYPOINTS"} = $waypoints;
-        system ("CC=\"$build_command\" ./configure --disable-shared && make -j4");
+        system ("CC=\"$build_command\" ./configure --disable-shared && make -j8");
         delete $ENV{"WAYPOINTS"};
     } else {
-        system $build_command;
+        system ("CC=\"$build_command\" ./configure --disable-shared && make -j8");
     }
 
     if ($? != 0) {

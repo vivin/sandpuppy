@@ -1,8 +1,9 @@
+#include <utility>
+#include <regex>
+
 #include "fuzzfactory.hpp"
 
 using namespace fuzzfactory;
-
-typedef std::pair<bool, StringRef> ValueNameLookup;
 
 /**
  * This ONLY works with -O0 -g -gfull! We look for debug declares to find out where vars are declared. We also maintain
@@ -13,12 +14,203 @@ typedef std::pair<bool, StringRef> ValueNameLookup;
  */
 class VariablePrintFeedback : public fuzzfactory::DomainFeedback<VariablePrintFeedback> {
 
+    class CompositeType {
+        std::string name;
+        std::vector<std::pair<std::string, DIType*>> elements;
+
+    public:
+        CompositeType(std::string name) : name(std::move(name)) {}
+
+        const std::string &getName() const {
+            return name;
+        }
+
+        const std::vector<std::pair<std::string, DIType *>> &getElements() const {
+            return elements;
+        }
+
+        void addElement(std::string name, DIType* type) {
+            elements.emplace_back(name, type);
+        }
+    };
+
     ModuleSlotTracker *moduleSlotTracker;
     std::map<Value*, DILocalVariable*> valueLocalVariableCache;
     std::map<StringRef, bool> varNameCache;
+    std::map<std::string, CompositeType*> compositeTypes;
+    std::map<std::string, int> structVarToDeclaredLine;
+
+    void processLocalVariableDeclaration(DbgDeclareInst* declare) {
+        Value *arg = declare->getAddress();
+        DILocalVariable *var = declare->getVariable();
+
+        if (isa<UndefValue>(arg) || !var)
+            return;
+
+        if (var->isArtificial()) {
+            return;
+        }
+
+        if (varNameCache.find(var->getName()) == varNameCache.end()) {
+            varNameCache[var->getName()] = true;
+            std::cout << "  " << var->getName().str() << " declared on line " << var->getLine()
+                      << " with type " << var->getType()->getName().str() << "\n";
+
+            // TODO: at some point we need to identify strings here as well. they start off
+            // TODO: as a pointer type, but end up as char, so that should be enough for us
+            // TODO: to identify strings. but trouble happens when you look at how strings are
+            // TODO: modified. this is easily seen with just an int pointer variable. if you had
+            // TODO: int *p; and *p = 5;, then we see a load from *%p into a temp variable, and
+            // TODO: then a store using the temp variable. so when looking at variable usage, we
+            // TODO: may have to walk up a "load" chain to identify the actual pointer variable
+            // TODO: being modified.
+            bool done = false;
+            DIType* varType = var->getType();
+            while (!done && isa<DIDerivedType>(varType)) {
+                //varType->print(llvm::outs());
+                //std::cout << "\n";
+
+                if (cast<DIDerivedType>(varType)->getBaseType()) {
+                    varType = cast<DIDerivedType>(varType)->getBaseType();
+                } else {
+                    // Sometimes the base type is null. If so, let's just stop.
+                    done = true;
+                }
+            }
+
+            //std::cout << "ok final type is:\n";
+            //varType->print(llvm::outs());
+
+            if (auto *compositeType = dyn_cast<DICompositeType>(varType)) {
+                std::cout << "    This is a composite type \n";
+
+                auto *composite = new CompositeType(varType->getName().str());
+                DINodeArray elements = compositeType->getElements();
+                for (auto element : elements) {
+                    //element->print(llvm::outs(), nullptr, false);
+                    //std::cout << "\n";
+                    if (auto derivedType = dyn_cast<DIDerivedType>(element)) {
+                        std::cout << "      Element name is " << derivedType->getName().str() << " with base type "
+                                  << derivedType->getBaseType()->getName().str() << "\n";
+                        composite->addElement(derivedType->getName().str(), derivedType->getBaseType());
+                    }
+                }
+
+                structVarToDeclaredLine[var->getName().str()] = var->getLine();
+                compositeTypes[varType->getName().str()] = composite;
+            }
+
+            std::cout << "\n";
+        }
+    }
+
+    void printVariableUsage(StoreInst *store, Function* function) {
+        std::string sourceFileName= store->getModule()->getSourceFileName();
+        std::string functionName = function->getName();
+
+        if (store->getDebugLoc() && store->getValueOperand()->getType()->isIntegerTy()) {
+            identifyModifiedVariable(store, store->getPointerOperand());
+        }
+    }
+
+    void identifyModifiedVariable(StoreInst *store, Value* variable) {
+        StringRef varName = variable->getName();
+        if (auto *load = dyn_cast<LoadInst>(variable)) {
+            // Handle case where we're actually working with a dereferenced pointer variable; we need to recursively
+            // walk up until we get to a gep for a struct field or an alloca.
+            identifyModifiedVariable(store, load->getPointerOperand());
+        } else if (auto *gep = dyn_cast<GetElementPtrInst>(variable)) {
+            // Handle case where we're possibly modifying a struct field
+            handleGep(store, gep);
+        } else if (!varName.empty() && varNameCache.find(varName) != varNameCache.end()) {
+            // We're at an alloca instruction and so we should have the actual name of the variable
+            std::cout << "  " << varName.str() << " changed on line " << store->getDebugLoc()->getLine() << "\n\n";
+        }
+    }
+
+    void handleGep(const StoreInst *store, GetElementPtrInst *gep) {
+        if (gep->getSourceElementType()->isStructTy()) {
+            std::string structName = std::regex_replace(gep->getSourceElementType()->getStructName().str(), std::regex("^struct\\."), "");
+
+            if (compositeTypes.find(structName) != compositeTypes.end() && gep->getNumOperands() == 3) {
+                auto *structElementIndex = cast<ConstantInt>(gep->getOperand(2));
+                CompositeType *compositeType = compositeTypes[structName];
+
+                //std::cout << " the struct name is " << structName << "\n";
+                //std::cout << " composite type is " << compositeType << "\n";
+                //std::cout << " sext value for index is " << structElementIndex->getSExtValue() << "\n";
+                //std::cout << " num elements we know of " << compositeType->getElements().size() << "\n";
+
+                std::pair<std::string, DIType *> elementAndType = compositeType->getElements()[structElementIndex->getSExtValue()];
+
+                //auto *setype = gep->getSourceElementType()->getStructElementType(structElementIndex->getSExtValue());
+                //std::cout << " printing struct element type...\n";
+                //setype->print(outs());
+                //std::cout << "\n";
+
+                // At this point we have the name of the struct and the element we are modifying
+                /*
+                std::cout << "  Element " << structElementIndex->getSExtValue() << " of struct " << structName << " changed on line " << store->getDebugLoc()->getLine() << "\n";
+                std::cout << "  There are " << gep->getNumIndices() << " indices and " << gep->getNumOperands() << " operands \n";
+
+                std::cout << "  operand 1:\n";
+                gep->getOperand(0)->print(llvm::outs());
+                std::cout <<"\n  operand 2:\n";
+                gep->getOperand(1)->print(llvm::outs());
+                std::cout <<"\n  operand 3:\n";
+                gep->getOperand(2)->print(llvm::outs());
+                std::cout <<"\n";
+
+                //store->print(llvm::outs());
+                std::cout <<"Printing out the value itself whose name is " << v->getName().str() << ":\n";
+                v->print(llvm::outs());
+                std::cout <<"\nPrinting source type:\n";
+                gep->getSourceElementType()->print(llvm::outs());
+
+                std::cout <<"\nPrinting result type:\n";
+                gep->getResultElementType()->print(llvm::outs());
+                std::cout <<"\nPrinting pointer operand:\n";
+                gep->getPointerOperand()->print(llvm::outs());
+                std::cout <<"\nPrinting pointer operand type:\n";
+                gep->getPointerOperandType()->print(llvm::outs());
+                std::cout <<"\n\n";
+                 */
+
+                bool onlyStructs = true;
+                std::string prefix = "";
+                Value *pointerOperand = gep->getPointerOperand();
+                while (isa<GetElementPtrInst>(pointerOperand) && onlyStructs) {
+                    auto *gepOperand = cast<GetElementPtrInst>(pointerOperand);
+                    onlyStructs = gepOperand->getSourceElementType()->isStructTy();
+                    if (onlyStructs) {
+                        std::string name = std::regex_replace(
+                            gepOperand->getSourceElementType()->getStructName().str(), std::regex("^struct\\."),
+                            "");
+                        if (compositeTypes.find(name) != compositeTypes.end() && gepOperand->getNumOperands() == 3) {
+                            auto *elementIndex = cast<ConstantInt>(gepOperand->getOperand(2));
+                            CompositeType *type = compositeTypes[name];
+                            std::pair<std::string, DIType *> _elementAndType = type->getElements()[elementIndex->getSExtValue()];
+
+                            prefix = _elementAndType.first + "." + prefix;
+                            pointerOperand = gepOperand->getPointerOperand();
+                        } else {
+                            std::cerr << "Unknown struct " << name << "\n";
+                            onlyStructs = false;
+                        }
+                    }
+                }
+
+                std::string fullyQualifiedName =
+                    pointerOperand->getName().str() + "." + prefix + elementAndType.first;
+                std::cout << "  " << fullyQualifiedName << " changed on line "
+                          << store->getDebugLoc()->getLine() << " (struct declared on "
+                          << structVarToDeclaredLine[pointerOperand->getName().str()] << ")\n\n";
+            }
+        }
+    }
 
 public:
-    VariablePrintFeedback(llvm::Module& M) : fuzzfactory::DomainFeedback<VariablePrintFeedback>(M, "__afl_varprint_dsf") {
+    explicit VariablePrintFeedback(llvm::Module& M) : fuzzfactory::DomainFeedback<VariablePrintFeedback>(M, "__afl_varprint_dsf") {
         moduleSlotTracker = new ModuleSlotTracker(&M);
     }
 
@@ -50,19 +242,8 @@ public:
 
         // We maintain two iterators because when we process the alloca instruction we iterate over instructions in
         // the function again until we find debug information
-        inst_iterator saved_itr;
-        for (inst_iterator I = inst_begin(function), E = inst_end(function); I != E; I = saved_itr) {
-            saved_itr = I;
-            saved_itr++;
-
+        for (inst_iterator I = inst_begin(function), E = inst_end(function); I != E; ++I) {
             Instruction& instruction = *I;
-            /*if (instruction.hasMetadata() && !isa<PHINode>(instruction)) {
-                // TODO: ignoring PHI nodes for the time being. not sure if we should be or not, but we are.
-                // TODO: this gets rid of variable uses which report a line of 0 because the PHI node doesn't really
-                // TODO: correspond to a location in the source, I don't think
-                printVariableInformation(&instruction, &function, I);
-            } */
-
             if (instruction.hasMetadata() && isa<StoreInst>(instruction)) {
                 printVariableUsage(cast<StoreInst>(&instruction), &function);
             }
@@ -72,116 +253,8 @@ public:
 
         varNameCache.clear();
         valueLocalVariableCache.clear();
-    }
-
-    void processLocalVariableDeclaration(DbgDeclareInst* declare) {
-        Value *arg = declare->getAddress();
-        DILocalVariable *var = declare->getVariable();
-
-        if (isa<UndefValue>(arg) || !var)
-            return;
-
-        if (var->isArtificial()) {
-            return;
-        }
-
-        if (varNameCache.find(var->getName()) == varNameCache.end()) {
-            varNameCache[var->getName()] = true;
-            std::cout << "  " << var->getName().str() << " declared on line " << var->getLine()
-                      << " with type " << var->getType()->getName().str() << "\n";
-        }
-    }
-
-    void collectLocalVariableInfo(DbgInfoIntrinsic *debug) {
-        Value *arg = nullptr;
-        DILocalVariable *var = nullptr;
-        if (auto *dbgDeclare = dyn_cast<DbgDeclareInst>(debug)) {
-            arg = dbgDeclare->getAddress();
-            var = dbgDeclare->getVariable();
-            if (isa<UndefValue>(arg) || !var)
-                return;
-        } else if (auto *dbgValue = dyn_cast<DbgValueInst>(debug)) {
-            arg = dbgValue->getValue();
-            var = dbgValue->getVariable();
-            if (isa<UndefValue>(arg) || !var)
-                return;
-        } else if (auto *dbgAddr = dyn_cast<DbgAddrIntrinsic>(debug)) {
-            arg = dbgAddr->getAddress();
-            var = dbgAddr->getVariable();
-            if (isa<UndefValue>(arg) || !var)
-                return;
-        } else {
-            return;
-        }
-
-        if (var->isArtificial()) {
-            return;
-        }
-
-        if (!isa<DbgDeclareInst>(debug)) {
-            valueLocalVariableCache[arg] = var;
-        }
-
-        if (varNameCache.find(var->getName()) == varNameCache.end()) {
-            varNameCache[var->getName()] = true;
-            std::cout << "  " << var->getName().str() << " declared on line " << var->getLine()
-                      << " with type " << var->getType()->getName().str() << "\n";
-        }
-    }
-
-    void printVariableUsage(StoreInst *store, Function* function) {
-        std::string sourceFileName= store->getModule()->getSourceFileName();
-        std::string functionName = function->getName();
-
-        for (int i = 0; i < store->getNumOperands(); i++) {
-            Value* v = store->getOperand(i);
-            StringRef varName = v->getName();
-
-            if (!varName.empty() && varNameCache.find(varName) != varNameCache.end()) {
-                std::cout << "  " << varName.str() << " changed on line " << store->getDebugLoc()->getLine() << "\n";
-            }
-        }
-    }
-
-    void printVariableInformation(Instruction *instruction, Function* function, inst_iterator I) {
-        std::string sourceFileName= instruction->getModule()->getSourceFileName();
-        std::string functionName = function->getName();
-
-        DILocalVariable *var = valueLocalVariableCache[instruction];
-        if (!var) {
-            // If we can't find the variable, we have to look for a llvm.dbg.value call
-            // The debug value call is not guaranteed to come right after the instruction
-            I++;
-            while (!var && !I.atEnd()) {
-                Instruction *inst = &*I;
-                if (auto *debugValue = dyn_cast<DbgValueInst>(inst)) {
-                    if (debugValue->getValue() == instruction && !debugValue->getVariable()->isArtificial()) {
-                        var = debugValue->getVariable();
-                    }
-                }
-
-                I++;
-            }
-        }
-
-        for (int i = 0; i < instruction->getNumOperands(); i++) {
-            Value* v = instruction->getOperand(i);
-            if (v->getName() != "") {
-                if (varNameCache.find(v->getName()) != varNameCache.end()) {
-                    if(isa<StoreInst>(instruction)) {
-                        std::cout << "Is a store\n";
-                    }
-
-                    std::cout << "Operand " << i << " is " << v->getName().str() << "\n";
-                    std::cout << "Inst corresponds to line: " << instruction->getDebugLoc()->getLine() << "\n\n";
-                }
-            }
-        }
-
-        if (var) {
-            std::string varname = var->getName().str();
-            std::cout << "  " << varname << " changed on line " << instruction->getDebugLoc()->getLine() << "\n";
-        }
+        structVarToDeclaredLine.clear();
+        compositeTypes.clear();
     }
 };
 

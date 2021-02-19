@@ -387,7 +387,6 @@ void __fuzzfactory_dsf_bitwise_or(dsf_t id, u32 key, u32 value) {
 
 void __fuzzfactory_dsf_increment(dsf_t id, u32 key, u32 value) {
   int idx = key_idx(id, key);
-  printf("incrementing key %d (idx: %d) by %d\n", key, idx, value);
   __fuzzfactory_dsf_map[idx] += value;
 }
 
@@ -412,7 +411,19 @@ u32 __shift_add(u32 old_value, u32 shift_width, u32 new_value) {
 }
 
 void __print_val(u32 value) {
-    printf("permuted value: %d\n", value);
+    printf("the value: %d\n", value);
+}
+
+uint64_t __hash_int(uint64_t x) {
+    x = (x ^ (x >> 30)) * UINT64_C(0xbf58476d1ce4e5b9);
+    x = (x ^ (x >> 27)) * UINT64_C(0x94d049bb133111eb);
+    x = x ^ (x >> 31);
+    return x;
+}
+
+uint32_t __hash_ints(uint32_t old, uint32_t val){
+    uint64_t input = (((uint64_t)(old))<<32) | ((uint64_t)(val));
+    return (uint32_t)(__hash_int(input));
 }
 
 void __init_vvdump() {
@@ -504,6 +515,21 @@ void __dump_variable_value(const char* filename, const char* function_name, cons
 
     u8* var_val_trace = malloc(len + 1);
     if (var_val_trace) {
+        /*printf("%s:%s:%s:%s:%d:%s:%s:%s:%d:%d:%llu:%s\n",
+                experiment_name,
+                subject,
+                binary_context,
+                exec_context,
+                pid,
+                filename,
+                function_name,
+                variable_name,
+                declared_line,
+                modified_line,
+                timestamp,
+                var_val
+        );*/
+
         sprintf((char *) var_val_trace, "%s:%s:%s:%s:%d:%s:%s:%s:%d:%d:%llu:%s\n",
                 experiment_name,
                 subject,
