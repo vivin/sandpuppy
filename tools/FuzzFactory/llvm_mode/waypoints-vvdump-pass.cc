@@ -20,26 +20,23 @@ class VariableValueDumpFeedback : public BaseVariableValueFeedback<VariableValue
     void instrumentIfNecessary(Function* function, StoreInst *store) {
         // Only instrument if the store instruction has debug metadata (without it we won't know what line the variable
         // is being modified on).
+        // For now only handle int values. In future we can look at doubles, floats, etc., as well as strings. But
+        // strings will be tough (what if the pointer is to garbage? do we print? and also what if the strings are
+        // gigantic? limit to only 256 chars?).
         if (store->getDebugLoc() && store->getValueOperand()->getType()->isIntegerTy()) {
-
             std::string sourceFileName= store->getModule()->getSourceFileName();
             std::string functionName = function->getName();
 
-            // For now only handle int values. In future we can look at doubles, floats, etc., as well as strings. But
-            // strings will be tough (what if the pointer is to garbage? do we print? and also what if the strings are
-            // gigantic? limit to only 256 chars?).
             Value* value = store->getValueOperand();
-            if (value->getType()->isIntegerTy()) {
-                Value* variable = store->getPointerOperand();
-                std::string variableName = getVariableName(variable);
-                if (!variableName.empty()) {
-                    createDumpVariableValueCall(function, store, variable, variableName, value);
-                }
+            Value* variable = store->getPointerOperand();
+            std::string variableName = getVariableName(variable);
+            if (!variableName.empty()) {
+                createDumpVariableValueCall(function, store, variableName, value);
             }
         }
     }
 
-    void createDumpVariableValueCall(Function* function, StoreInst* store, Value* variable, const std::string& variableName, Value* value) {
+    void createDumpVariableValueCall(Function* function, StoreInst* store, const std::string& variableName, Value* value) {
         auto irb = insert_after(*store);
 
         Value *variableNameValue = variableNameToValue[variableName];
@@ -141,7 +138,7 @@ protected:
         Module* module = function.getParent();
         std::string functionNameVariableName = "__vvdump_function_" + std::regex_replace(
             module->getSourceFileName(),
-            std::regex("[/\\.]"),
+            std::regex("[/]"),
             "_"
         ) + "_" + function.getName().str();
         functionNameValue = getOrCreateGlobalStringVariable(
@@ -181,7 +178,7 @@ public:
     void visitModule(Module& module) {
         std::string sourceFileNameVariableName = "__vvdump_file_" + std::regex_replace(
             module.getSourceFileName(),
-            std::regex("[/\\.]"),
+            std::regex("[/]"),
             "_"
         );
         sourceFileNameValue = getOrCreateGlobalStringVariable(
