@@ -81,6 +81,11 @@ int process_message(const char* message_type_str, const char* message) {
     ms.other = message_type;
     *ms.mtype = message_type;
 
+    COMMAND com = { 0 };
+
+    COMMAND *cptr = &com;
+    cptr->other = message_type;
+
     thecoolstring = message_type_str;
     /*
     struct message_struct msg = { 0, 0 };
@@ -157,8 +162,13 @@ int main(int argc, char* argv[]) {
     size_t bufsize;
     int exit_code = 0;
 
+    unsigned int total_size = 0;
+    int num_messages = 0;
+
     while (exit_code == 0 && getline(&line, &bufsize, stdin)) {
         unsigned int size = strlen(line) - 1; // Ignore newline in size
+        total_size += size;
+
         if (size == 0) {
             break;
         }
@@ -181,6 +191,8 @@ int main(int argc, char* argv[]) {
                 if (process_message(message_type_str, message) == -1) {
                     printf("Bad message size: %s\n\n", message_type_str);
                     exit_code = CUSTOM_CRASH;
+                } else {
+                    num_messages++;
                 }
 
                 free(message_type_str);
@@ -191,6 +203,8 @@ int main(int argc, char* argv[]) {
             exit_code = CUSTOM_CRASH;
         }
     }
+
+    unsigned int the_full_size = total_size;
 
     return exit_code;
 }

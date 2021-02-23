@@ -176,9 +176,14 @@ class VariablePrintFeedback : public fuzzfactory::DomainFeedback<VariablePrintFe
                 std::cout <<"\n\n";
                  */
 
+                // If this is a pointer to the struct, walk up the load chain until it isn't one.
+                Value *pointerOperand = gep->getPointerOperand();
+                while (isa<LoadInst>(pointerOperand)) {
+                    pointerOperand = cast<LoadInst>(pointerOperand)->getPointerOperand();
+                }
+
                 bool onlyStructs = true;
                 std::string prefix = "";
-                Value *pointerOperand = gep->getPointerOperand();
                 while (isa<GetElementPtrInst>(pointerOperand) && onlyStructs) {
                     auto *gepOperand = cast<GetElementPtrInst>(pointerOperand);
                     onlyStructs = gepOperand->getSourceElementType()->isStructTy();

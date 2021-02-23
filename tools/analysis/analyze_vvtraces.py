@@ -12,9 +12,6 @@ from sklearn.preprocessing import minmax_scale
 FETCH_SIZE = 2000
 
 
-# TODO: in the vvdump instrumenter maybe you can only focus on int. would result in much less traces.
-
-
 def main(experiment, subject, binary, execution):
     cluster = Cluster(protocol_version=4)
     session = cluster.connect('phd')
@@ -90,10 +87,28 @@ def main(experiment, subject, binary, execution):
                 for variable in classified_variables['constants']:
                     print("      {fqn}".format(fqn=variable['fqn']))
 
-            if len(classified_variables['counters']) > 0:
+            if len(classified_variables['static_counters']) > 0:
                 print("")
-                print("    Counters:")
-                for variable in classified_variables['counters']:
+                print("    Static Counters:")
+                for variable in classified_variables['static_counters']:
+                    print("      {fqn}".format(fqn=variable['fqn']))
+
+            if len(classified_variables['dynamic_counters']) > 0:
+                print("")
+                print("    Dynamic Counters:")
+                for variable in classified_variables['dynamic_counters']:
+                    print("      {fqn}".format(fqn=variable['fqn']))
+
+            if len(classified_variables['input_size_counters']) > 0:
+                print("")
+                print("    Input Size Counters:")
+                for variable in classified_variables['input_size_counters']:
+                    print("      {fqn}".format(fqn=variable['fqn']))
+
+            if len(classified_variables['correlated_with_input_size']) > 0:
+                print("")
+                print("    Variables correlated with input size:")
+                for variable in classified_variables['correlated_with_input_size']:
                     print("      {fqn}".format(fqn=variable['fqn']))
 
             if len(classified_variables['enums']) > 0:
@@ -134,10 +149,6 @@ def main(experiment, subject, binary, execution):
     # TODO: that is all we can classify and i don't know if we can really do it with time series classification or
     # TODO: something like that. will probably be manual.
     #
-    # TODO: look at which variables are modified close together (as in location). for testbed, provide a "maze" program.
-    # TODO: input is just u d l r which moves the character. you can instrument a "hash" that takes the hash of two
-    # TODO: variables (or more). but it has to be in a way that hash(x, y) != hash(y, x).
-    #
     # TODO: other things you can do: compare trace of variable with trace of another variable. see if one is proper
     # TODO: subset maybe? compare timestampts too?
 
@@ -146,7 +157,10 @@ def classify_variables(variables):
 
     classified_vars = {
         'constants': [],
-        'counters': [],
+        'static_counters': [],
+        'dynamic_counters': [],
+        'input_size_counters': [],
+        'correlated_with_input_size': [],
         'enums': [],
         'related': []
     }
@@ -178,8 +192,8 @@ def classify_variables(variables):
             classified_fqns.add(variable['fqn'])
             continue
 
-        if analysis['modified_max'] <= 1:
-            continue
+        #if analysis['modified_max'] <= 1:
+        #    continue
 
         combined_deltas = []
         is_counter = True
@@ -191,8 +205,8 @@ def classify_variables(variables):
             index = 0
             prev_sign = 0
             while index < len(trace['items']) - 1 and is_counter:
-                current_value = int(trace['items'][index]["variable_value"])
-                next_value = int(trace['items'][index + 1]["variable_value"])
+                current_value = int(trace['items'][index]['variable_value'])
+                next_value = int(trace['items'][index + 1]['variable_value'])
 
                 delta = next_value - current_value
                 if index == 0:
@@ -216,12 +230,63 @@ def classify_variables(variables):
             if not is_counter:
                 break
 
+        is_counter = is_counter and len(combined_deltas) > 0
+
         # The check for <= 255 is to ignore things that have huge jumps in value
-        if is_counter and len(combined_deltas) > 0 and numpy.mean(combined_deltas) <= 255:
-            # print("      {fqn} is effectively a counter.\n".format(fqn=variable['fqn']))
-            classified_vars['counters'].append(variable)
-            classified_fqns.add(variable['fqn'])
+        if is_counter and numpy.mean(combined_deltas) <= 255:
+            # We know it is a counter. But is it a static counter or a dynamic one? Meaning, does it always count
+            # up to a fixed value, or does it vary? To find out let's look at the maximum values in the traces.
+            input_sizes = []
+            counter_max_vals = []
+            for trace in variable['info']['traces']:
+                if len(trace['items']) < 3:
+                    continue
+
+                input_sizes.append(trace['input_size'])
+                counter_max_vals.append(max([int(item['variable_value']) for item in trace['items']]))
+
+            input_sizes_variance = numpy.var(input_sizes)
+            counter_max_vals_variance = numpy.var(counter_max_vals)
+
+            if counter_max_vals_variance == 0:
+                classified_vars['static_counters'].append(variable)
+                classified_fqns.add(variable['fqn'])
+                continue
+            elif input_sizes_variance == 0:
+                classified_vars['dynamic_counters'].append(variable)
+                classified_fqns.add(variable['fqn'])
+                continue
+
+            r = numpy.corrcoef(input_sizes, counter_max_vals)
+            if r[0, 1] < 0.25 or r[1, 0] < 0.25:
+                classified_vars['dynamic_counters'].append(variable)
+                classified_fqns.add(variable['fqn'])
+            else:
+                classified_vars['input_size_counters'].append(variable)
+                classified_fqns.add(variable['fqn'])
+
             continue
+
+        # Check to see if the variable's values (max values actually) are correlated with the input size. We may
+        # be dealing with a "size" variable or something like that
+        if not is_counter:
+            input_sizes = []
+            max_vals = []
+            for trace in variable['info']['traces']:
+                if len(trace['items']) > 0:
+                    input_sizes.append(trace['input_size'])
+                    max_vals.append(max([int(item['variable_value']) for item in trace['items']]))
+
+            if len(input_sizes) > 0 and len(max_vals) > 0:
+                input_sizes_variance = numpy.var(input_sizes)
+                max_vals_variance = numpy.var(max_vals)
+
+                if input_sizes_variance > 0 and max_vals_variance > 0:
+                    r = numpy.corrcoef(input_sizes, max_vals)
+                    if r[0, 1] >= 0.25 and r[1, 0] >= 0.25:
+                        classified_vars['correlated_with_input_size'].append(variable)
+                        classified_fqns.add(variable['fqn'])
+                        continue
 
         # Looking for enum-like variables. We are already looking for variables that have been modified more than
         # once. Since we are looking to maximize the combinations in the input, what can we tell about the var?
@@ -251,7 +316,7 @@ def classify_variables(variables):
         # We will look for Pearson coefficients greater than 0.5 to see if the number of times a variable is
         # modified is correlated with input size.
 
-        if r[0, 1] <= 0 or r[1, 0] <= 0:
+        if r[0, 1] < 0.25 or r[1, 0] < 0.25:
             # print("      Ignoring {fqn} as Pearson coefficients of correlation between number of times modified "
             #       "and input size is less than 0.25.\n".format(fqn=variable['fqn']))
             # print("      Number of times {fqn} is modified is correlated with input size "
@@ -324,14 +389,6 @@ def classify_variables(variables):
             classified_vars['enums'].append(variable)
             classified_fqns.add(variable['fqn'])
             continue
-
-    # TODO: I think it is better to do it by going through each var that is not already classified, and then looking at
-    # TODO: each of its modified lines, and then see what vars are also modified within -3 to +3 lines. for each
-    # TODO: candidate var, make sure that it has the same number of traces as the var in question, and make sure that
-    # TODO: for each process, the trace lengths are identical. you could just calculate mean and stddev to compare. if
-    # TODO: they match, then vars are potentially candidate vars. I think you only need to start with one modified line
-    # TODO: right? you don't need to check each one. because if the mean and stddev are equal that means they are
-    # TODO: modified the same number of times.
 
     # TODO: add more png files so that you have a variety of height, width, color depth, etc.
     # if len(classified_fqns) > 0:
@@ -414,21 +471,6 @@ def classify_variables(variables):
     return classified_vars
 
 
-# TODO: possible to build libpng so that it errors out on unknown chuks??
-# TODO: ok i think you need to incorporate declared line and modified line. because if it is always getting
-# TODO: set the same place where it is declared then it is probably not a counter maybe... uhhh fuck. i dunno.
-# TODO: coz if you have a for loop you have declaration and modification on same line. so you can't tell that
-# TODO: it is different from a case where you just a have a func with a variable and it just sets it to some
-# TODO: value based on the argument it gets. if the argument is sort of counter like or something in it that
-# TODO: has to do with counting, then this variable ends up being a proxy for it and also being a counter.
-# TODO: so declared and modified line won't help i don't think. oh well. anyways. next see if you can identify
-# TODO: size variables. see how value relates to input size. and then finally you can figure out the enum
-# TODO: vars. limit it to variables that have max 16 unique values?? or maybe 255 unique vals. check to see if
-# TODO: it is modified in one place. if it takes 255 unique vals and is set in one place then maybe it is a
-# TODO: candidate. another way is if it is set in multiple places, but each place it is set to a unique value.
-# TODO: and the union of all the values it gets set to at each modified location is the same as the total set of
-# TODO: values the var takes on. then it is an enum var i think.
-#
 # TODO: how many false negatives do we have??? need to make a test program with all kinds of counters... see
 # TODO: which ones aren't picked up
 

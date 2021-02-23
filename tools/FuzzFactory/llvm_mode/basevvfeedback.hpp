@@ -86,7 +86,8 @@ class BaseVariableValueFeedback : public DomainFeedback<V> {
                 varType = cast<DIDerivedType>(varType)->getBaseType();
             }
 
-            if (auto *compositeType = dyn_cast<DICompositeType>(varType)) {
+            if (varType && isa<DICompositeType>(varType)) {
+                auto *compositeType = cast<DICompositeType>(varType);
                 auto *structInfo = new StructInfo(varType->getName().str());
                 DINodeArray elements = compositeType->getElements();
                 for (auto element : elements) {
@@ -114,11 +115,16 @@ class BaseVariableValueFeedback : public DomainFeedback<V> {
             StructInfo *structInfo = structInfoMap[structName];
             std::pair<std::string, DIType*> elementAndType = structInfo->getElements()[elementIndex->getSExtValue()];
 
+            // Operand might be a pointer to a struct, so walk up the load chain until we get to the actual struct
+            Value *pointerOperand = gep->getPointerOperand();
+            while (isa<LoadInst>(pointerOperand)) {
+                pointerOperand = cast<LoadInst>(pointerOperand)->getPointerOperand();
+            }
+
             // Recursively walk up the getelementptr chain to identify prefixes to this struct variable. This is
             // only necessary if this is a nested field access.
             bool onlyStructs = true;
             std::string prefix;
-            Value *pointerOperand = gep->getPointerOperand();
             while (isa<GetElementPtrInst>(pointerOperand) && onlyStructs) {
                 auto *gepOperand = cast<GetElementPtrInst>(pointerOperand);
                 onlyStructs = gepOperand->getSourceElementType()->isStructTy();
@@ -177,67 +183,6 @@ protected:
 
     virtual bool shouldProcess(llvm::Function &function) = 0;
     virtual void processFunction(llvm::Function &function) = 0;
-
-    // https://github.com/harvard-acc/LLVM-Tracer/blob/master/full-trace/full_trace.cpp
-    /*
-    std::string getVariableName(Value* value) {
-        if (!isa<GetElementPtrInst>(value)) {
-            return value->getName().str();
-        }
-
-        std::string variableName;
-        auto *gep = cast<GetElementPtrInst>(value);
-        if (gep->getSourceElementType()->isStructTy()) {
-            std::string structName = std::regex_replace(
-                gep->getSourceElementType()->getStructName().str(),
-                std::regex("^struct\\."),
-                ""
-            );
-
-            if (structInfoMap.find(structName) != structInfoMap.end() && gep->getNumOperands() == 3) {
-                auto *elementIndex = cast<ConstantInt>(gep->getOperand(2));
-
-                StructInfo *structInfo = structInfoMap[structName];
-                std::pair<std::string, DIType*> elementAndType = structInfo->getElements()[elementIndex->getSExtValue()];
-
-                // Recursively walk up the getelementptr chain to identify prefixes to this struct variable. This is
-                // only necessary if this is a nested field access.
-                bool onlyStructs = true;
-                std::string prefix = "";
-                Value *pointerOperand = gep->getPointerOperand();
-                while (isa<GetElementPtrInst>(pointerOperand) && onlyStructs) {
-                    auto *gepOperand = cast<GetElementPtrInst>(pointerOperand);
-                    onlyStructs = gepOperand->getSourceElementType()->isStructTy();
-                    if (onlyStructs) {
-                        std::string name = std::regex_replace(
-                            gepOperand->getSourceElementType()->getStructName().str(),
-                            std::regex("^struct\\."),
-                            ""
-                        );
-                        if (structInfoMap.find(name) != structInfoMap.end() && gepOperand->getNumOperands() == 3) {
-                            auto *_elementIndex = cast<ConstantInt>(gepOperand->getOperand(2));
-                            StructInfo *_structInfo = structInfoMap[name];
-                            std::pair<std::string, DIType*> _elementAndType = _structInfo->getElements()[_elementIndex->getSExtValue()];
-
-                            prefix = _elementAndType.first + "." + prefix;
-                            pointerOperand = gepOperand->getPointerOperand();
-                        } else {
-                            onlyStructs = false;
-                        }
-                    }
-                }
-
-                if (onlyStructs) {
-                    variableName = pointerOperand->getName().str() + "." + prefix + elementAndType.first;
-
-                    // Set the declared line of this struct field to the declared line of the struct itself.
-                    varToDeclaredLine[variableName] = varToDeclaredLine[pointerOperand->getName().str()];
-                }
-            }
-        }
-
-        return variableName;
-    } */
 
 public:
     BaseVariableValueFeedback<V>(Module &M, const StringRef &domainName, const StringRef &dsfVarName) : DomainFeedback<V>(M, dsfVarName) {

@@ -17,15 +17,15 @@ use POSIX qw(mkfifo);
 
   print "Opened named pipe at $NAMED_PIPE_PATH. Waiting for data...\n";
   while (<$named_pipe_fh>) {
-      chomp;
-      $_ =~ s/\000//;
-      my @data = split /:/;
-      if (scalar @data == 8) {
-          print "$_\n\n";
-      } elsif (!$pids->{$data[4]}) {
-          $pids->{$data[4]} = 1;
-          print "$_\n";
-      }
+      print;
+      #$_ =~ s/\000//;
+      #my @data = split /:/;
+      #if (scalar @data == 8) {
+      #    print "$_\n\n";
+      #} elsif (!$pids->{$data[4]}) {
+      #    $pids->{$data[4]} = 1;
+      #    print "$_\n";
+      #}
   }
 
   close $named_pipe_fh;
