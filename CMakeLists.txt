@@ -34,6 +34,7 @@ include_directories(tools/FuzzFactory/llvm_mode)
 
 add_executable(PhD
         subjects/infantheap/infantheap.c
+        subjects/rarebug/rarebug-gp.c
         tools/FuzzFactory/demo/demo-manual.c
         tools/FuzzFactory/demo/demo.c
         tools/FuzzFactory/include/afl_valid.h
