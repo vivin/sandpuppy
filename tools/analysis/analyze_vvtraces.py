@@ -164,6 +164,7 @@ def classify_variables(variables):
         'enums': [],
         'related': []
     }
+
     classified_fqns = set()
     variables_by_fqn = dict()
     vars_by_modified_line = dict()
@@ -195,10 +196,11 @@ def classify_variables(variables):
         #if analysis['modified_max'] <= 1:
         #    continue
 
+        combined_iterations = []
         combined_deltas = []
         is_counter = True
         for trace in variable['info']['traces']:
-            if len(trace['items']) < 3:
+            if len(trace['items']) < 2:
                 continue
 
             deltas = []
@@ -219,6 +221,7 @@ def classify_variables(variables):
                 elif len(deltas) > 0:
                     total_delta = numpy.sum(deltas)
                     if total_delta == numpy.round(len(deltas) * numpy.mean(deltas)):
+                        combined_iterations.append(len(deltas))
                         deltas = []
                     else:
                         is_counter = False
@@ -230,7 +233,8 @@ def classify_variables(variables):
             if not is_counter:
                 break
 
-        is_counter = is_counter and len(combined_deltas) > 0
+        is_counter = is_counter and len(combined_deltas) > 0 \
+            and len(combined_iterations) > 0 and max(combined_iterations) > 1
 
         # The check for <= 255 is to ignore things that have huge jumps in value
         if is_counter and numpy.mean(combined_deltas) <= 255:
@@ -239,7 +243,7 @@ def classify_variables(variables):
             input_sizes = []
             counter_max_vals = []
             for trace in variable['info']['traces']:
-                if len(trace['items']) < 3:
+                if len(trace['items']) < 2:
                     continue
 
                 input_sizes.append(trace['input_size'])
@@ -247,6 +251,8 @@ def classify_variables(variables):
 
             input_sizes_variance = numpy.var(input_sizes)
             counter_max_vals_variance = numpy.var(counter_max_vals)
+            #print("counter max vals", counter_max_vals)
+            #print("counter max vals variance", counter_max_vals_variance)
 
             if counter_max_vals_variance == 0:
                 classified_vars['static_counters'].append(variable)
@@ -283,6 +289,10 @@ def classify_variables(variables):
         #if "ExecCommand" in variable['fqn']:
         #    print("times_modified", times_modified)
         #    print("input_sizes", input_sizes)
+
+        # TODO: counters that flip between just two values end up being misclassified as enums. Need to handle that.
+        # TODO: also need to add a test that checks to see if the variable goes through the exact same set of values
+        # TODO: in every trace. if that is the case it might not be an enum variable.
 
         if times_modified_variance > 0 and input_sizes_variance > 0:
             r = numpy.corrcoef(times_modified, input_sizes)
