@@ -148,10 +148,14 @@ class BaseVariableValueFeedback : public DomainFeedback<V> {
             }
 
             if (onlyStructs) {
-                fullyQualifiedFieldName = pointerOperand->getName().str() + "." + prefix + elementAndType.first;
+                // If the struct that this field belongs to is actually a pointer argument to a function, it is suffixed
+                // with ".addr" (this is something LLVM does). We need to strip this out so that we can get the actual
+                // name of the parameter.
+                std::string structVarName = std::regex_replace(pointerOperand->getName().str(), std::regex("\\.addr"), "");
+                fullyQualifiedFieldName = structVarName + "." + prefix + elementAndType.first;
 
                 // Set the declared line of this struct field to the declared line of the struct itself.
-                varToDeclaredLine[fullyQualifiedFieldName] = varToDeclaredLine[pointerOperand->getName().str()];
+                varToDeclaredLine[fullyQualifiedFieldName] = varToDeclaredLine[structVarName];
             }
         }
 

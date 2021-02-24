@@ -267,27 +267,6 @@ def classify_variables(variables):
 
             continue
 
-        # Check to see if the variable's values (max values actually) are correlated with the input size. We may
-        # be dealing with a "size" variable or something like that
-        if not is_counter:
-            input_sizes = []
-            max_vals = []
-            for trace in variable['info']['traces']:
-                if len(trace['items']) > 0:
-                    input_sizes.append(trace['input_size'])
-                    max_vals.append(max([int(item['variable_value']) for item in trace['items']]))
-
-            if len(input_sizes) > 0 and len(max_vals) > 0:
-                input_sizes_variance = numpy.var(input_sizes)
-                max_vals_variance = numpy.var(max_vals)
-
-                if input_sizes_variance > 0 and max_vals_variance > 0:
-                    r = numpy.corrcoef(input_sizes, max_vals)
-                    if r[0, 1] >= 0.25 and r[1, 0] >= 0.25:
-                        classified_vars['correlated_with_input_size'].append(variable)
-                        classified_fqns.add(variable['fqn'])
-                        continue
-
         # Looking for enum-like variables. We are already looking for variables that have been modified more than
         # once. Since we are looking to maximize the combinations in the input, what can we tell about the var?
         # Let's maybe first see if there is a correlation between the number of times it is invoked and the input
@@ -301,94 +280,93 @@ def classify_variables(variables):
         times_modified_variance = numpy.var(times_modified)
         input_sizes_variance = numpy.var(input_sizes)
 
-        if "ExecCommand" in variable['fqn']:
-            print("times_modified", times_modified)
-            print("input_sizes", input_sizes)
+        #if "ExecCommand" in variable['fqn']:
+        #    print("times_modified", times_modified)
+        #    print("input_sizes", input_sizes)
 
-        if times_modified_variance == 0 or input_sizes_variance == 0:
-            # print("      Ignoring {fqn} as either variance of times modified or input sizes is zero.\n".format(
-            #     fqn=variable['fqn']
-            # ))
-            continue
+        if times_modified_variance > 0 and input_sizes_variance > 0:
+            r = numpy.corrcoef(times_modified, input_sizes)
 
-        r = numpy.corrcoef(times_modified, input_sizes)
+            # We will look for Pearson coefficients greater than 0.25 to see if the number of times a variable is
+            # modified is correlated with input size.
 
-        # We will look for Pearson coefficients greater than 0.5 to see if the number of times a variable is
-        # modified is correlated with input size.
+            if r[0, 1] >= 0.25 and r[1, 0] >= 0.25:
+                # print("      Number of times {fqn} is modified is correlated with input size "
+                #       "(Pearson coefficients are {a} and {b}).".format(fqn=variable['fqn'], a=r[0, 1], b=r[1, 0]))
 
-        if r[0, 1] < 0.25 or r[1, 0] < 0.25:
-            # print("      Ignoring {fqn} as Pearson coefficients of correlation between number of times modified "
-            #       "and input size is less than 0.25.\n".format(fqn=variable['fqn']))
-            # print("      Number of times {fqn} is modified is correlated with input size "
-            #       "(Pearson coefficients are {a} and {b}).".format(fqn=variable['fqn'], a=r[0, 1], b=r[1, 0]))
+                variable_values = numpy.array(variable['info']['variable_values']).astype(numpy.float)
+                ord_mags = [numpy.log10(v) if v > 0 else 0 for v in variable_values]
 
-            continue
+                # This is super sketch, and I probably need to mathematically prove it or something. But anyway, the
+                # assumption is that these enum values come from a small set of values, and even if sequential,
+                # aren't wildly different in their magnitudes. We have a limit of 255 unique values and so we don't
+                # expect those to vary wildly in an enum. For example, it's not likely we will have an enum with
+                # values like 0, 1, 2, and then 12355914 or something. So what we'll do is calculate the standard
+                # deviation of the log10 of the values and ignore the variable if that value is greater than 1.
 
-        # print("      Number of times {fqn} is modified is correlated with input size "
-        #       "(Pearson coefficients are {a} and {b}).".format(fqn=variable['fqn'], a=r[0, 1], b=r[1, 0]))
+                if numpy.std(ord_mags) <= 1:
+                    # How many places is this variable modified? We have two cases where a variable can be like an enum
+                    # variable:
+                    #
+                    # First:
+                    #   value = parsed_from_input
+                    #   if value is valid:
+                    #       enum_var = value
+                    #
+                    # Second:
+                    #    value = parsed_from_input
+                    #    if value is equal to something:
+                    #        enum_var = value1
+                    #    elsif value is equal to something else:
+                    #        enum_var = value2
+                    #
+                    # And so on. Basically the second case is like a switch.
 
-        variable_values = numpy.array(variable['info']['variable_values']).astype(numpy.float)
-        ord_mags = [numpy.log10(v) if v > 0 else 0 for v in variable_values]
+                    if analysis['num_modified_lines'] == 1:
 
-        # This is super sketch, and I probably need to mathematically prove it or something. But anyway, the
-        # assumption is that these enum values come from a small set of values, and even if sequential,
-        # aren't wildly different in their magnitudes. We have a limit of 255 unique values and so we don't
-        # expect those to vary wildly in an enum. For example, it's not likely we will have an enum with
-        # values like 0, 1, 2, and then 12355914 or something. So what we'll do is calculate the standard
-        # deviation of the log10 of the values and ignore the variable if that value is greater than 1.
+                        # Deal with case 1:
+                        # print("        {fqn} is modified on only one line".format(fqn=variable['fqn']))
 
-        if numpy.std(ord_mags) > 1:
-            # print("        Ignoring because stddev of log10(values) is greater than one: {std}\n".format(
-            #     std=numpy.std(ord_mags)
-            # ))
-            continue
+                        # For now we will limit ourselves to variables that have up to 255 unique values
+                        if analysis['num_unique_values'] <= 255:
+                            #print("          {fqn} has {unique} unique values. This may be an enum variable.\n".format(
+                            #    fqn=variable['fqn'],
+                            #    unique=analysis['num_unique_values']
+                            #))
+                            classified_vars['enums'].append(variable)
+                            classified_fqns.add(variable['fqn'])
+                            continue
+                        # else:
+                            # print("           Ignoring {fqn} because it has more than 255 unique values.\n".format(
+                            #     fqn=variable['fqn']
+                            # ))
 
-        # How many places is this variable modified? We have two cases where a variable can be like an enum
-        # variable:
-        #
-        # First:
-        #   value = parsed_from_input
-        #   if value is valid:
-        #       enum_var = value
-        #
-        # Second:
-        #    value = parsed_from_input
-        #    if value is equal to something:
-        #        enum_var = value1
-        #    elsif value is equal to something else:
-        #        enum_var = value2
-        #
-        # And so on. Basically the second case is like a switch.
+                    elif analysis['num_modified_lines'] == analysis['num_unique_values']:
 
-        if analysis['num_modified_lines'] == 1:
+                        # Deal with case 2. Basically the number of lines it is modified on should equal the number of
+                        # unique values it holds
+                        # print("        {fqn} is has {unique} values and is modified on the same number of lines. "
+                        #       "It is probably an enum variable.\n".format(fqn=variable['fqn'],
+                        #                                                   unique=analysis['num_unique_values']))
+                        classified_vars['enums'].append(variable)
+                        classified_fqns.add(variable['fqn'])
+                        continue
 
-            # Deal with case 1:
-            # print("        {fqn} is modified on only one line".format(fqn=variable['fqn']))
+        # Check to see if the variable's values (max values actually) are correlated with the input size. We may
+        # be dealing with a "size" variable or something like that
+        max_vals = []
+        for trace in variable['info']['traces']:
+            if len(trace['items']) > 0:
+                max_vals.append(max([int(item['variable_value']) for item in trace['items']]))
 
-            # For now we will limit ourselves to variables that have up to 255 unique values
-            if analysis['num_unique_values'] <= 255:
-                # print("          {fqn} has {unique} unique values. This may be an enum variable.\n".format(
-                #     fqn=variable['fqn'],
-                #     unique=analysis['num_unique_values']
-                # ))
-                classified_vars['enums'].append(variable)
-                classified_fqns.add(variable['fqn'])
-                continue
-            # else:
-                # print("           Ignoring {fqn} because it has more than 255 unique values.\n".format(
-                #     fqn=variable['fqn']
-                # ))
+        if len(input_sizes) > 0 and len(max_vals) > 0:
+            max_vals_variance = numpy.var(max_vals)
 
-        elif analysis['num_modified_lines'] == analysis['num_unique_values']:
-
-            # Deal with case 2. Basically the number of lines it is modified on should equal the number of
-            # unique values it holds
-            # print("        {fqn} is has {unique} values and is modified on the same number of lines. "
-            #       "It is probably an enum variable.\n".format(fqn=variable['fqn'],
-            #                                                   unique=analysis['num_unique_values']))
-            classified_vars['enums'].append(variable)
-            classified_fqns.add(variable['fqn'])
-            continue
+            if input_sizes_variance > 0 and max_vals_variance > 0:
+                r = numpy.corrcoef(input_sizes, max_vals)
+                if r[0, 1] >= 0.25 and r[1, 0] >= 0.25:
+                    classified_vars['correlated_with_input_size'].append(variable)
+                    classified_fqns.add(variable['fqn'])
 
     # TODO: add more png files so that you have a variety of height, width, color depth, etc.
     # if len(classified_fqns) > 0:

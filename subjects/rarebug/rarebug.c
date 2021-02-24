@@ -45,6 +45,10 @@ const unsigned int MAGIC_SEQUENCE = (TYPE_1 << (3u * WIDTH)) +
 const char delimiter = ':';
 unsigned int current_sequence = 0u;
 
+int coolio(COMMAND* cmdptr,  int val) {
+    cmdptr->other = val;
+}
+
 int process_message(const char* message_type_str, const char* message) {
     if (strlen(message) > MAX_MESSAGE_SIZE) {
         return -1;
@@ -85,6 +89,8 @@ int process_message(const char* message_type_str, const char* message) {
 
     COMMAND *cptr = &com;
     cptr->other = message_type;
+
+    coolio(cptr, message_type);
 
     thecoolstring = message_type_str;
     /*

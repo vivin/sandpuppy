@@ -82,7 +82,7 @@ class VariablePrintFeedback : public fuzzfactory::DomainFeedback<VariablePrintFe
             //varType->print(llvm::outs());
 
             if (auto *compositeType = dyn_cast<DICompositeType>(varType)) {
-                std::cout << "    This is a composite type \n";
+                std::cout << "    This is a composite type " << var->getName().str() << "\n";
 
                 auto *composite = new CompositeType(varType->getName().str());
                 DINodeArray elements = compositeType->getElements();
@@ -205,11 +205,12 @@ class VariablePrintFeedback : public fuzzfactory::DomainFeedback<VariablePrintFe
                     }
                 }
 
-                std::string fullyQualifiedName =
-                    pointerOperand->getName().str() + "." + prefix + elementAndType.first;
-                std::cout << "  " << fullyQualifiedName << " changed on line "
+                std::string structVarName = std::regex_replace(pointerOperand->getName().str(), std::regex("\\.addr"), "");
+                std::string fullyQualifiedName = structVarName + "." + prefix + elementAndType.first;
+                std::cout << "\n  " << fullyQualifiedName << " changed on line "
                           << store->getDebugLoc()->getLine() << " (struct declared on "
-                          << structVarToDeclaredLine[pointerOperand->getName().str()] << ")\n\n";
+                          << structVarToDeclaredLine[structVarName] << ")\n\n";
+
             }
         }
     }
