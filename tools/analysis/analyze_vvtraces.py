@@ -97,37 +97,50 @@ def main(experiment, subject, binary, execution):
                 print("")
                 print("    Static Counters:")
                 for variable in classified_variables['static_counters']:
-                    print("      {fqn}{varying} {prop}".format(
+                    counter_features = variable['features']['counter']
+                    enum_features = variable['features']['enum']
+                    print("      {fqn}{varying} {prop}{pearson}".format(
                         fqn=variable['fqn'],
-                        varying=" (varying deltas)" if variable['info']['varying_deltas'] else "",
-                        prop=variable['info']['loop_sequence_proportion']
+                        varying=" (varying deltas)" if counter_features['varying_deltas'] else "",
+                        prop=counter_features['loop_sequence_proportion'],
+                        pearson=" {p}".format(p=enum_features['pearson']) if 'pearson' in enum_features else ""
                     ))
 
             if len(classified_variables['dynamic_counters']) > 0:
                 print("")
                 print("    Dynamic Counters:")
                 for variable in classified_variables['dynamic_counters']:
+                    counter_features = variable['features']['counter']
+                    enum_features = variable['features']['enum']
                     print("      {fqn}{varying} {prop}".format(
                         fqn=variable['fqn'],
-                        varying=" (varying deltas)" if variable['info']['varying_deltas'] else "",
-                        prop=variable['info']['loop_sequence_proportion']
+                        varying=" (varying deltas)" if counter_features['varying_deltas'] else "",
+                        prop=counter_features['loop_sequence_proportion'],
+                        pearson=" {p}".format(p=enum_features['pearson']) if 'pearson' in enum_features else ""
                     ))
 
             if len(classified_variables['input_size_counters']) > 0:
                 print("")
                 print("    Counters correlated with input size:")
                 for variable in classified_variables['input_size_counters']:
+                    counter_features = variable['features']['counter']
                     print("      {fqn}{varying} {prop}".format(
                         fqn=variable['fqn'],
-                        varying=" (varying deltas)" if variable['info']['varying_deltas'] else "",
-                        prop=variable['info']['loop_sequence_proportion']
+                        varying=" (varying deltas)" if counter_features['varying_deltas'] else "",
+                        prop=counter_features['loop_sequence_proportion']
                     ))
 
             if len(classified_variables['enums']) > 0:
                 print("")
                 print("    Enums:")
                 for variable in classified_variables['enums']:
-                    print("      {fqn} {prop}".format(fqn=variable['fqn'], prop=variable['info']['loop_sequence_proportion']))
+                    counter_features = variable['features']['counter']
+                    enum_features = variable['features']['enum']
+                    print("      {fqn} {prop} {pearson}".format(
+                        fqn=variable['fqn'],
+                        prop=counter_features['loop_sequence_proportion'],
+                        pearson=enum_features['pearson']
+                    ))
 
             if len(classified_variables['related']) > 0:
                 print("")
@@ -136,12 +149,6 @@ def main(experiment, subject, binary, execution):
                     print("      {related}".format(related=sorted([variable['fqn'] for variable in related])))
 
             print("")
-
-            # TODO: next thing to do is to identify vars that are modified close together. build a map where key is
-            # TODO: modified line. start with each var and see what all vars are there in modified_line - 5 to
-            # TODO: modified line + 5. to see if var is related, compare the length of traces for each pid. maybe
-            # TODO: making sure they are exactly the same may be too strict. check instead if the average length of
-            # TODO: trace is close enough. basically both should have been modified around the same number of times.
 
     # TODO: ok, so just see if you can cluster using just values. the timeseries kmeans expects the data to be in some
     # TODO: weird fucking format. like a single series with the values 1, 2, 3 should be [[1],[2],[3]] or some shit??
@@ -174,29 +181,34 @@ def classify_variables(variables):
     # TODO: test for correlation of variables with input size and counters with input size needs to be stricter. make
     # TODO: threshold higher?
     def is_correlated_with_input_size(var):
+
+        input_size_correlation_features = var['features']['correlated_with_input_size']
+        input_size_correlation_features['pearson'] = 0
+
         # We are looking for variables whose values may reflect some correlation with the input size. Essentially we
         # are looking for "size" or "length" type variables. We only focus on the maximum value (per trace) and only
         # for those traces that contain either 1 or 2 elements. This is because these variables are either initialized
         # to a value and then left unchanged, or are initialized to zero and then set to to a value and left unchanged.
         # Note that "count" type variables that count up to a value correlated with input size are handled separately.
-        input_sizes = []
         max_values = []
+        input_sizes = []
         for trace in var['info']['traces']:
             if 0 < len(trace['items']) < 3:
                 max_values.append(max([int(item['variable_value']) for item in trace['items']]))
                 input_sizes.append(trace['input_size'])
 
-        if len(input_sizes) == 0 or len(max_values) == 0:
+        if len(max_values) == 0 or len(input_sizes) == 0:
             return False
 
-        input_sizes_variance = numpy.var(input_sizes)
         max_values_variance = numpy.var(max_values)
+        input_sizes_variance = numpy.var(input_sizes)
 
-        if input_sizes_variance == 0 or max_values_variance == 0:
+        if max_values_variance == 0 or input_sizes_variance == 0:
             return False
 
-        r = numpy.corrcoef(input_sizes, max_values)
-        if r[0, 1] >= 0.5 and r[1, 0] >= 0.5:
+        r = numpy.corrcoef(max_values, input_sizes)
+        input_size_correlation_features['pearson'] = numpy.round(r[0, 1], 2)
+        if input_size_correlation_features['pearson'] >= 0.5:
             return True
 
         return False
@@ -262,8 +274,9 @@ def classify_variables(variables):
         # variables that simply happen to always increase or decrease. # TODO: do we really need to ignore? digestSize
         # TODO: is a static counter because it just goes through digest sizes from 20, 32, 48, to 64. let's try ignoring
 
-        var['info']['varying_deltas'] = False
-        var['info']['loop_sequence_proportion'] = 0
+        counter_features = var['features']['counter']
+        counter_features['varying_deltas'] = False
+        counter_features['loop_sequence_proportion'] = 0
         counter = True
         for trace in traces:
 
@@ -301,7 +314,7 @@ def classify_variables(variables):
                 else:
                     # If the current direction is different from the loop direction, the loop might have ended.
                     if len(set(deltas)) > 1:
-                        var['info']['varying_deltas'] = True
+                        counter_features['varying_deltas'] = True
 
                     combined_iterations.append(len(deltas))
                     loop_sequence_lengths_sum += len(deltas) + 1
@@ -315,13 +328,13 @@ def classify_variables(variables):
         # the deltas list will contain elements, so we can handle that case here.
         if len(deltas) > 0:
             if len(set(deltas)) > 1:
-                var['info']['varying_deltas'] = True
+                counter_features['varying_deltas'] = True
 
             combined_iterations.append(len(deltas))
             loop_sequence_lengths_sum += len(deltas) + 1
 
-        loop_sequence_proportion = (loop_sequence_lengths_sum / trace_lengths_sum)
-        var['info']['loop_sequence_proportion'] = loop_sequence_proportion
+        loop_sequence_proportion = numpy.round(loop_sequence_lengths_sum / trace_lengths_sum, 2)
+        counter_features['loop_sequence_proportion'] = loop_sequence_proportion
         # print("      ", "counter =", counter, " len(combined_deltas) =", len(combined_deltas),
         #      " mean combined deltas =", numpy.mean(combined_deltas) if len(combined_deltas) > 0 else 0,
         #      " len(combined_iterations) =", len(combined_iterations),
@@ -335,15 +348,18 @@ def classify_variables(variables):
         # We know it is a counter. But is it a static counter or a dynamic one? Meaning, does it always count
         # up to a fixed value, or does it vary? To find out let's look at the maximum values in the traces.
 
-        input_sizes = []
         counter_max_values = []
+        input_sizes = []
         for trace in var['info']['traces']:
             if len(trace['items']) > 1:
-                input_sizes.append(trace['input_size'])
                 counter_max_values.append(max([int(item['variable_value']) for item in trace['items']]))
+                input_sizes.append(trace['input_size'])
 
-        input_sizes_variance = numpy.var(input_sizes)
         counter_max_values_variance = numpy.var(counter_max_values)
+        input_sizes_variance = numpy.var(input_sizes)
+
+        counter_features = var['features']['counter']
+        counter_features['pearson'] = 0
 
         # If the counter maximum values are all the same this is a static counter. If the counter maximum values are
         # different but the input sizes are the same, it suggests that the counter is not affected by the input size
@@ -359,8 +375,9 @@ def classify_variables(variables):
         elif input_sizes_variance == 0:
             return "dynamic"
 
-        r = numpy.corrcoef(input_sizes, counter_max_values)
-        if r[0, 1] < 0.5 or r[1, 0] < 0.5:
+        r = numpy.corrcoef(counter_max_values, input_sizes)
+        counter_features['pearson'] = numpy.round(r[0, 1], 2)
+        if counter_features['pearson'] < 0.5:
             return "dynamic"
         else:
             return "input_size"
@@ -379,6 +396,9 @@ def classify_variables(variables):
         input_sizes = var['analysis']['input_sizes']
         input_sizes_variance = var['analysis']['input_sizes_variance']
 
+        enum_features = var['features']['enum']
+        enum_features['pearson'] = 0
+
         # if "ExecCommand" in variable['fqn']:
         #    print("times_modified", times_modified)
         #    print("input_sizes", input_sizes)
@@ -391,6 +411,7 @@ def classify_variables(variables):
             return False
 
         r = numpy.corrcoef(times_modified, input_sizes)
+        enum_features['pearson'] = numpy.round(r[0, 1], 2)
 
         # print("      Number of times {fqn} is modified is correlated with input size "
         #      "(Pearson coefficients are {a} and {b}).".format(fqn=variable['fqn'], a=r[0, 1], b=r[1, 0]))
@@ -401,7 +422,7 @@ def classify_variables(variables):
         # sent to the process and it may fail early due to invalid input. Ideally it would be nice if we were able to
         # ascertain the amount of bytes actually read by the process from either stdin or a file. Not sure if that is
         # possible, though.
-        if r[0, 1] < 0.25 or r[1, 0] < 0.25:
+        if enum_features['pearson'] < 0.25:
             return False
 
         variable_values = numpy.array(var['info']['variable_values']).astype(numpy.float)
@@ -456,6 +477,12 @@ def classify_variables(variables):
     variables_by_fqn = dict()
     variables_by_modified_line = dict()
     for variable in variables:
+        variable['features'] = {
+            'correlated_with_input_size': {},
+            'counter': {},
+            'enum': {}
+        }
+
         analyze_variable(variable)
 
         if variable['analysis']['num_traces'] < 1:
@@ -490,8 +517,9 @@ def classify_variables(variables):
             # TODO: counter. even the loop sequences for varying deltas should have much more entropy compared to
             # TODO: an actual counter with varying deltas... maybe?? anyways try it out. combine this with the current
             # TODO: check maybe. maybe print out the entropy for each var?
-            if variable['info']['varying_deltas'] \
-                    and variable['info']['loop_sequence_proportion'] < 0.9 \
+            counter_features = variable['features']['counter']
+            if counter_features['varying_deltas'] \
+                    and counter_features['loop_sequence_proportion'] <= 0.9 \
                     and is_enum(variable):
                 variable['class'] = "enum"
                 classified_vars['enums'].append(variable)
@@ -519,8 +547,8 @@ def classify_variables(variables):
 
     related_vars = dict()
     for variable in variables:
-        # If the variable is already classified, ignore.
-        if 'class' in variable and variable['class'] == 'zero_traces':
+        # If the variable has zero traces or is a constant, ignore it.
+        if 'class' in variable and (variable['class'] == 'zero_traces' or variable['class'] == 'constant'):
             continue
 
         analysis = variable['analysis']
@@ -538,28 +566,17 @@ def classify_variables(variables):
         modified_line = list(variable['info']['modified_lines'])[0]
         candidate_vars = set()
         for delta in range(1, 6):
-
-            previous_line = modified_line - delta
-            if previous_line in variables_by_modified_line:
-                modified_vars_previous_line = set(
-                    [var['fqn'] for var in variables_by_modified_line[previous_line]]  # TODO: ignore constants
-                ).difference([variable['fqn']])
-                if len(modified_vars_previous_line) > 0:
-                    # print("        Variables modified on previous line {l} ({delta}): {vars}".format(
-                    #     l=previous_line, vars=modified_vars_previous_line, delta=delta
-                    # ))
-                    candidate_vars = candidate_vars.union(modified_vars_previous_line)
-
-            next_line = modified_line + delta
-            if next_line in variables_by_modified_line:
-                modified_vars_next_line = set(
-                    [var['fqn'] for var in variables_by_modified_line[next_line]]  # TODO: ignore constants. check 'class' of var
-                ).difference([variable['fqn']])
-                if len(modified_vars_next_line) > 0:
-                    # print("        Variables modified on next line {l} ({delta}): {vars}".format(
-                    #     l=next_line, vars=modified_vars_next_line, delta=delta
-                    # ))
-                    candidate_vars = candidate_vars.union(modified_vars_next_line)
+            for line in [modified_line - delta, modified_line + delta]:
+                if line in variables_by_modified_line:
+                    vars_modified_on_line = set([
+                        var['fqn'] for var in variables_by_modified_line[line]
+                        if 'class' not in var or ('class' in var and var['class'] != 'constant')
+                    ]).difference([variable['fqn']])
+                    if len(vars_modified_on_line) > 0:
+                        #print("        Variables modified on line {l} ({delta}): {vars}".format(
+                        #     l=line, vars=vars_modified_on_line, delta=delta
+                        #))
+                        candidate_vars = candidate_vars.union(vars_modified_on_line)
 
         # If we identified any variables that are modified close to the current variable we're looking at, we perform
         # some additional checks to make sure that they actually are related. In particular, for a given candidate
@@ -613,8 +630,8 @@ def classify_variables(variables):
         frontier = {related_var_name}
         while len(frontier) > 0:
             var_name = frontier.pop()
-            related.add(var_name)
             visited.add(var_name)
+            related.add(var_name)
 
             if var_name in related_vars:
                 frontier = frontier.union(set(
