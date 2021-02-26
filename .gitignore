@@ -63,4 +63,4 @@ target/
 *.tar.bz2
 resources/libpng*
 resources/binutils*
-cmake-build-debug
+*.pyc
