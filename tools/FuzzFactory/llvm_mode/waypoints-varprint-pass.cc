@@ -56,6 +56,8 @@ class VariablePrintFeedback : public fuzzfactory::DomainFeedback<VariablePrintFe
             std::cout << "  " << var->getName().str() << " declared on line " << var->getLine()
                       << " with type " << var->getType()->getName().str() << "\n";
 
+            // TODO: identify typedef union struct. See TestHash in AlgorithmTests.c in libtpms.
+
             // TODO: at some point we need to identify strings here as well. they start off
             // TODO: as a pointer type, but end up as char, so that should be enough for us
             // TODO: to identify strings. but trouble happens when you look at how strings are

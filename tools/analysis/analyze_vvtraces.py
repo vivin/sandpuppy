@@ -87,41 +87,53 @@ def main(experiment, subject, binary, execution):
                 for variable in classified_variables['constants']:
                     print("      {fqn}".format(fqn=variable['fqn']))
 
-            if len(classified_variables['static_counters']) > 0:
-                print("")
-                print("    Static Counters:")
-                for variable in classified_variables['static_counters']:
-                    print("      {fqn}".format(fqn=variable['fqn']))
-
-            if len(classified_variables['dynamic_counters']) > 0:
-                print("")
-                print("    Dynamic Counters:")
-                for variable in classified_variables['dynamic_counters']:
-                    print("      {fqn}".format(fqn=variable['fqn']))
-
-            if len(classified_variables['input_size_counters']) > 0:
-                print("")
-                print("    Counters correlated with input size:")
-                for variable in classified_variables['input_size_counters']:
-                    print("      {fqn}".format(fqn=variable['fqn']))
-
             if len(classified_variables['correlated_with_input_size']) > 0:
                 print("")
                 print("    Variables correlated with input size:")
                 for variable in classified_variables['correlated_with_input_size']:
                     print("      {fqn}".format(fqn=variable['fqn']))
 
+            if len(classified_variables['static_counters']) > 0:
+                print("")
+                print("    Static Counters:")
+                for variable in classified_variables['static_counters']:
+                    print("      {fqn}{varying} {prop}".format(
+                        fqn=variable['fqn'],
+                        varying=" (varying deltas)" if variable['info']['varying_deltas'] else "",
+                        prop=variable['info']['loop_sequence_proportion']
+                    ))
+
+            if len(classified_variables['dynamic_counters']) > 0:
+                print("")
+                print("    Dynamic Counters:")
+                for variable in classified_variables['dynamic_counters']:
+                    print("      {fqn}{varying} {prop}".format(
+                        fqn=variable['fqn'],
+                        varying=" (varying deltas)" if variable['info']['varying_deltas'] else "",
+                        prop=variable['info']['loop_sequence_proportion']
+                    ))
+
+            if len(classified_variables['input_size_counters']) > 0:
+                print("")
+                print("    Counters correlated with input size:")
+                for variable in classified_variables['input_size_counters']:
+                    print("      {fqn}{varying} {prop}".format(
+                        fqn=variable['fqn'],
+                        varying=" (varying deltas)" if variable['info']['varying_deltas'] else "",
+                        prop=variable['info']['loop_sequence_proportion']
+                    ))
+
             if len(classified_variables['enums']) > 0:
                 print("")
                 print("    Enums:")
                 for variable in classified_variables['enums']:
-                    print("      {fqn}".format(fqn=variable['fqn']))
+                    print("      {fqn} {prop}".format(fqn=variable['fqn'], prop=variable['info']['loop_sequence_proportion']))
 
             if len(classified_variables['related']) > 0:
                 print("")
                 print("    Related variables:")
                 for related in classified_variables['related']:
-                    print("      {related}".format(related=[variable['fqn'] for variable in related]))
+                    print("      {related}".format(related=sorted([variable['fqn'] for variable in related])))
 
             print("")
 
@@ -159,36 +171,70 @@ def classify_variables(variables):
         # Pretty simple. If the variable is only modified at one place and only has one unique value, it is a constant.
         return var['analysis']['num_modified_lines'] == 1 and var['analysis']['num_unique_values'] == 1
 
+    # TODO: test for correlation of variables with input size and counters with input size needs to be stricter. make
+    # TODO: threshold higher?
     def is_correlated_with_input_size(var):
         # We are looking for variables whose values may reflect some correlation with the input size. Essentially we
-        # are looking for "size", "count", or "length" type variables. We only focus on the maximum value (per trace)
-        # of these variables and see if they are correlated with input size.
+        # are looking for "size" or "length" type variables. We only focus on the maximum value (per trace) and only
+        # for those traces that contain either 1 or 2 elements. This is because these variables are either initialized
+        # to a value and then left unchanged, or are initialized to zero and then set to to a value and left unchanged.
+        # Note that "count" type variables that count up to a value correlated with input size are handled separately.
+        input_sizes = []
         max_values = []
         for trace in var['info']['traces']:
-            if len(trace['items']) > 0:
+            if 0 < len(trace['items']) < 3:
                 max_values.append(max([int(item['variable_value']) for item in trace['items']]))
+                input_sizes.append(trace['input_size'])
 
-        input_sizes = var['analysis']['input_sizes']
         if len(input_sizes) == 0 or len(max_values) == 0:
             return False
 
-        input_sizes_variance = var['analysis']['input_sizes_variance']
+        input_sizes_variance = numpy.var(input_sizes)
         max_values_variance = numpy.var(max_values)
 
         if input_sizes_variance == 0 or max_values_variance == 0:
             return False
 
         r = numpy.corrcoef(input_sizes, max_values)
-        if r[0, 1] >= 0.25 and r[1, 0] >= 0.25:
+        if r[0, 1] >= 0.5 and r[1, 0] >= 0.5:
             return True
 
         return False
 
     def is_counter(var):
 
-        counter = True
-        total_times_modified = sum(var['analysis']['times_modified'])
-        num_values_part_of_loop = 0
+        # First we are going to filter out and clean up traces. We ignore any trace with less than two items. Then we
+        # will clean up "runs" of values in a trace. Runs of values can happen normally for non-counter variables. But
+        # it is possible with counters well if the loop never gets started because the counter variable is initialized
+        # to a value that already satisfies the end condition of the loop. By replacing these runs with just a single
+        # instance of the repeated value, it is much easier to identify potential loop sequences. We do not have to
+        # worry about mis-classifying non-counter variables as counters if they happen have series of values that
+        # translate to a valid loop sequence, because we will also calculate the proportion of such values with respect
+        # to the total number of values. If this proportion is less than 0.5, we will not consider the variable as a
+        # counter. Since in general, counter variables will have a higher proportion of values (if not all) that are
+        # part of a loop sequence, this can help us weed out false positives.
+        traces = []
+        for trace in var['info']['traces']:
+            if len(trace['items']) < 2:
+                continue
+
+            new_trace = []
+            previous_value = None
+            for item in trace['items']:
+                current_value = int(item['variable_value'])
+                if current_value != previous_value:
+                    new_trace.append(current_value)
+                    previous_value = current_value
+
+            if len(new_trace) > 1:
+                traces.append(new_trace)
+
+        # The total length of all traces
+        trace_lengths_sum = sum(var['analysis']['times_modified'])
+
+        # The sum of the lengths of all identified loop sequences across all traces. This is the same as the number of
+        # trace elements (basically variable values) across all traces that are part of a loop sequence.
+        loop_sequence_lengths_sum = 0
 
         # Keep track of the number of iterations this variable goes through, each time it goes through a loop. Basically
         # this is the number of times a variable is incremented/decremented until it reaches its limit. We do this so
@@ -197,167 +243,107 @@ def classify_variables(variables):
         # fixed values.
         combined_iterations = []
 
-        # Keep track of the deltas of the variable values between one iteration and the next, until the limit. Note that
-        # if val[t + 1] is the start of a new iteration, we do not store the delta between val[t] and val[t + 1]. The
-        # reason we maintain these deltas is to exclude variables that may increase (or decrease) monotonically but
-        # at very high rates. Currently we exclude any variable that has a mean delta (across all traces) greater than
-        # 255.
+        # Keep track of the deltas between successive values within a single loop sequence.
+        deltas = []
+
+        # Keep track of the deltas between successive values from all identified loop sequences. The reason we maintain
+        # these deltas is to exclude variables that may increase (or decrease) but at very high rates. Currently we
+        # exclude any variable that has a mean delta (across all traces) greater than 255.
         combined_deltas = []
-        for trace in var['info']['traces']:
 
-            # Ignore any trace that has less than two items because it is clearly modified only once.
-            if len(trace['items']) < 2:
-                continue
+        # Now we process our subset of cleaned up traces. The intent is to identify sequences of increasing and
+        # decreasing values. There may be multiple such sequences per trace. Based on certain aggregate features of
+        # these sequences, we can determine whether the variable might be a counter.
+        #
+        # The
+        # individual feature that we keep track of is an array of deltas between each successive pair. For a counter
+        # this value must be constant, meaning that there should only be one unique delta value. While there can be
+        # and are counters that increment with varying deltas per iteration, it is difficult to distinguish them from
+        # variables that simply happen to always increase or decrease. # TODO: do we really need to ignore? digestSize
+        # TODO: is a static counter because it just goes through digest sizes from 20, 32, 48, to 64. let's try ignoring
 
-            # Keep track of the deltas within a "loop"
-            deltas = []
+        var['info']['varying_deltas'] = False
+        var['info']['loop_sequence_proportion'] = 0
+        counter = True
+        for trace in traces:
 
-            # The direction of the loop. Calculated based on val[t + 1] - val[t], where t is the trace corresponding to
-            # the first iteration of the loop. This helps us handle both incrementing and decrementing loops and can
-            # also help us detect when a loop might have ended.
-            loop_direction = 0
-
-            # Boolean to indicate that we have started a new loop
-            new_loop = True
-
-            #if 'digestSize' in var['fqn'] and 'AlgorithmTests.c' in var['fqn']:
-            #    print([item['variable_value'] for item in trace['items']])
+            # The direction of the loop. Tells us if the loop is incrementing or decrementing. Given a sequence of
+            # values that could be part of a loop, we establish the loop direction based on the relationship between
+            # the first two values in the sequence: (t[1] - t[0]) / abs(t[1] - t[0]). As long as successive values
+            # have the same relation (i.e., the values are "moving" in the same direction) they will be considered
+            # part of a loop sequence. If any pair of successive values don't have the same relationship, it might
+            # mean that the loop has ended. This variable helps handle the case where there are multiple potential
+            # loop sequences in a single trace.
+            loop_direction = None
 
             index = 0
-            while index < len(trace['items']) - 1 and counter:
-                current_value = int(trace['items'][index]['variable_value'])
-                next_value = int(trace['items'][index + 1]['variable_value'])
+            while index < len(trace) - 1 and counter:
+                current_value = trace[index]
+                next_value = trace[index + 1]
 
-                # Calculate the delta between the current value and the next value. If the delta is 0 (i.e. no change
-                # between current and next value), we continue the loop. The intent is to ignore "runs" of the same
-                # value. This is because we can have situations where a legitimate counter gets set to the starting
-                # value multiple times, but doesn't increment/decrement because the starting value is outside the bounds
-                # of the loop's limit. However it could be that at some point it does eventually start incrementing or
-                # decrementing, so we want to be able to detect that. TODO: this is a bit of a problem because it is now
-                # TODO: classifying player_col, delta_row, etc. as counters. which sort of makes sense because they do
-                # TODO: monotonically increase etc or decrease. and by ignoring runs of values we end up only focusing
-                # TODO: on those parts that increment or decrement. Maybe for related variables we need to ignore
-                # TODO: whether they have been classified? I think for counters you should check if within a loop
-                # TODO: everything increments by the same amount. because in general even if you have a random string
-                # TODO: of numbers, you will find some monotonically increasing/decreasing sequence. and so any variable
-                # TODO: can potentially be a counter. so I think the issue here is that if you negatively classify
-                # TODO: variables with runs of values, you risk ignoring variables that maybe are counters but start
-                # TODO: off never looping, and so just have a run of initial values, but then eventually does start
-                # TODO: looping. however doing so causes you to also classify more or less anything with at least one
-                # TODO: monotonically increasing sequence as a counter. so i guess maybe you need to compare how many
-                # TODO: percentage of traces get classified as counters vs not? ugh. you know what maybe we just
-                # TODO: ignore variables that start off with runs of values... or have runs of values... it's worth
-                # TODO: negatively classifying those if it makes the other classifications more accurate. yeah...
-                # TODO: actually, if you make the assumption that the counter is always going to increment by a fixed
-                # TODO: value each time in the loop, i think that is fine. because, of course, you could potentially
-                # TODO: have loops where the counter increments by different values each time, but those are kind of
-                # TODO: rare. and if they are worth maximizing, that is, if they end up being correlated to input size
-                # TODO: somehow, we can detect that. !!! OK so it doesn't classify message_type as a counter but it does
-                # TODO: classify player_col and stuff like that as counters... which makes sense. delta_col can also be
-                # TODO: a counter as it can go from -1 to 0 to 1 :/. maybe you calculate how many elements are part of
-                # TODO: loop sequence as a proportion of the total number of elements in the trace? because an actual
-                # TODO: loop variable should show a high proportion of that I think.
-                # TODO: maybe you can just leave this the way it is. i guess the question is what do we want to
-                # TODO: instrument based on the classification? so what if the player_col etc gets classified as a
-                # TODO: counter? it still gets classified as related to player_row and so on. so yes, we could
-                # TODO: instrument something useless but since we will be running things in parallel maybe that's not
-                # TODO: so bad as we will be running multiple instrumented binaries. maybe one maximizes the player_col
-                # TODO: "counter" and another does the hash combination of player_col and player_row. so maybe not a
-                # TODO: big deal. but what you can do is exclude constants from related variables. since there is no
-                # TODO: need to look at them. also maybe even variables correlated with input size... you could ignore
-                # TODO: those too. honestly, try incorporating the number of elements that are part of a monotonically
-                # TODO: increasing/decreasing sequence of length > 2 as a proportion of total number of elements of all
-                # TODO: traces (or maybe just for a process?? try both and see what happens). So we could either
-                # TODO: calculate the percentage of traces with proportion of elements > threshold. or we could
-                # TODO: calculate the proportion of elements part of a sequences wrt the total number of sequences from
-                # TODO: all traces and see if that is over a threshold? but this is not as bad as I initially thought.
-                # TODO: the classification is still pretty accurate.
                 delta = next_value - current_value
-                #if 'digestSize' in var['fqn'] and 'AlgorithmTests.c' in var['fqn']:
-                #    print(next_value, " - ", current_value, " = ", delta)
-                if delta == 0:
-                    index += 1
-                    continue
 
-                # We need to handle the cases where we have 0, 0, 0, 0, 1, 2, 3, 4 or 5, 5, 5, 0, 1, 2, 3, 4. While the
-                # direction from 0 to 1 is the same as the rest of the loop, the direction from 5 to 0 isn't. So how can
-                # we ignore the transition from 5 to 0? Let's compare it to the transition from 0 to 1. If it is the
-                # same direction, we keep going. Otherwise
-                # if new_loop and trace['items'][index]['']
-
-                # If this is the start of a new loop establish the loop direction by calculating the sign of
-                # val[t + 1] - val[t] and set it to prev_sign.
-                if new_loop:
+                # If loop_direction is None, we are at the beginning of a new loop. This happens right at the start of
+                # the trace but can also happen anywhere in the middle. For example [0, 1, 2, 3, 4, 0, 1, 2, 3, 5] has
+                # a new loop starting at position 5. We detect this case and reset loop_direction to None so that we can
+                # establish a new loop direction using the first two values of the new sequence.
+                if loop_direction is None:
                     loop_direction = delta / abs(delta)
-                    new_loop = False
 
-                # Calculate the direction based on the sign of val[t + 1] - val[t]
-                direction = delta / abs(delta)
+                # Calculate the current direction based on the sign of val[t + 1] - val[t]
+                current_direction = delta / abs(delta)
 
-                if direction == loop_direction:
+                if current_direction == loop_direction:
                     # If the direction is the same as the loop direction (i.e, we continue to increment/decrement) add
                     # the delta to our list of deltas for this loop, and to the list of combined deltas as well.
                     deltas.append(abs(delta))
                     combined_deltas.append(abs(delta))
-
-                    if (index + 1) == len(trace['items']) - 1:
-                        combined_iterations.append(len(deltas))
-                        num_values_part_of_loop += len(deltas) + 1
-                        counter = len(set(deltas)) == 1
-                elif len(deltas) == 1:
-                    #print("looped only once")
-                    # If the loop looped only once before the direction changed we will start a new loop and also pop
-                    # the last delta out of the combined deltas. This is because we want to ignore situations where
-                    # a variable ends up flipping between two values. While it could be considered a one bit counter
-                    # it's probably not an actual counter.
-                    combined_deltas.pop()
-                    deltas = []
-                    new_loop = True
-                elif len(set(deltas)) == 1:
-                    #print("more than one delta, loop dir changed, and deltas are all of one value")
-                    # If the direction of the loop has changed and we have more than one delta (meaning the loop looped
-                    # more than once) we are at the end of the loop. Let us check the deltas to make sure that they are
-                    # all the same values. If not, we will not classify this as a counter.
-                    combined_iterations.append(len(deltas))
-                    num_values_part_of_loop += len(deltas) + 1
-                    deltas = []
-                    new_loop = True
-
                 else:
-                    #print("not counter because no delta")
-                    counter = False
+                    # If the current direction is different from the loop direction, the loop might have ended.
+                    if len(set(deltas)) > 1:
+                        var['info']['varying_deltas'] = True
+
+                    combined_iterations.append(len(deltas))
+                    loop_sequence_lengths_sum += len(deltas) + 1
+                    deltas = []
+                    loop_direction = None
 
                 index += 1
 
-        # TODO: examine digestSize in AlgorithmTests.c why is it a static counter?
-        # TODO: maybe if max(combined_iterations) is 1, you can check the proportion value?
-        # TODO: look at dType in CommandDispatcher.c in CommandDispatcher log stuff out... but dType in
-        # TODO: parseHandleBuffer is recognized as enum. in there check why command.handleNum and type are correlated
-        # TODO: with input size. in ExecCommand.c see why command.index and command.parameterSize are correlated
-        # TODO: with input size. index shouldn't be i imagine??
+        # If the entire trace is a loop sequence, or there is a loop sequence that starts somewhere in the middle of
+        # the trace and runs till the end, we will have exited the loop without saving the deltas. If this happens
+        # the deltas list will contain elements, so we can handle that case here.
+        if len(deltas) > 0:
+            if len(set(deltas)) > 1:
+                var['info']['varying_deltas'] = True
 
-        proportion_part_of_loop = (num_values_part_of_loop / total_times_modified)
-        #print("      ", "counter =", counter, " len(combined_deltas) =", len(combined_deltas),
+            combined_iterations.append(len(deltas))
+            loop_sequence_lengths_sum += len(deltas) + 1
+
+        loop_sequence_proportion = (loop_sequence_lengths_sum / trace_lengths_sum)
+        var['info']['loop_sequence_proportion'] = loop_sequence_proportion
+        # print("      ", "counter =", counter, " len(combined_deltas) =", len(combined_deltas),
         #      " mean combined deltas =", numpy.mean(combined_deltas) if len(combined_deltas) > 0 else 0,
         #      " len(combined_iterations) =", len(combined_iterations),
         #      " max combined iterations =", max(combined_iterations) if len(combined_iterations) > 0 else 0,
-        #      " proportion_part of loop =", proportion_part_of_loop, "\n")
+        #      " proportion_part of loop =", loop_sequence_proportion, "\n")
         # The check for <= 255 is to ignore things that have huge jumps in value
         return counter and len(combined_deltas) > 0 and numpy.mean(combined_deltas) <= 255 \
-            and len(combined_iterations) > 0 \
-            and proportion_part_of_loop > 0.5
+            and loop_sequence_proportion > 0.5
 
     def classify_counter(var):
         # We know it is a counter. But is it a static counter or a dynamic one? Meaning, does it always count
         # up to a fixed value, or does it vary? To find out let's look at the maximum values in the traces.
-        counter_max_vals = []
+
+        input_sizes = []
+        counter_max_values = []
         for trace in var['info']['traces']:
-            counter_max_vals.append(max([int(item['variable_value']) for item in trace['items']]))
+            if len(trace['items']) > 1:
+                input_sizes.append(trace['input_size'])
+                counter_max_values.append(max([int(item['variable_value']) for item in trace['items']]))
 
-        counter_max_vals_variance = numpy.var(counter_max_vals)
-
-        input_sizes = var['analysis']['input_sizes']
-        input_sizes_variance = var['analysis']['input_sizes_variance']
+        input_sizes_variance = numpy.var(input_sizes)
+        counter_max_values_variance = numpy.var(counter_max_values)
 
         # If the counter maximum values are all the same this is a static counter. If the counter maximum values are
         # different but the input sizes are the same, it suggests that the counter is not affected by the input size
@@ -368,21 +354,18 @@ def classify_variables(variables):
         #
         # If neither of the variances are zero, then we can see if the maximum values of the counter are correlated with
         # input size. If that is the case this makes it an input-size counter. Otherwise it is a dynamic counter.
-        if counter_max_vals_variance == 0:
+        if counter_max_values_variance == 0:
             return "static"
         elif input_sizes_variance == 0:
             return "dynamic"
 
-        r = numpy.corrcoef(input_sizes, counter_max_vals)
-        if r[0, 1] < 0.25 or r[1, 0] < 0.25:
+        r = numpy.corrcoef(input_sizes, counter_max_values)
+        if r[0, 1] < 0.5 or r[1, 0] < 0.5:
             return "dynamic"
         else:
             return "input_size"
 
     def is_enum(var):
-        if 'analysis' not in var:
-            analyze_variable(var)
-
         # Looking for enum-like variables. We are already looking for variables that have been modified more than
         # once. Since we are looking to maximize the combinations in the input, what can we tell about the var?
         # Let's maybe first see if there is a correlation between the number of times it is invoked and the input
@@ -409,7 +392,7 @@ def classify_variables(variables):
 
         r = numpy.corrcoef(times_modified, input_sizes)
 
-        #print("      Number of times {fqn} is modified is correlated with input size "
+        # print("      Number of times {fqn} is modified is correlated with input size "
         #      "(Pearson coefficients are {a} and {b}).".format(fqn=variable['fqn'], a=r[0, 1], b=r[1, 0]))
 
         # We will look for Pearson coefficients greater than 0.25 to see if the number of times a variable is modified
@@ -490,20 +473,42 @@ def classify_variables(variables):
                 variable['class'] = "constant"
                 classified_vars['constants'].append(variable)
         elif is_counter(variable):
-            counter_class = classify_counter(variable)
-            variable['class'] = counter_class + "_counter"
-            classified_vars[counter_class + "_counters"].append(variable)
-        elif is_correlated_with_input_size(variable):
-            variable['class'] = "correlated_with_input_size"
-            classified_vars['correlated_with_input_size'].append(variable)
+            # Some counters with varying deltas may actually be enums, so let's check for that. But some legitimate
+            # counters with varying deltas could end up being mis-classified as enums (the classification boundary
+            # between counters and enums is kind of fuzzy if you think about it). So let's only try and classify
+            # something with varying deltas as an enum if its loop sequence proportion is less than 0.9.
+            # TODO: a better way to do this might be to calculate shannon entropy...?? do it over entire trace
+            # TODO: sequence or maybe calculate average of entropy? what you need to do is calculate it over
+            # TODO: a sequence of deltas ... then counters will have stuff like 1 1 1 1 0 0 1 1 1 etc. get the
+            # TODO: deltas and then go through and cap the max at 255 (so anything > 255 gets set to 255). experiment
+            # TODO: with two ways. either calculate the deltas on the filtered and cleaned up traces, or do it on all
+            # TODO: of them... maybe this is something you do before you classify as counter? anyway play around with
+            # TODO: it. if you are not dealing with cleaned up traces there can be runs of values and so your set of
+            # TODO: values is from 0 to 255, which means probability each one is 1/256. if you are dealing with cleaned
+            # TODO: up values then the set of values is from 1 to 255, which means probability of each one is 1/255.
+            # TODO: so calculate based on that. higher entropy means it is more likely to be an enum rather than a
+            # TODO: counter. even the loop sequences for varying deltas should have much more entropy compared to
+            # TODO: an actual counter with varying deltas... maybe?? anyways try it out. combine this with the current
+            # TODO: check maybe. maybe print out the entropy for each var?
+            if variable['info']['varying_deltas'] \
+                    and variable['info']['loop_sequence_proportion'] < 0.9 \
+                    and is_enum(variable):
+                variable['class'] = "enum"
+                classified_vars['enums'].append(variable)
+            else:
+                counter_class = classify_counter(variable)
+                variable['class'] = counter_class + "_counter"
+                classified_vars[counter_class + "_counters"].append(variable)
         elif is_enum(variable):
             variable['class'] = "enum"
             classified_vars['enums'].append(variable)
+        elif is_correlated_with_input_size(variable):
+            variable['class'] = "correlated_with_input_size"
+            classified_vars['correlated_with_input_size'].append(variable)
 
         # While classifying let's build up these dicts because we will use them when identifying related variables.
         # variables_by_fqn is for easy lookup of variables by the fully-qualified name. variables_by_modified_line is
         # to look up variables that are modified on a particular line.
-
         variables_by_fqn[variable['fqn']] = variable
 
         for modified_line in variable['info']['modified_lines']:
