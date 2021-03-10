@@ -52,15 +52,16 @@ def is_counter(var):
             )
         )
 
-    counter_features = var['features']['counter']
-    combined_deltas = counter_features['combined_deltas']
-    loop_sequence_proportion = counter_features['loop_sequence_proportion']
+    # It's hard to classify counters if the traces aren't long enough. We can end up with a lot of false positives. So
+    # we will return False for any variable whose average trace-length is less than 3.
+    general_features = var['features']['general']
+    if general_features['times_modified_mean'] < 3:
+        return False
 
-    # print("      ", "counter =", counter, " len(combined_deltas) =", len(combined_deltas),
-    #      " mean combined deltas =", numpy.mean(combined_deltas) if len(combined_deltas) > 0 else 0,
-    #      " proportion_part of loop =", loop_sequence_proportion, "\n")
-    # The check for <= 255 is to ignore things that have huge jumps in value
-    return len(combined_deltas) > 0 and numpy.mean(combined_deltas) <= 255 and loop_sequence_proportion > 0.5
+    counter_features = var['features']['counter']
+    loop_sequence_proportion = counter_features['loop_sequence_proportion_filtered']
+
+    return abs(counter_features['average_delta']) <= 255 and loop_sequence_proportion > 0.5
 
 
 def classify_counter(var):
@@ -84,6 +85,7 @@ def classify_counter(var):
 
     max_values_variance = counter_features['max_values_variance']
     input_sizes_variance = counter_features['input_sizes_variance']
+    average_value_set_cardinality_ratio = counter_features['average_value_set_cardinality_ratio']
 
     # If the counter maximum values are all the same this is a static counter. If the counter maximum values are
     # different but the input sizes are the same, it suggests that the counter is not affected by the input size
@@ -94,7 +96,7 @@ def classify_counter(var):
     #
     # If neither of the variances are zero, then we can see if the maximum values of the counter are correlated with
     # input size. If that is the case this makes it an input-size counter. Otherwise it is a dynamic counter.
-    if max_values_variance == 0:
+    if max_values_variance == 0 and average_value_set_cardinality_ratio == 1:
         return "static"
     elif input_sizes_variance == 0:
         return "dynamic"
@@ -109,16 +111,14 @@ def is_enum(var):
     if 'features' not in var or 'enum' not in var['features']:
         features.derive_enum_features(var)
 
-    enum_features = var['features']['enum']
-    general_features = var['features']['general']
-
-    # We will look for Pearson coefficients greater than 0.25 to see if the number of times a variable is modified
+    # We will look for Pearson coefficients greater than 0.5 to see if the number of times a variable is modified
     # is correlated with input size. Note that one issue is that the input size isn't necessarily the same as the
     # size of the input _actually processed_. The input size we end up reporting from AFL is the size of the input
     # sent to the process and it may fail early due to invalid input. Ideally it would be nice if we were able to
     # ascertain the amount of bytes actually read by the process from either stdin or a file. Not sure if that is
     # possible, though.
-    if enum_features['times_modified_to_input_size_correlation'] < 0.25:
+    enum_features = var['features']['enum']
+    if enum_features['times_modified_to_input_size_correlation'] < 0.5:
         return False
 
     # This is super sketch, and I probably need to mathematically prove it or something. But anyway, the
@@ -131,6 +131,7 @@ def is_enum(var):
     if enum_features['order_of_magnitudes_stddev'] > 1:
         return False
 
+    general_features = var['features']['general']
     # How many places is this variable modified? We have two cases where a variable can be like an enum
     # variable:
     #

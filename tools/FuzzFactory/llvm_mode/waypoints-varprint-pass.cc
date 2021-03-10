@@ -1,9 +1,30 @@
 #include <utility>
 #include <regex>
+#include <unordered_set>
 
 #include "fuzzfactory.hpp"
 
 using namespace fuzzfactory;
+
+class StructInfo {
+    std::string name;
+    std::vector<std::string> elements;
+
+public:
+    StructInfo(std::string name) : name(std::move(name)) {}
+
+    const std::string &getName() const {
+        return name;
+    }
+
+    const std::vector<std::string> &getElements() const {
+        return elements;
+    }
+
+    void addElement(std::string name) {
+        elements.emplace_back(name);
+    }
+};
 
 /**
  * This ONLY works with -O0 -g -gfull! We look for debug declares to find out where vars are declared. We also maintain
@@ -14,95 +35,64 @@ using namespace fuzzfactory;
  */
 class VariablePrintFeedback : public fuzzfactory::DomainFeedback<VariablePrintFeedback> {
 
-    class CompositeType {
-        std::string name;
-        std::vector<std::pair<std::string, DIType*>> elements;
-
-    public:
-        CompositeType(std::string name) : name(std::move(name)) {}
-
-        const std::string &getName() const {
-            return name;
-        }
-
-        const std::vector<std::pair<std::string, DIType *>> &getElements() const {
-            return elements;
-        }
-
-        void addElement(std::string name, DIType* type) {
-            elements.emplace_back(name, type);
-        }
-    };
-
-    ModuleSlotTracker *moduleSlotTracker;
+    // TODO: maybe associate value with all the info of the variable like name and declared line. that way you could
+    // TODO: look up quickly instead of walking up the chain. Don't set the value as DILocalVariable. Instead maybe
+    // TODO: create custom class? dunno. explore later.
     std::map<Value*, DILocalVariable*> valueLocalVariableCache;
-    std::map<StringRef, bool> varNameCache;
-    std::map<std::string, CompositeType*> compositeTypes;
-    std::map<std::string, int> structVarToDeclaredLine;
+    std::map<std::string, int> varToDeclaredLine;
+    std::map<std::string, StructInfo*> structInfoMap;
 
     void processLocalVariableDeclaration(DbgDeclareInst* declare) {
         Value *arg = declare->getAddress();
         DILocalVariable *var = declare->getVariable();
 
-        if (isa<UndefValue>(arg) || !var)
+        if (isa<UndefValue>(arg) || !var) {
             return;
+        }
 
         if (var->isArtificial()) {
             return;
         }
 
-        if (varNameCache.find(var->getName()) == varNameCache.end()) {
-            varNameCache[var->getName()] = true;
-            std::cout << "  " << var->getName().str() << " declared on line " << var->getLine()
-                      << " with type " << var->getType()->getName().str() << "\n";
+        if (varToDeclaredLine.find(var->getName().str()) == varToDeclaredLine.end()) {
+            varToDeclaredLine[var->getName().str()] = var->getLine();
 
-            // TODO: identify typedef union struct. See TestHash in AlgorithmTests.c in libtpms.
+            std::cout << "  " << var->getName().str() << " declared on line " << var->getLine() << "\n";
 
-            // TODO: at some point we need to identify strings here as well. they start off
-            // TODO: as a pointer type, but end up as char, so that should be enough for us
-            // TODO: to identify strings. but trouble happens when you look at how strings are
-            // TODO: modified. this is easily seen with just an int pointer variable. if you had
-            // TODO: int *p; and *p = 5;, then we see a load from *%p into a temp variable, and
-            // TODO: then a store using the temp variable. so when looking at variable usage, we
-            // TODO: may have to walk up a "load" chain to identify the actual pointer variable
-            // TODO: being modified.
-            bool done = false;
-            DIType* varType = var->getType();
-            while (!done && isa<DIDerivedType>(varType)) {
-                //varType->print(llvm::outs());
-                //std::cout << "\n";
+            std::unordered_set<DIType*> visited;
+            std::stack<DIType*> frontier;
+            frontier.push(var->getType());
 
-                if (cast<DIDerivedType>(varType)->getBaseType()) {
-                    varType = cast<DIDerivedType>(varType)->getBaseType();
-                } else {
-                    // Sometimes the base type is null. If so, let's just stop.
-                    done = true;
+            while (!frontier.empty()) {
+                auto *type = frontier.top();
+                frontier.pop();
+                visited.emplace(type);
+
+                while (type && isa<DIDerivedType>(type)) {
+                    type = cast<DIDerivedType>(type)->getBaseType();
                 }
-            }
 
-            //std::cout << "ok final type is:\n";
-            //varType->print(llvm::outs());
+                if (type && isa<DICompositeType>(type)) {
+                    std::cout << "    " << type->getName().str() << " is a composite type\n";
 
-            if (auto *compositeType = dyn_cast<DICompositeType>(varType)) {
-                std::cout << "    This is a composite type " << var->getName().str() << "\n";
+                    auto *compositeType = cast<DICompositeType>(type);
+                    auto *structInfo = new StructInfo(type->getName().str());
+                    DINodeArray elements = compositeType->getElements();
+                    for (auto element : elements) {
+                        if (auto *derivedType = dyn_cast<DIDerivedType>(element)) {
+                            std::cout << "      Element name is " << derivedType->getName().str() << " with base type "
+                                      << derivedType->getBaseType()->getName().str() << "\n";
+                            structInfo->addElement(derivedType->getName().str());
 
-                auto *composite = new CompositeType(varType->getName().str());
-                DINodeArray elements = compositeType->getElements();
-                for (auto element : elements) {
-                    //element->print(llvm::outs(), nullptr, false);
-                    //std::cout << "\n";
-                    if (auto derivedType = dyn_cast<DIDerivedType>(element)) {
-                        std::cout << "      Element name is " << derivedType->getName().str() << " with base type "
-                                  << derivedType->getBaseType()->getName().str() << "\n";
-                        composite->addElement(derivedType->getName().str(), derivedType->getBaseType());
+                            if (visited.find(derivedType) == visited.end()) {
+                                frontier.push(derivedType);
+                            }
+                        }
                     }
+
+                    structInfoMap[type->getName().str()] = structInfo;
                 }
-
-                structVarToDeclaredLine[var->getName().str()] = var->getLine();
-                compositeTypes[varType->getName().str()] = composite;
             }
-
-            std::cout << "\n";
         }
     }
 
@@ -111,115 +101,106 @@ class VariablePrintFeedback : public fuzzfactory::DomainFeedback<VariablePrintFe
         std::string functionName = function->getName();
 
         if (store->getDebugLoc() && store->getValueOperand()->getType()->isIntegerTy()) {
-            identifyModifiedVariable(store, store->getPointerOperand());
-        }
-    }
-
-    void identifyModifiedVariable(StoreInst *store, Value* variable) {
-        StringRef varName = variable->getName();
-        if (auto *load = dyn_cast<LoadInst>(variable)) {
-            // Handle case where we're actually working with a dereferenced pointer variable; we need to recursively
-            // walk up until we get to a gep for a struct field or an alloca.
-            identifyModifiedVariable(store, load->getPointerOperand());
-        } else if (auto *gep = dyn_cast<GetElementPtrInst>(variable)) {
-            // Handle case where we're possibly modifying a struct field
-            handleGep(store, gep);
-        } else if (!varName.empty() && varNameCache.find(varName) != varNameCache.end()) {
-            // We're at an alloca instruction and so we should have the actual name of the variable
-            std::cout << "  " << varName.str() << " changed on line " << store->getDebugLoc()->getLine() << "\n\n";
-        }
-    }
-
-    void handleGep(const StoreInst *store, GetElementPtrInst *gep) {
-        if (gep->getSourceElementType()->isStructTy()) {
-            std::string structName = std::regex_replace(gep->getSourceElementType()->getStructName().str(), std::regex("^struct\\."), "");
-
-            if (compositeTypes.find(structName) != compositeTypes.end() && gep->getNumOperands() == 3) {
-                auto *structElementIndex = cast<ConstantInt>(gep->getOperand(2));
-                CompositeType *compositeType = compositeTypes[structName];
-
-                //std::cout << " the struct name is " << structName << "\n";
-                //std::cout << " composite type is " << compositeType << "\n";
-                //std::cout << " sext value for index is " << structElementIndex->getSExtValue() << "\n";
-                //std::cout << " num elements we know of " << compositeType->getElements().size() << "\n";
-
-                std::pair<std::string, DIType *> elementAndType = compositeType->getElements()[structElementIndex->getSExtValue()];
-
-                //auto *setype = gep->getSourceElementType()->getStructElementType(structElementIndex->getSExtValue());
-                //std::cout << " printing struct element type...\n";
-                //setype->print(outs());
-                //std::cout << "\n";
-
-                // At this point we have the name of the struct and the element we are modifying
-                /*
-                std::cout << "  Element " << structElementIndex->getSExtValue() << " of struct " << structName << " changed on line " << store->getDebugLoc()->getLine() << "\n";
-                std::cout << "  There are " << gep->getNumIndices() << " indices and " << gep->getNumOperands() << " operands \n";
-
-                std::cout << "  operand 1:\n";
-                gep->getOperand(0)->print(llvm::outs());
-                std::cout <<"\n  operand 2:\n";
-                gep->getOperand(1)->print(llvm::outs());
-                std::cout <<"\n  operand 3:\n";
-                gep->getOperand(2)->print(llvm::outs());
-                std::cout <<"\n";
-
-                //store->print(llvm::outs());
-                std::cout <<"Printing out the value itself whose name is " << v->getName().str() << ":\n";
-                v->print(llvm::outs());
-                std::cout <<"\nPrinting source type:\n";
-                gep->getSourceElementType()->print(llvm::outs());
-
-                std::cout <<"\nPrinting result type:\n";
-                gep->getResultElementType()->print(llvm::outs());
-                std::cout <<"\nPrinting pointer operand:\n";
-                gep->getPointerOperand()->print(llvm::outs());
-                std::cout <<"\nPrinting pointer operand type:\n";
-                gep->getPointerOperandType()->print(llvm::outs());
-                std::cout <<"\n\n";
-                 */
-
-                // If this is a pointer to the struct, walk up the load chain until it isn't one.
-                Value *pointerOperand = gep->getPointerOperand();
-                while (isa<LoadInst>(pointerOperand)) {
-                    pointerOperand = cast<LoadInst>(pointerOperand)->getPointerOperand();
-                }
-
-                bool onlyStructs = true;
-                std::string prefix = "";
-                while (isa<GetElementPtrInst>(pointerOperand) && onlyStructs) {
-                    auto *gepOperand = cast<GetElementPtrInst>(pointerOperand);
-                    onlyStructs = gepOperand->getSourceElementType()->isStructTy();
-                    if (onlyStructs) {
-                        std::string name = std::regex_replace(
-                            gepOperand->getSourceElementType()->getStructName().str(), std::regex("^struct\\."),
-                            "");
-                        if (compositeTypes.find(name) != compositeTypes.end() && gepOperand->getNumOperands() == 3) {
-                            auto *elementIndex = cast<ConstantInt>(gepOperand->getOperand(2));
-                            CompositeType *type = compositeTypes[name];
-                            std::pair<std::string, DIType *> _elementAndType = type->getElements()[elementIndex->getSExtValue()];
-
-                            prefix = _elementAndType.first + "." + prefix;
-                            pointerOperand = gepOperand->getPointerOperand();
-                        } else {
-                            std::cerr << "Unknown struct " << name << "\n";
-                            onlyStructs = false;
-                        }
-                    }
-                }
-
-                std::string structVarName = std::regex_replace(pointerOperand->getName().str(), std::regex("\\.addr"), "");
-                std::string fullyQualifiedName = structVarName + "." + prefix + elementAndType.first;
-                std::cout << "\n  " << fullyQualifiedName << " changed on line "
-                          << store->getDebugLoc()->getLine() << " (struct declared on "
-                          << structVarToDeclaredLine[structVarName] << ")\n\n";
-
+            Value* variable = store->getPointerOperand();
+            std::string variableName = getVariableName(variable);
+            if (!variableName.empty()) {
+                std::cout << "  Variable " << variableName << " modified on line " << store->getDebugLoc()->getLine()
+                          << " (declared on line " << varToDeclaredLine[variableName] << ")\n";
             }
         }
     }
 
+    std::string getVariableName(Value* variable) {
+        std::string varName = variable->getName().str();
+        if (auto *load = dyn_cast<LoadInst>(variable)) {
+            // Handle case where we're actually working with a dereferenced pointer variable; we need to recursively
+            // walk up until we get to a gep for a struct field or an alloca.
+            return getVariableName(load->getPointerOperand());
+        } else if (auto *gep = dyn_cast<GetElementPtrInst>(variable)) {
+            if (gep->getSourceElementType()->isStructTy()) {
+                // Handle case where we're modifying a struct field
+                return getFullyQualifiedFieldName(gep);
+            }
+        } else if (varToDeclaredLine.find(varName) != varToDeclaredLine.end()) {
+            // We're at an alloca instruction and so we should have the actual name of the variable.
+            return varName;
+        }
+
+        return "";
+    }
+
+    std::string getFullyQualifiedFieldName(GetElementPtrInst* gep) {
+        auto *structType = cast<StructType>(gep->getSourceElementType());
+        std::string fullyQualifiedFieldName;
+        std::string structName = std::regex_replace(
+            structType->getStructName().str(),
+            std::regex("^struct\\."),
+            ""
+        );
+
+        // TODO: UGH anonymous structs are called struct.anon and struct.anon.0 and so on. but if you have a struct
+        // TODO: called anon then it is also struct.anon ARGHHH. even worse, when it is a variable it may end up as
+        // TODO: struct.anon.<some_number> because there may be some other anonymous structure struct.anon.
+        // TODO: what do we do? Can't go by structure of the struct (i.e., types of elements) either. the problem is
+        // TODO: that there is no way to associate, in reverse, the Type* we get here with a DIType*. So we have no
+        // TODO: idea what the actual struct is. and in DIType* we get an empty name for anonymous structs.
+        if (structInfoMap.find(structName) != structInfoMap.end() && gep->getNumOperands() == 3) {
+            auto *elementIndex = cast<ConstantInt>(gep->getOperand(2));
+
+            StructInfo *structInfo = structInfoMap[structName];
+            std::string element = structInfo->getElements()[elementIndex->getSExtValue()];
+
+            // Operand might be a pointer to a struct, so walk up the load chain until we get to the actual struct
+            Value *pointerOperand = gep->getPointerOperand();
+            while (isa<LoadInst>(pointerOperand)) {
+                pointerOperand = cast<LoadInst>(pointerOperand)->getPointerOperand();
+            }
+
+            // Recursively walk up the getelementptr chain to identify prefixes to this struct variable. This is
+            // only necessary if this is a nested field access.
+            bool onlyStructs = true;
+            std::string prefix;
+            while (isa<GetElementPtrInst>(pointerOperand) && onlyStructs) {
+                auto *gepOperand = cast<GetElementPtrInst>(pointerOperand);
+                onlyStructs = gepOperand->getSourceElementType()->isStructTy();
+                if (onlyStructs) {
+                    auto *_structType = cast<StructType>(gepOperand->getSourceElementType());
+                    std::string name = std::regex_replace(
+                        _structType->getStructName().str(),
+                        std::regex("^struct\\."),
+                        ""
+                    );
+                    if ((structInfoMap.find(name) != structInfoMap.end() || !_structType->hasName()) && gepOperand->getNumOperands() == 3) {
+                        auto *_elementIndex = cast<ConstantInt>(gepOperand->getOperand(2));
+                        StructInfo *_structInfo = structInfoMap[name];
+                        std::string _element = _structInfo ? _structInfo->getElements()[_elementIndex->getSExtValue()] : gepOperand->getName().str();
+
+                        prefix = _element.append(".").append(prefix);
+                        pointerOperand = gepOperand->getPointerOperand();
+                    } else {
+                        onlyStructs = false;
+                    }
+                }
+            }
+
+            if (onlyStructs) {
+                // If the struct that this field belongs to is actually a pointer argument to a function, it is suffixed
+                // with ".addr" (this is something LLVM does). We need to strip this out so that we can get the actual
+                // name of the parameter.
+                std::string structVarName = std::regex_replace(pointerOperand->getName().str(), std::regex("\\.addr"), "");
+                fullyQualifiedFieldName = structVarName + "." + prefix + element;
+
+                // Set the declared line of this struct field to the declared line of the struct itself.
+                varToDeclaredLine[fullyQualifiedFieldName] = varToDeclaredLine[structVarName];
+            }
+        }
+
+        return fullyQualifiedFieldName;
+    }
+
 public:
     explicit VariablePrintFeedback(llvm::Module& M) : fuzzfactory::DomainFeedback<VariablePrintFeedback>(M, "__afl_varprint_dsf") {
-        moduleSlotTracker = new ModuleSlotTracker(&M);
+
     }
 
     // Uses code from:
@@ -232,8 +213,6 @@ public:
         }
 
         std::cout << "\n";
-
-        moduleSlotTracker->incorporateFunction(function);
 
         // First we will collect and print all local variable info from this function.
         for (inst_iterator I = inst_begin(function), E = inst_end(function); I != E; ++I) {
@@ -259,10 +238,10 @@ public:
 
         std::cout << "\n";
 
-        varNameCache.clear();
+        varToDeclaredLine.clear();
+        structInfoMap.clear();
+
         valueLocalVariableCache.clear();
-        structVarToDeclaredLine.clear();
-        compositeTypes.clear();
     }
 };
 

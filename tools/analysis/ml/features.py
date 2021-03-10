@@ -1,4 +1,5 @@
 import numpy
+from scipy.stats import entropy
 
 
 def derive_general_features(variable):
@@ -65,10 +66,60 @@ def derive_input_size_correlation_features(var):
             input_size_correlation_features['input_sizes_variance'] = input_sizes_variance
 
             r = numpy.corrcoef(max_values, input_sizes)
-            input_size_correlation_features['max_value_to_input_size_correlation'] = numpy.round(r[0, 1], 2)
+            input_size_correlation_features['max_value_to_input_size_correlation'] = r[0, 1]
 
 
 def derive_counter_features(var):
+
+    def smooth(arr):
+        smoothed = []
+        value_sum = 0
+        for value in arr:
+            if value != 0 and value_sum != 0 \
+                and (value / abs(value)) != (value_sum / abs(value_sum)) \
+                    and abs(value) == abs(value_sum):
+                value_sum = 0
+                continue
+            else:
+                value_sum += value
+                smoothed.append(value)
+
+        return smoothed
+
+    def counter_segments(arr):
+        segments = []
+
+        diff_sum = 0
+        segment = []
+        for i in range(0, len(arr) - 1):
+            diff = arr[i + 1] - arr[i]
+
+            if diff != 0 and diff_sum != 0 and (diff / abs(diff)) != (diff_sum / abs(diff_sum)):
+                segment.append(arr[i])
+                segments.append(segment)
+
+                diff_sum = 0
+                segment = []
+            else:
+                diff_sum += diff
+                segment.append(arr[i])
+
+        segment.append(arr[len(arr) - 1])
+        segments.append(segment)
+
+        return segments
+
+    def lag_one_autocorrelate(x):
+        one_less_at_end = x[:-1]
+        one_less_at_beginning = x[1:]
+
+        if numpy.var(one_less_at_end) > 0 and numpy.var(one_less_at_beginning) > 0:
+            return numpy.corrcoef(one_less_at_end, one_less_at_beginning)[0, 1]
+        elif len(x) > 2 and numpy.var(one_less_at_end) == 0 and numpy.var(one_less_at_beginning) == 0:
+            return 1
+
+        return 0
+
     # TODO: how many false negatives do we have??? need to make a test program with all kinds of counters... see
     # TODO: which ones aren't picked up
 
@@ -79,14 +130,20 @@ def derive_counter_features(var):
 
     if 'counter' not in var['features']:
         var['features']['counter'] = {
-            'combined_deltas': [],
             'max_values': [],
             'input_sizes': [],
             'max_values_variance': 0,
             'input_sizes_variance': 0,
             'max_value_to_input_size_correlation': 0,
+            'average_delta': 0,
             'varying_deltas': False,
-            'loop_sequence_proportion': 0
+            'average_value_set_cardinality_ratio': 0,
+            'loop_sequence_proportion': 0,
+            'loop_sequence_proportion_filtered': 0,
+            'jaggedness_full': None,
+            'jaggedness_filtered': None,
+            'lag_one_autocorr_full': 0,
+            'lag_one_autocorr_filtered': 0,
         }
 
     counter_features = var['features']['counter']
@@ -111,13 +168,24 @@ def derive_counter_features(var):
     # values the counter takes in each trace of length greater than 1 and the corresponding input size. We use
     # these later to calculate the pearson coefficient to see if the counter counts up to a value correlated with
     # input size. It helps us classify the type of counter a variable is if it does indeed end up being a counter.
+    proportion_sum = 0
+    combined_trace = []
+    combined_trace_counter_segments = []
+    combined_filtered_trace = []
+    combined_filtered_trace_counter_segments = []
     traces = []
     for trace in var['info']['traces']:
-        if len(trace['items']) < 2:
+        trace_values = [int(item['variable_value']) for item in trace['items']]
+        proportion_sum += len(set(trace_values)) / general_features['num_unique_values']
+
+        if len(trace_values) < 2:
             continue
 
         max_values.append(max([int(item['variable_value']) for item in trace['items']]))
         input_sizes.append(trace['input_size'])
+
+        combined_trace += trace_values
+        combined_trace_counter_segments += counter_segments(trace_values)
 
         new_trace = []
         previous_value = None
@@ -129,87 +197,70 @@ def derive_counter_features(var):
 
         if len(new_trace) > 1:
             traces.append(new_trace)
+            combined_filtered_trace += new_trace
+            combined_filtered_trace_counter_segments += counter_segments(new_trace)
+
+    counter_features['average_value_set_cardinality_ratio'] = proportion_sum / general_features['num_traces']
+
+    if len(combined_trace) > 0:
+        filtered_segments = [s for s in combined_trace_counter_segments if len(s) > 2]
+        if len(filtered_segments) > 0:
+            counter_features['lag_one_autocorr_full'] = numpy.mean([
+                lag_one_autocorrelate(s) for s in filtered_segments
+            ])
+
+    combined_deltas = []
+    if len(combined_filtered_trace) > 0:
+        filtered_segments = [s for s in combined_filtered_trace_counter_segments if len(s) > 2]
+        if len(filtered_segments) > 0:
+            counter_features['lag_one_autocorr_filtered'] = numpy.mean([
+                lag_one_autocorrelate(s) for s in filtered_segments
+            ])
+            counter_features['loop_sequence_proportion_filtered'] = sum(
+                [len(s) for s in combined_filtered_trace_counter_segments if len(s) > 1]
+            ) / len(combined_filtered_trace)
+
+            if len(combined_trace) > 0:
+                counter_features['loop_sequence_proportion'] = sum(
+                    [len(s) for s in combined_filtered_trace_counter_segments if len(s) > 1]
+                ) / len(combined_trace)
+
+        for s in [s for s in combined_filtered_trace_counter_segments if len(s) > 1]:
+            combined_deltas += numpy.diff(s).tolist()
+
+    # TODO: it appears that for certain enums d2s ends up being empty. I suspect it's because there are no counter
+    # TODO: segments > 1 because stuff jumps around so much. check requiredSize in BnConvert.c end up getting a lot of
+    # TODO: deltas in d2s when combined deltas just ends up being 1??
+
+    if len(combined_deltas) > 1:
+        counter_features['average_delta'] = numpy.mean(combined_deltas)
+        if len(set(combined_deltas)) > 1:
+            counter_features['varying_deltas'] = True
+
+    combined_trace_deltas_smoothed = smooth(numpy.diff(combined_trace))
+    if len(combined_trace_deltas_smoothed) > 0:
+        stddev = numpy.std(combined_trace_deltas_smoothed)
+        abs_mean = numpy.abs(numpy.mean(combined_trace_deltas_smoothed))
+
+        if abs_mean > 0:
+            counter_features['jaggedness_full'] = stddev / abs_mean
+
+        counter_features['lag_one_autocorr_full'] = lag_one_autocorrelate(combined_trace)
+
+    combined_filtered_trace_deltas_smoothed = smooth(numpy.diff(combined_filtered_trace))
+    if len(combined_filtered_trace_deltas_smoothed) > 0:
+        stddev = numpy.std(combined_filtered_trace_deltas_smoothed)
+        abs_mean = numpy.abs(numpy.mean(combined_filtered_trace_deltas_smoothed))
+
+        if abs_mean > 0:
+            counter_features['jaggedness_filtered'] = stddev / abs_mean
 
     if len(max_values) > 0 and len(input_sizes) > 0:
         counter_features['max_values_variance'] = numpy.var(max_values)
         counter_features['input_sizes_variance'] = numpy.var(input_sizes)
         if counter_features['max_values_variance'] > 0 and counter_features['input_sizes_variance'] > 0:
             r = numpy.corrcoef(max_values, input_sizes)
-            counter_features['max_value_to_input_size_correlation'] = numpy.round(r[0, 1], 2)
-            #print ("correl is ", numpy.round(r[0, 1], 2), counter_features['max_value_to_input_size_correlation'])
-
-    # The total length of all traces
-    trace_lengths_sum = sum(general_features['times_modified'])
-
-    # The sum of the lengths of all identified loop sequences across all traces. This is the same as the number of
-    # trace elements (basically variable values) across all traces that are part of a loop sequence.
-    loop_sequence_lengths_sum = 0
-
-    # Keep track of the deltas between successive values within a single loop sequence.
-    deltas = []
-
-    # Keep track of the deltas between successive values from all identified loop sequences. The reason we maintain
-    # these deltas is to exclude variables that may increase (or decrease) but at very high rates. Currently we
-    # exclude any variable that has a mean delta (across all traces) greater than 255.
-    combined_deltas = counter_features['combined_deltas']
-
-    # Now we process our subset of cleaned up traces. The intent is to identify sequences of increasing and
-    # decreasing values. There may be multiple such sequences per trace. Based on certain aggregate features of
-    # these sequences, we can determine whether the variable might be a counter.
-    for trace in traces:
-
-        # The direction of the loop. Tells us if the loop is incrementing or decrementing. Given a sequence of
-        # values that could be part of a loop, we establish the loop direction based on the relationship between
-        # the first two values in the sequence: (t[1] - t[0]) / abs(t[1] - t[0]). As long as successive values
-        # have the same relation (i.e., the values are "moving" in the same direction) they will be considered
-        # part of a loop sequence. If any pair of successive values don't have the same relationship, it might
-        # mean that the loop has ended. This variable helps handle the case where there are multiple potential
-        # loop sequences in a single trace.
-        loop_direction = None
-
-        index = 0
-        while index < len(trace) - 1:
-            current_value = trace[index]
-            next_value = trace[index + 1]
-
-            delta = next_value - current_value
-
-            # If loop_direction is None, we are at the beginning of a new loop. This happens right at the start of
-            # the trace but can also happen anywhere in the middle. For example [0, 1, 2, 3, 4, 0, 1, 2, 3, 5] has
-            # a new loop starting at position 5. We detect this case and reset loop_direction to None so that we can
-            # establish a new loop direction using the first two values of the new sequence.
-            if loop_direction is None:
-                loop_direction = delta / abs(delta)
-
-            # Calculate the current direction based on the sign of val[t + 1] - val[t]
-            current_direction = delta / abs(delta)
-
-            if current_direction == loop_direction:
-                # If the direction is the same as the loop direction (i.e, we continue to increment/decrement) add
-                # the delta to our list of deltas for this loop, and to the list of combined deltas as well.
-                deltas.append(abs(delta))
-                combined_deltas.append(abs(delta))
-            else:
-                # If the current direction is different from the loop direction, the loop might have ended.
-                if len(set(deltas)) > 1:
-                    counter_features['varying_deltas'] = True
-
-                loop_sequence_lengths_sum += len(deltas) + 1
-                deltas = []
-                loop_direction = None
-
-            index += 1
-
-    # If the entire trace is a loop sequence, or there is a loop sequence that starts somewhere in the middle of
-    # the trace and runs till the end, we will have exited the loop without saving the deltas. If this happens
-    # the deltas list will contain elements, so we can handle that case here.
-    if len(deltas) > 0:
-        if len(set(deltas)) > 1:
-            counter_features['varying_deltas'] = True
-        loop_sequence_lengths_sum += len(deltas) + 1
-
-    if trace_lengths_sum > 0:
-        counter_features['loop_sequence_proportion'] = numpy.round(loop_sequence_lengths_sum / trace_lengths_sum, 2)
+            counter_features['max_value_to_input_size_correlation'] = r[0, 1]
 
 
 def derive_enum_features(var):
@@ -255,4 +306,4 @@ def derive_enum_features(var):
 
     if times_modified_variance > 0 and input_sizes_variance > 0:
         r = numpy.corrcoef(times_modified, input_sizes)
-        enum_features['times_modified_to_input_size_correlation'] = numpy.round(r[0, 1], 2)
+        enum_features['times_modified_to_input_size_correlation'] = r[0, 1]

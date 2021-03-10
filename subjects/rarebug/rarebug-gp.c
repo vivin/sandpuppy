@@ -21,11 +21,56 @@ struct super_cool {
     struct very_cool vc;
 };
 
+struct base_struct {
+    int num;
+};
+
+struct outer1_struct {
+    struct base_struct base;
+};
+
+struct outer2_struct {
+    struct outer1_struct outer1;
+};
+
+struct anon {
+    int ab;
+};
+
 typedef int CMDCODE;
 
 typedef struct _COMMAND_ {
     CMDCODE other;
 } COMMAND;
+
+typedef struct {
+    struct {
+        struct {
+            int z;
+        };
+        int a;
+    };
+    int x;
+} ANON_OUTER;
+
+typedef union {
+    struct {
+        int o;
+        int* m;
+    };
+    struct message_struct ms;
+} UNION_STRUCT;
+
+typedef struct {
+    union {
+        struct {
+            int x;
+            int y;
+            int z;
+        };
+        int raw[3];
+    };
+} VEC3D;
 
 const int MIN_MESSAGE_TYPE = 1;
 const int MAX_MESSAGE_TYPE = 8;
@@ -45,8 +90,13 @@ const unsigned int MAGIC_SEQUENCE = (TYPE_1 << (3u * WIDTH)) +
 const char delimiter = ':';
 unsigned int current_sequence = 0u;
 
-int coolio(COMMAND* cmdptr,  int val) {
+int coolio(COMMAND* cmdptr, UNION_STRUCT* us, VEC3D* vec3d, int val) {
     cmdptr->other = val;
+    us->o = val;
+    *us->m = val;
+    vec3d->x = val;
+    vec3d->y = val;
+    vec3d->z = val;
 }
 
 int process_message(const char* message_type_str, const char* message) {
@@ -90,8 +140,6 @@ int process_message(const char* message_type_str, const char* message) {
     COMMAND *cptr = &com;
     cptr->other = message_type;
 
-    coolio(cptr, message_type);
-
     thecoolstring = message_type_str;
 
     struct message_struct msg = { 0, 0 };
@@ -99,14 +147,42 @@ int process_message(const char* message_type_str, const char* message) {
     struct super_cool scool = { vcool };
     COMMAND cd = { 0 };
 
-    msg.mtype = message_type;
-    vcool.ms.mtype = message_type;
-    scool.vc.ms.mtype = message_type;
+    *msg.mtype = message_type;
+    *vcool.ms.mtype = message_type;
+    *scool.vc.ms.mtype = message_type;
 
     cd.other = message_type;
 
     int *blah;
     *blah = message_type;
+
+    UNION_STRUCT us = { 0, 0 };
+    *us.m = message_type;
+
+    us.ms.other = message_type;
+
+    VEC3D vec3d;
+    vec3d.x = 1;
+    vec3d.y = 2;
+    vec3d.z = 3;
+
+    VEC3D *vec3dptr = &vec3d;
+    vec3dptr->x = 1;
+    vec3dptr->y = 2;
+    vec3dptr->z = 3;
+
+    struct outer2_struct outer2;
+    outer2.outer1.base.num = 10;
+
+
+    ANON_OUTER hello = {};
+    hello.x = 0;
+    hello.a = 0;
+
+    struct anon an;
+    an.ab = message_type;
+
+    coolio(cptr, &us, vec3dptr, message_type);
 
     current_sequence = (current_sequence << WIDTH) + message_type;
     printf("magic is: %d the current sequence is: %d\n", MAGIC_SEQUENCE, current_sequence);

@@ -5,6 +5,7 @@
 #include <fstream>
 #include <iostream>
 #include <regex>
+#include <unordered_set>
 
 #ifndef BASEVVFEEDBACK_H
 #define BASEVVFEEDBACK_H
@@ -28,7 +29,7 @@ std::vector<std::string> split(const std::string &s, char delimiter) {
 
 class StructInfo {
     std::string name;
-    std::vector<std::pair<std::string, DIType*>> elements;
+    std::vector<std::string> elements;
 
 public:
     StructInfo(std::string name) : name(std::move(name)) {}
@@ -37,12 +38,12 @@ public:
         return name;
     }
 
-    const std::vector<std::pair<std::string, DIType *>> &getElements() const {
+    const std::vector<std::string> &getElements() const {
         return elements;
     }
 
-    void addElement(std::string name, DIType* type) {
-        elements.emplace_back(name, type);
+    void addElement(std::string element) {
+        elements.emplace_back(element);
     }
 };
 
@@ -78,25 +79,39 @@ class BaseVariableValueFeedback : public DomainFeedback<V> {
             // TODO: to identify strings. deal with them how you dealt with pointer to integer
             // TODO: variables.
 
-            // When structs are defined with typedef, the type ends up being a DIDerivedType that
-            // will eventually resolve to a DICompositeType. So if this is a DIDerivedType, we will
-            // keep unwrapping it until it is not.
-            DIType* varType = var->getType();
-            while (varType && isa<DIDerivedType>(varType)) {
-                varType = cast<DIDerivedType>(varType)->getBaseType();
-            }
+            // We will recursively identify structs and their elements. This takes care of nested structs.
+            std::unordered_set<DIType*> visited;
+            std::stack<DIType*> frontier;
+            frontier.push(var->getType());
 
-            if (varType && isa<DICompositeType>(varType)) {
-                auto *compositeType = cast<DICompositeType>(varType);
-                auto *structInfo = new StructInfo(varType->getName().str());
-                DINodeArray elements = compositeType->getElements();
-                for (auto element : elements) {
-                    if (auto derivedType = dyn_cast<DIDerivedType>(element)) {
-                        structInfo->addElement(derivedType->getName().str(), derivedType->getBaseType());
-                    }
+            while (!frontier.empty()) {
+                auto *type = frontier.top();
+                frontier.pop();
+                visited.emplace(type);
+
+                // When structs are defined with typedef, the type ends up being a DIDerivedType that
+                // will eventually resolve to a DICompositeType. So if this is a DIDerivedType, we will
+                // keep unwrapping it until it is not.
+                while (type && isa<DIDerivedType>(type)) {
+                    type = cast<DIDerivedType>(type)->getBaseType();
                 }
 
-                structInfoMap[varType->getName().str()] = structInfo;
+                if (type && isa<DICompositeType>(type)) {
+                    auto *compositeType = cast<DICompositeType>(type);
+                    auto *structInfo = new StructInfo(type->getName().str());
+                    DINodeArray elements = compositeType->getElements();
+                    for (auto element : elements) {
+                        if (auto *derivedType = dyn_cast<DIDerivedType>(element)) {
+                            structInfo->addElement(derivedType->getName().str());
+
+                            if (visited.find(derivedType) == visited.end()) {
+                                frontier.push(derivedType);
+                            }
+                        }
+                    }
+
+                    structInfoMap[type->getName().str()] = structInfo;
+                }
             }
         }
     }
@@ -113,7 +128,7 @@ class BaseVariableValueFeedback : public DomainFeedback<V> {
             auto *elementIndex = cast<ConstantInt>(gep->getOperand(2));
 
             StructInfo *structInfo = structInfoMap[structName];
-            std::pair<std::string, DIType*> elementAndType = structInfo->getElements()[elementIndex->getSExtValue()];
+            std::string element = structInfo->getElements()[elementIndex->getSExtValue()];
 
             // Operand might be a pointer to a struct, so walk up the load chain until we get to the actual struct
             Value *pointerOperand = gep->getPointerOperand();
@@ -137,9 +152,9 @@ class BaseVariableValueFeedback : public DomainFeedback<V> {
                     if (structInfoMap.find(name) != structInfoMap.end() && gepOperand->getNumOperands() == 3) {
                         auto *_elementIndex = cast<ConstantInt>(gepOperand->getOperand(2));
                         StructInfo *_structInfo = structInfoMap[name];
-                        std::pair<std::string, DIType*> _elementAndType = _structInfo->getElements()[_elementIndex->getSExtValue()];
+                        std::string _element = _structInfo->getElements()[_elementIndex->getSExtValue()];
 
-                        prefix = _elementAndType.first.append(".").append(prefix);
+                        prefix = _element.append(".").append(prefix);
                         pointerOperand = gepOperand->getPointerOperand();
                     } else {
                         onlyStructs = false;
@@ -152,7 +167,7 @@ class BaseVariableValueFeedback : public DomainFeedback<V> {
                 // with ".addr" (this is something LLVM does). We need to strip this out so that we can get the actual
                 // name of the parameter.
                 std::string structVarName = std::regex_replace(pointerOperand->getName().str(), std::regex("\\.addr"), "");
-                fullyQualifiedFieldName = structVarName + "." + prefix + elementAndType.first;
+                fullyQualifiedFieldName = structVarName + "." + prefix + element;
 
                 // Set the declared line of this struct field to the declared line of the struct itself.
                 varToDeclaredLine[fullyQualifiedFieldName] = varToDeclaredLine[structVarName];
