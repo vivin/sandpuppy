@@ -3,41 +3,7 @@ import matplotlib.pyplot as plt
 import seaborn
 
 
-def graph_counters(path, variables):
-    data = {
-        'lsp': [],
-        'l1acf': [],
-        'type': []
-    }
-
-    counters = [
-        variable for variable in variables
-        if 'class' in variable and variable['class'] in ['static_counter', 'dynamic_counter', 'input_size_counter']
-    ]
-
-    for counter in counters:
-        counter_features = counter['features']['counter']
-        data['lsp'].append(counter_features['loop_sequence_proportion'])
-        data['l1acf'].append(counter_features['lag_one_autocorr_filtered'])
-
-        data['type'].append(counter['class'])
-
-    df = pandas.DataFrame(data)
-
-    groups = df.groupby('type')
-    for counter_type, group in groups:
-        plt.plot(group.lsp, group.l1acf, marker='o', linestyle='', markersize=4, label=counter_type)
-
-    plt.xlabel("Loop sequence proportion")
-    plt.ylabel("Lag-one auto-correlation (filtered)")
-    plt.legend(bbox_to_anchor=(1.05, 1))
-
-    graph_filename = "all_counters_lsp_l1acf.png"
-    plt.savefig(f"{path}/{graph_filename}", bbox_inches='tight', dpi=200)
-    plt.close()
-
-
-def graph_counters_and_enums(path, variables):
+def graph_classes(path, variables, classes):
 
     def plot_group_scatterplots_for_features(f1_name, f2_name, x_label, y_label, filename):
         for label, group in grouped_by_type:
@@ -65,7 +31,7 @@ def graph_counters_and_enums(path, variables):
             labels += ax_label
 
         fig.legend(lines, labels, bbox_to_anchor=(0.925, 0.5), loc='center left')
-        fig.subplots_adjust(hspace=.5)
+        fig.subplots_adjust(hspace=.75)
 
         plt.savefig(filename, bbox_inches='tight', dpi=200)
         plt.close()
@@ -81,23 +47,17 @@ def graph_counters_and_enums(path, variables):
         'type': []
     }
 
-    counters_and_enums = [
-        variable for variable in variables
-        if 'class' in variable and variable['class'] in
-           ['static_counter', 'dynamic_counter', 'input_size_counter', 'enum']
-    ]
-
-    for counter_or_enum in counters_and_enums:
-        counter_features = counter_or_enum['features']['counter']
-        enum_features = counter_or_enum['features']['enum']
-        data['lsp'].append(counter_features['loop_sequence_proportion'])
-        data['lspf'].append(counter_features['loop_sequence_proportion_filtered'])
-        data['l1acf'].append(counter_features['lag_one_autocorr_filtered'])
-        data['tmisc'].append(enum_features['times_modified_to_input_size_correlation'])
-        data['varying_deltas'].append("varying" if counter_features['varying_deltas'] else "nonvarying")
-        data['type'].append(counter_or_enum['class'])
-        data['avscr'].append(counter_features['average_value_set_cardinality_ratio'])
-        data['average_delta'].append(counter_features['average_delta'])
+    variables_to_graph = [variable for variable in variables if 'class' in variable and variable['class'] in classes]
+    for variable_to_graph in variables_to_graph:
+        variable_features = variable_to_graph['features']
+        data['lsp'].append(variable_features['loop_sequence_proportion'])
+        data['lspf'].append(variable_features['loop_sequence_proportion_filtered'])
+        data['l1acf'].append(variable_features['lag_one_autocorr_filtered'])
+        data['tmisc'].append(variable_features['times_modified_to_input_size_correlation'])
+        data['varying_deltas'].append("varying" if variable_features['varying_deltas'] else "nonvarying")
+        data['type'].append(variable_to_graph['class'])
+        data['avscr'].append(variable_features['average_value_set_cardinality_ratio'])
+        data['average_delta'].append(variable_features['average_delta'])
 
     df = pandas.DataFrame(data)
     grouped_by_type = df.groupby('type')
@@ -157,7 +117,7 @@ def graph_counters_and_enums(path, variables):
         'l1acf',
         200,
         (-1, 1),
-        "Lag-one autocorrect (filtered)",
+        "Lag-one autocorrelation (filtered)",
         f"{path}/l1acf_hist.png"
     )
     plot_group_histograms_for_feature(

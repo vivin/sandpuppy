@@ -1,7 +1,6 @@
 import sys
 import os
 import numpy
-import pandas
 import warnings
 
 from cassandra.cluster import Cluster
@@ -10,11 +9,6 @@ from sparklines import sparklines
 from db import cassandra_trace_db
 from ml import features, classifiers
 from graphs import graph
-
-from sklearn.preprocessing import minmax_scale
-
-# from tslearn.clustering import TimeSeriesKMeans
-
 
 warnings.filterwarnings('error')
 
@@ -38,22 +32,21 @@ BASE_WORKSPACE_PATH = f"{BASE_PATH}/workspace"
 
 
 def features_string(var):
-    general_features = var['features']['general']
-    counter_features = var['features']['counter']
-    enum_features = var['features']['enum']
+    var_features = var['features']
 
-    features_str = " (varying deltas)" if counter_features['varying_deltas'] else ""
-    features_str += "\n          lsp=" + str(counter_features['loop_sequence_proportion'])
-    features_str += "\n          lspf=" + str(counter_features['loop_sequence_proportion_filtered'])
-    features_str += "\n          average_delta=" + str(counter_features['average_delta'])
-    features_str += "\n          average_trace_length=" + str(general_features['times_modified_mean'])
-    features_str += "\n          avscr=" + str(counter_features['average_value_set_cardinality_ratio'])
-    features_str += "\n          tmisc=" + str(enum_features['times_modified_to_input_size_correlation'])
-    features_str += "\n          mvisc=" + str(counter_features['max_value_to_input_size_correlation'])
-    features_str += "\n          J_full=" + str(counter_features['jaggedness_full'])
-    features_str += "\n          J_filtered=" + str(counter_features['jaggedness_filtered'])
-    features_str += "\n          l1_ac_full=" + str(counter_features['lag_one_autocorr_full'])
-    features_str += "\n          l1_ac_filtered=" + str(counter_features['lag_one_autocorr_filtered'])
+    features_str = " (varying deltas)" if var_features['varying_deltas'] else ""
+    features_str += "\n          num_unique_values=" + str(var_features['num_unique_values']) #+ " value_set=" + (str(set(var['info']['variable_values'])) if var_features['num_unique_values'] < 5 else "{}")
+    features_str += "\n          lsp=" + str(var_features['loop_sequence_proportion'])
+    features_str += "\n          lspf=" + str(var_features['loop_sequence_proportion_filtered'])
+    features_str += "\n          average_delta=" + str(var_features['average_delta'])
+    features_str += "\n          average_trace_length=" + str(var_features['times_modified_mean'])
+    features_str += "\n          avscr=" + str(var_features['average_value_set_cardinality_ratio'])
+    features_str += "\n          tmisc=" + str(var_features['times_modified_to_input_size_correlation'])
+    features_str += "\n          mvisc=" + str(var_features['max_value_to_input_size_correlation'])
+    features_str += "\n          J_full=" + str(var_features['jaggedness_full'])
+    features_str += "\n          J_filtered=" + str(var_features['jaggedness_filtered'])
+    features_str += "\n          l1_ac_full=" + str(var_features['lag_one_autocorr_full'])
+    features_str += "\n          l1_ac_filtered=" + str(var_features['lag_one_autocorr_filtered'])
     features_str += "\n"
 
     return features_str
@@ -90,7 +83,7 @@ def main(experiment: str, subject: str, binary: str, execution: str):
         for function in functions:
             # print("    Identifying int variables in function {function}".format(function=function))
             variables = cassandra_trace_db.get_subject_file_function_variables_of_type(session, subject, filename,
-                                                                                       function, 'int')
+                                                                                       function, "int")
             print("    Function {function} has {num} int variables\n".format(function=function, num=len(variables)))
             if len(variables) == 0:
                 continue
@@ -136,49 +129,31 @@ def main(experiment: str, subject: str, binary: str, execution: str):
             # print_variables_info(variables)
 
             print("")
+            labels_to_description = {
+                'constants': "Constants",
+                'correlated_with_input_size': "Constants correlated with input size",
+                'booleans': "Booleans",
+                'static_counters': "Static Counters",
+                'dynamic_counters': "Dynamic Counters",
+                'input_size_counters': "Counters correlated with input size",
+                'enums': "Enums",
+                'enums_deriving_value_from_input': "Enums deriving value from input",
+                'related': "Related variables"
+            }
+
             classified_variables = classify_variables(variables)
+            for label in ['constants', 'correlated_with_input_size', 'booleans', 'static_counters', 'dynamic_counters',
+                          'input_size_counters', 'enums', 'enums_deriving_value_from_input', 'related']:
+                if len(classified_variables[label]) > 0:
+                    print("")
+                    print("    {description}:".format(description=labels_to_description[label]))
 
-            if len(classified_variables['constants']) > 0:
-                print("")
-                print("    Constants:")
-                for variable in classified_variables['constants']:
-                    print("      {fqn}{f}".format(fqn=variable['fqn'], f=features_string(variable)))
-
-            if len(classified_variables['correlated_with_input_size']) > 0:
-                print("")
-                print("    Variables correlated with input size:")
-                for variable in classified_variables['correlated_with_input_size']:
-                    print("      {fqn}{f}".format(fqn=variable['fqn'], f=features_string(variable)))
-
-            if len(classified_variables['static_counters']) > 0:
-                print("")
-                print("    Static Counters:")
-                for variable in classified_variables['static_counters']:
-                    print("      {fqn}{f}".format(fqn=variable['fqn'], f=features_string(variable)))
-
-            if len(classified_variables['dynamic_counters']) > 0:
-                print("")
-                print("    Dynamic Counters:")
-                for variable in classified_variables['dynamic_counters']:
-                    print("      {fqn}{f}".format(fqn=variable['fqn'], f=features_string(variable)))
-
-            if len(classified_variables['input_size_counters']) > 0:
-                print("")
-                print("    Counters correlated with input size:")
-                for variable in classified_variables['input_size_counters']:
-                    print("      {fqn}{f}".format(fqn=variable['fqn'], f=features_string(variable)))
-
-            if len(classified_variables['enums']) > 0:
-                print("")
-                print("    Enums:")
-                for variable in classified_variables['enums']:
-                    print("      {fqn}{f}".format(fqn=variable['fqn'], f=features_string(variable)))
-
-            if len(classified_variables['related']) > 0:
-                print("")
-                print("    Related variables:")
-                for related in classified_variables['related']:
-                    print("      {related}".format(related=sorted([variable['fqn'] for variable in related])))
+                    if label != "related":
+                        for variable in classified_variables[label]:
+                            print("      {fqn}{f}".format(fqn=variable['fqn'], f=features_string(variable)))
+                    else:
+                        for related in classified_variables[label]:
+                            print("      {related}".format(related=sorted([variable['fqn'] for variable in related])))
 
             print("")
 
@@ -187,8 +162,12 @@ def main(experiment: str, subject: str, binary: str, execution: str):
                 for v in variables if 'class' in v and v['class'] != 'zero_traces'
             ]
 
-    graph.graph_counters(base_graphs_path, all_classified_variables)
-    graph.graph_counters_and_enums(base_graphs_path, all_classified_variables)
+    graph.graph_classes(
+        base_graphs_path,
+        all_classified_variables,
+        ["static_counter", "dynamic_counter", "input_size_counter", "enum", "enum_value_from_input", "boolean",
+         "correlated_with_input_size"]
+    )
 
     # TODO: ok, so just see if you can cluster using just values. the timeseries kmeans expects the data to be in some
     # TODO: weird fucking format. like a single series with the values 1, 2, 3 should be [[1],[2],[3]] or some shit??
@@ -215,12 +194,14 @@ def main(experiment: str, subject: str, binary: str, execution: str):
 def classify_variables(variables):
 
     classified_vars = {
-        'correlated_with_input_size': [],
         'constants': [],
+        'correlated_with_input_size': [],
+        'booleans': [],
         'static_counters': [],
         'dynamic_counters': [],
         'input_size_counters': [],
         'enums': [],
+        'enums_deriving_value_from_input': [],
         'related': []
     }
 
@@ -228,19 +209,15 @@ def classify_variables(variables):
     variables_by_modified_line = dict()
     for variable in variables:
 
-        features.derive_general_features(variable)
-        general_features = variable['features']['general']
+        features.derive_features(variable)
+        variable_features = variable['features']
 
-        if general_features['num_traces'] < 1:
+        if variable_features['num_traces'] < 1:
             print("      Not classifying {fqn} as it has zero traces.".format(fqn=variable['fqn']))
             variable['class'] = "zero_traces"
             continue
         else:
             print("      Attempting to classify {fqn}...".format(fqn=variable['fqn']))
-
-        features.derive_input_size_correlation_features(variable)
-        features.derive_counter_features(variable)
-        features.derive_enum_features(variable)
 
         if classifiers.is_constant(variable):
             if classifiers.is_correlated_with_input_size(variable):
@@ -249,13 +226,20 @@ def classify_variables(variables):
             else:
                 variable['class'] = "constant"
                 classified_vars['constants'].append(variable)
+        elif classifiers.is_boolean(variable):
+            variable['class'] = "boolean"
+            classified_vars["booleans"].append(variable)
         elif classifiers.is_counter(variable):
             # Some counters with varying deltas may actually be enums, so let's check for that. But some legitimate
             # counters with varying deltas could end up being mis-classified as enums (the classification boundary
             # between counters and enums is kind of fuzzy if you think about it). So let's only try and classify
-            # something with varying deltas as an enum if its loop sequence proportion is less than 0.9 or if the
-            # correlation between the number of times the variable was modified and the input size is greater than or
-            # equal to 0.75.
+            # something with varying deltas as an enum if its loop sequence proportion and lag-one autocorrelation on
+            # filtered traces is less than 0.9. Filtered traces are those where repeated runs of values are removed, and
+            # the correlation metric is actually the average of the lag-one autocorrelations of all identified counter
+            # segments with length greater than 2, over all traces. When classifying enums we handle two cases: where
+            # the enum value does not derive from the input value, and the case where it does. The former involves
+            # situations where the entire set of enum values is probably being iterated over. In the latter case the
+            # enum value directly or indirectly derives from some input value.
             # TODO: a better way to do this might be to calculate shannon entropy...?? do it over entire trace
             # TODO: sequence or maybe calculate average of entropy? what you need to do is calculate it over
             # TODO: a sequence of deltas ... then counters will have stuff like 1 1 1 1 0 0 1 1 1 etc. get the
@@ -269,21 +253,27 @@ def classify_variables(variables):
             # TODO: counter. even the loop sequences for varying deltas should have much more entropy compared to
             # TODO: an actual counter with varying deltas... maybe?? anyways try it out. combine this with the current
             # TODO: check maybe. maybe print out the entropy for each var?
-            counter_features = variable['features']['counter']
-            enum_features = variable['features']['enum']
-            if counter_features['varying_deltas'] \
-                and (counter_features['loop_sequence_proportion'] < 0.9 or
-                     enum_features['times_modified_to_input_size_correlation'] >= 0.75) \
+            if variable_features['varying_deltas'] \
+                and variable_features['loop_sequence_proportion'] < 0.9 \
+                    and variable_features['lag_one_autocorr_filtered'] < 0.9 \
                     and classifiers.is_enum(variable):
-                variable['class'] = "enum"
-                classified_vars['enums'].append(variable)
+                if classifiers.is_enum_deriving_values_from_input(variable):
+                    variable['class'] = "enum_value_from_input"
+                    classified_vars["enums_deriving_value_from_input"].append(variable)
+                else:
+                    variable['class'] = "enum"
+                    classified_vars['enums'].append(variable)
             else:
                 counter_class = classifiers.classify_counter(variable)
                 variable['class'] = counter_class + "_counter"
                 classified_vars[counter_class + "_counters"].append(variable)
         elif classifiers.is_enum(variable):
-            variable['class'] = "enum"
-            classified_vars['enums'].append(variable)
+            if classifiers.is_enum_deriving_values_from_input(variable):
+                variable['class'] = "enum_value_from_input"
+                classified_vars['enums_deriving_value_from_input'].append(variable)
+            else:
+                variable['class'] = "enum"
+                classified_vars['enums'].append(variable)
         elif classifiers.is_correlated_with_input_size(variable):
             variable['class'] = "correlated_with_input_size"
             classified_vars['correlated_with_input_size'].append(variable)
@@ -305,7 +295,7 @@ def classify_variables(variables):
         if 'class' in variable and (variable['class'] == 'zero_traces' or variable['class'] == 'constant'):
             continue
 
-        general_features = variable['features']['general']
+        variable_features = variable['features']
 
         # print("      Looking for variables related to {fqn}".format(fqn=variable['fqn']))
 
@@ -350,14 +340,14 @@ def classify_variables(variables):
         if len(candidate_vars) > 0:
             for candidate_var_name in candidate_vars:
                 candidate_var = variables_by_fqn[candidate_var_name]
-                candidate_general_features = candidate_var['features']['general']
+                candidate_features = candidate_var['features']
 
-                if general_features['num_traces'] == candidate_general_features['num_traces'] and \
-                    general_features['num_modified_lines'] == candidate_general_features['num_modified_lines'] and \
-                    general_features['times_modified_max'] == candidate_general_features['times_modified_max'] and \
-                    general_features['times_modified_min'] == candidate_general_features['times_modified_min'] and \
-                    general_features['times_modified_mean'] == candidate_general_features['times_modified_mean'] and \
-                        general_features['times_modified_stddev'] == candidate_general_features['times_modified_stddev']:
+                if variable_features['num_traces'] == candidate_features['num_traces'] and \
+                    variable_features['num_modified_lines'] == candidate_features['num_modified_lines'] and \
+                    variable_features['times_modified_max'] == candidate_features['times_modified_max'] and \
+                    variable_features['times_modified_min'] == candidate_features['times_modified_min'] and \
+                    variable_features['times_modified_mean'] == candidate_features['times_modified_mean'] and \
+                        variable_features['times_modified_stddev'] == candidate_features['times_modified_stddev']:
 
                     if variable['fqn'] not in related_vars:
                         related_vars[variable['fqn']] = []
@@ -401,18 +391,18 @@ def print_variables_info(variables):
     for variable in variables:
         print("      {fqn}".format(fqn=variable['fqn']))
 
-        features.derive_general_features(variable)
-        general_features = variable['features']['general']
+        features.derive_features(variable)
+        variable_features = variable['features']
 
-        variable_values = numpy.array(variable['info']['variable_values']).astype(numpy.float)
-        print("        Has {num} traces".format(num=general_features['num_traces']))
+        variable_values = numpy.array(variable['info']['variable_values'])
+        print("        Has {num} traces".format(num=variable_features['num_traces']))
         print("        Is modified on {num} lines{line}".format(
-            num=general_features['num_modified_lines'],
+            num=variable_features['num_modified_lines'],
             line=" ({l})".format(l=list(variable['info']['modified_lines'])[0])
-            if general_features['num_modified_lines'] == 1 else ""
+            if variable_features['num_modified_lines'] == 1 else ""
         ))
         print("        Has {num} unique values; mean is {mean} and standard deviation is {stddev}".format(
-            num=general_features['num_unique_values'],
+            num=variable_features['num_unique_values'],
             mean=numpy.mean(variable_values),
             stddev=numpy.std(variable_values)
         ))
@@ -422,12 +412,12 @@ def print_variables_info(variables):
                 print("          {line}".format(line=line))
 
         print("        Is modified a minimum of {min} times and a maximum of {max} times per process".format(
-            min=general_features['times_modified_min'],
-            max=general_features['times_modified_max']
+            min=variable_features['times_modified_min'],
+            max=variable_features['times_modified_max']
         ))
         print("        Is modified an average of {avg} times per process (standard deviation={stddev})".format(
-            avg=general_features['times_modified_mean'],
-            stddev=general_features['times_modified_stddev']
+            avg=variable_features['times_modified_mean'],
+            stddev=variable_features['times_modified_stddev']
         ))
 
         trace_lengths = []
@@ -445,10 +435,8 @@ def print_variables_info(variables):
                       " is {stddev}".format(
                        num=len(set(variable['info']['modified_line_values'][modified_line])),
                        line=modified_line,
-                       mean=numpy.mean(numpy.array(variable['info']['modified_line_values'][modified_line])
-                                       .astype(numpy.float)),
-                       stddev=numpy.std(numpy.array(variable['info']['modified_line_values'][modified_line])
-                                        .astype(numpy.float))))
+                       mean=numpy.mean(numpy.array(variable['info']['modified_line_values'][modified_line])),
+                       stddev=numpy.std(numpy.array(variable['info']['modified_line_values'][modified_line]))))
 
         print("")
 

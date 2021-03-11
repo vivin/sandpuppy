@@ -103,22 +103,24 @@ def populate_variable_value_traces(variable, session, experiment, subject, binar
 
     info = {
         'traces': [],
-        'pid_traces': dict(),
+        'pid_traces': {},
         'modified_lines': set(),
         'variable_values': [],
-        'modified_line_values': dict()
+        'modified_line_values': {}
     }
 
     for row in rows:
         pid = row[0]
         if pid not in info["pid_traces"]:
             info["pid_traces"][pid] = {
-                'items': []
+                'input_size': -1,
+                'items': [],
+                'values': []
             }
 
         input_size = row[1]
         modified_line = row[2]
-        variable_value = row[3]
+        variable_value = int(row[3]) if variable_type == "int" else row[3]
 
         info['pid_traces'][pid]['input_size'] = input_size
         info['pid_traces'][pid]['items'].append({
@@ -126,6 +128,7 @@ def populate_variable_value_traces(variable, session, experiment, subject, binar
             'variable_value': variable_value,
             'ts': row[4]
         })
+        info['pid_traces'][pid]['values'].append(variable_value)
 
         info['modified_lines'].add(modified_line)
         info['variable_values'].append(variable_value)

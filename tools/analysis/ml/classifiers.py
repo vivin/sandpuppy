@@ -1,43 +1,64 @@
-import numpy
-from ml import features
-
-
 def is_constant(var):
-    if 'features' not in var or 'general' not in var['features']:
+    if 'features' not in var:
         raise Exception(
-            "No general features found for variable {fqn}. Please call derive_general_features first.".format(
+            "No features found for variable {fqn}. Please call features.derive_features first.".format(
                 fqn=var['fqn']
             )
         )
 
-    general_features = var['features']['general']
+    features = var['features']
+    if features['times_modified_max'] == 0:
+        return False
 
-    # Pretty simple. If the variable is only modified at one place and only has one unique value, it is a constant.
-    return general_features['num_modified_lines'] == 1 and general_features['num_unique_values'] == 1
+    num_unique_values = features['num_unique_values']
+    most_min_value = min(features['min_values'])
+    variable_values_set = set(var['info']['variable_values'])
+
+    # If the variable takes on only one unique value, it is a constant. However a variable could be defined and then
+    # set to its value later. So we also check to see if the variable has two unique values, if the minimum value is
+    # zero, and that the two unique values aren't 0 and 1 (we want to classify variables that only take on 0 and 1
+    # values as booleans).
+    return num_unique_values == 1 or (num_unique_values == 2 and most_min_value == 0 and variable_values_set != {0, 1})
+
+
+def is_boolean(var):
+    if 'features' not in var:
+        raise Exception(
+            "No features found for variable {fqn}. Please call features.derive_features first.".format(
+                fqn=var['fqn']
+            )
+        )
+
+    features = var['features']
+    if features['times_modified_max'] == 0:
+        return False
+
+    num_unique_values = features['num_unique_values']
+    variable_values_set = set(var['info']['variable_values'])
+    return num_unique_values == 2 and variable_values_set == {0, 1}
 
 
 def is_correlated_with_input_size(var):
-    if 'features' not in var or 'correlated_with_input_size' not in var['features']:
+    if 'features' not in var:
         raise Exception(
-            "No input-size correlation features found for variable {fqn}. Please call "
-            "derive_input_size_correlation_features first.".format(
+            "No features found for variable {fqn}. Please call features.derive_features first.".format(
                 fqn=var['fqn']
             )
         )
 
-    input_size_correlation_features = var['features']['correlated_with_input_size']
+    features = var['features']
 
-    max_values = input_size_correlation_features['max_values']
-    input_sizes = input_size_correlation_features['input_sizes']
+    max_values = features['max_values']
+    input_sizes = features['input_sizes']
     if len(max_values) == 0 or len(input_sizes) == 0:
         return False
 
-    max_values_variance = input_size_correlation_features['max_values_variance']
-    input_sizes_variance = input_size_correlation_features['input_sizes_variance']
+    max_values_variance = features['max_values_variance']
+    input_sizes_variance = features['input_sizes_variance']
     if max_values_variance == 0 or input_sizes_variance == 0:
         return False
 
-    pearson_coefficient = input_size_correlation_features['max_value_to_input_size_correlation']
+    pearson_coefficient = features['max_value_to_input_size_correlation']
     if pearson_coefficient >= 0.5:
         return True
 
@@ -45,71 +66,70 @@ def is_correlated_with_input_size(var):
 
 
 def is_counter(var):
-    if 'features' not in var or 'counter' not in var['features']:
+    if 'features' not in var:
         raise Exception(
-            "No counter features found for variable {fqn}. Please call derive_counter_features first.".format(
+            "No features found for variable {fqn}. Please call features.derive_features first.".format(
                 fqn=var['fqn']
             )
         )
 
     # It's hard to classify counters if the traces aren't long enough. We can end up with a lot of false positives. So
-    # we will return False for any variable whose average trace-length is less than 3.
-    general_features = var['features']['general']
-    if general_features['times_modified_mean'] < 3:
+    # we will return False for any variable whose maximum trace-length is less than 3.
+    features = var['features']
+    if features['times_modified_max'] < 3:
         return False
 
-    counter_features = var['features']['counter']
-    loop_sequence_proportion = counter_features['loop_sequence_proportion_filtered']
+    average_delta = features['average_delta']
+    loop_sequence_proportion = features['loop_sequence_proportion_filtered']
 
-    return abs(counter_features['average_delta']) <= 255 and loop_sequence_proportion > 0.5
+    return abs(average_delta) <= 255 and loop_sequence_proportion > 0.5
 
 
 def classify_counter(var):
-    if 'features' not in var or 'counter' not in var['features']:
+    if 'features' not in var:
         raise Exception(
-            "No counter features found for variable {fqn}. Please call derive_counter_features first.".format(
+            "No features found for variable {fqn}. Please call features.derive_features first.".format(
                 fqn=var['fqn']
             )
         )
 
     if not is_counter(var):
         raise Exception(
-            "Cannot determine what type of counter variable {fqn} is because it is_counter returns False.".format(
+            "Cannot determine type of counter variable {fqn} because is_counter returns False.".format(
                 fqn=var['fqn']
             )
         )
 
-    # We know it is a counter. But is it a static counter or a dynamic one? Meaning, does it always count
-    # up to a fixed value, or does it vary? If it counts up to a value, is that value correlated with input size?
-    counter_features = var['features']['counter']
+    features = var['features']
 
-    max_values_variance = counter_features['max_values_variance']
-    input_sizes_variance = counter_features['input_sizes_variance']
-    average_value_set_cardinality_ratio = counter_features['average_value_set_cardinality_ratio']
+    # We know it is a counter. But is it a static counter or a dynamic one? Meaning, does it always count up to a fixed
+    # value, or does it vary? If it counts up to a value, is that value correlated with input size?
+    max_values_variance = features['max_values_variance']
+    average_value_set_cardinality_ratio = features['average_value_set_cardinality_ratio']
+    max_value_to_input_size_correlation = features['max_value_to_input_size_correlation']
 
-    # If the counter maximum values are all the same this is a static counter. If the counter maximum values are
-    # different but the input sizes are the same, it suggests that the counter is not affected by the input size
-    # but counts up to different values, which makes it a dynamic counter.
+    # If the counter maximum values are all the same and the average value set cardinality ratio is 1 (meaning that in
+    # every trace the variable takes on the full set of values across all traces) this is a static counter. If the
+    # correlation between the maximum value per trace and the corresponding input size is lesser than 0.5, this is a
+    # dynamic counter. Otherwise this is an input size counter.
     #
     # TODO: check if it counts up to the same set of values every time. this also makes it static. Maybe call it
     # TODO: multiple_static.
-    #
-    # If neither of the variances are zero, then we can see if the maximum values of the counter are correlated with
-    # input size. If that is the case this makes it an input-size counter. Otherwise it is a dynamic counter.
     if max_values_variance == 0 and average_value_set_cardinality_ratio == 1:
         return "static"
-    elif input_sizes_variance == 0:
-        return "dynamic"
-
-    if counter_features['max_value_to_input_size_correlation'] < 0.5:
+    elif max_value_to_input_size_correlation < 0.5:
         return "dynamic"
     else:
         return "input_size"
 
 
 def is_enum(var):
-    if 'features' not in var or 'enum' not in var['features']:
-        features.derive_enum_features(var)
+    if 'features' not in var:
+        raise Exception(
+            "No features found for variable {fqn}. Please call features.derive_features first.".format(
+                fqn=var['fqn']
+            )
+        )
 
     # We will look for Pearson coefficients greater than 0.5 to see if the number of times a variable is modified
     # is correlated with input size. Note that one issue is that the input size isn't necessarily the same as the
@@ -117,8 +137,8 @@ def is_enum(var):
     # sent to the process and it may fail early due to invalid input. Ideally it would be nice if we were able to
     # ascertain the amount of bytes actually read by the process from either stdin or a file. Not sure if that is
     # possible, though.
-    enum_features = var['features']['enum']
-    if enum_features['times_modified_to_input_size_correlation'] < 0.5:
+    features = var['features']
+    if features['times_modified_to_input_size_correlation'] < 0.5:
         return False
 
     # This is super sketch, and I probably need to mathematically prove it or something. But anyway, the
@@ -127,11 +147,9 @@ def is_enum(var):
     # expect those to vary wildly in an enum. For example, it's not likely we will have an enum with
     # values like 0, 1, 2, and then 12355914 or something. So what we'll do is calculate the standard
     # deviation of the log10 of the values and ignore the variable if that value is greater than 1.
-    # TODO: move this before previous check and see if anything changes
-    if enum_features['order_of_magnitudes_stddev'] > 1:
+    if features['order_of_magnitudes_stddev'] > 1:
         return False
 
-    general_features = var['features']['general']
     # How many places is this variable modified? We have two cases where a variable can be like an enum
     # variable:
     #
@@ -148,13 +166,40 @@ def is_enum(var):
     #        enum_var = value2
     #
     # And so on. Basically the second case is like a switch.
-    if general_features['num_modified_lines'] == 1 and general_features['num_unique_values'] <= 255:
+    if features['num_modified_lines'] == 1 and features['num_unique_values'] <= 255:
         # Deal with case 1:
         # For now we will limit ourselves to variables that have up to 255 unique values
         return True
-    elif general_features['num_modified_lines'] == general_features['num_unique_values']:
+    elif features['num_modified_lines'] == features['num_unique_values']:
         # Deal with case 2. Basically the number of lines it is modified on should equal the number of
         # unique values it holds
         return True
 
     return False
+
+
+def is_enum_deriving_values_from_input(var):
+    if 'features' not in var:
+        raise Exception(
+            "No features found for variable {fqn}. Please call features.derive_features first.".format(
+                fqn=var['fqn']
+            )
+        )
+
+    if not is_enum(var):
+        raise Exception(
+            "Cannot determine type of enum variable {fqn} because is_enum returns False.".format(
+                fqn=var['fqn']
+            )
+        )
+
+    # We will look for Pearson coefficients greater than 0.5 to see if the number of times a variable is modified
+    # is correlated with input size. Note that one issue is that the input size isn't necessarily the same as the
+    # size of the input _actually processed_. The input size we end up reporting from AFL is the size of the input
+    # sent to the process and it may fail early due to invalid input. Ideally it would be nice if we were able to
+    # ascertain the amount of bytes actually read by the process from either stdin or a file. Not sure if that is
+    # possible, though.
+    features = var['features']
+    times_modified_to_input_size_correlation = features['times_modified_to_input_size_correlation']
+    average_value_set_cardinality_ratio = features['average_value_set_cardinality_ratio']
+    return times_modified_to_input_size_correlation >= 0.5 and average_value_set_cardinality_ratio < 1
