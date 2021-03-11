@@ -42,6 +42,14 @@ class VariablePrintFeedback : public fuzzfactory::DomainFeedback<VariablePrintFe
     std::map<std::string, int> varToDeclaredLine;
     std::map<std::string, StructInfo*> structInfoMap;
 
+    bool variableExists(const std::string& variableName) {
+        return varToDeclaredLine.find(variableName) != varToDeclaredLine.end();
+    }
+
+    bool structExists(const std::string& structName) {
+        return structInfoMap.find(structName) != structInfoMap.end();
+    }
+
     void processLocalVariableDeclaration(DbgDeclareInst* declare) {
         Value *arg = declare->getAddress();
         DILocalVariable *var = declare->getVariable();
@@ -54,7 +62,7 @@ class VariablePrintFeedback : public fuzzfactory::DomainFeedback<VariablePrintFe
             return;
         }
 
-        if (varToDeclaredLine.find(var->getName().str()) == varToDeclaredLine.end()) {
+        if (variableExists(var->getName().str())) {
             varToDeclaredLine[var->getName().str()] = var->getLine();
 
             std::cout << "  " << var->getName().str() << " declared on line " << var->getLine() << "\n";
@@ -121,12 +129,21 @@ class VariablePrintFeedback : public fuzzfactory::DomainFeedback<VariablePrintFe
                 // Handle case where we're modifying a struct field
                 return getFullyQualifiedFieldName(gep);
             }
-        } else if (varToDeclaredLine.find(varName) != varToDeclaredLine.end()) {
+        } else if (variableExists(varName)) {
             // We're at an alloca instruction and so we should have the actual name of the variable.
             return varName;
         }
 
         return "";
+    }
+
+    static bool gepAppliesToStruct(StructInfo* structInfo, GetElementPtrInst* gep) {
+        if (gep->getNumOperands() != 3) {
+            return false;
+        }
+
+        auto elementIndex = cast<ConstantInt>(gep->getOperand(2))->getSExtValue();
+        return elementIndex < structInfo->getElements().size();
     }
 
     std::string getFullyQualifiedFieldName(GetElementPtrInst* gep) {
@@ -144,11 +161,11 @@ class VariablePrintFeedback : public fuzzfactory::DomainFeedback<VariablePrintFe
         // TODO: what do we do? Can't go by structure of the struct (i.e., types of elements) either. the problem is
         // TODO: that there is no way to associate, in reverse, the Type* we get here with a DIType*. So we have no
         // TODO: idea what the actual struct is. and in DIType* we get an empty name for anonymous structs.
-        if (structInfoMap.find(structName) != structInfoMap.end() && gep->getNumOperands() == 3) {
-            auto *elementIndex = cast<ConstantInt>(gep->getOperand(2));
+        if (structExists(structName) && gepAppliesToStruct(structInfoMap[structName], gep)) {
+            auto elementIndex = cast<ConstantInt>(gep->getOperand(2))->getSExtValue();
 
             StructInfo *structInfo = structInfoMap[structName];
-            std::string element = structInfo->getElements()[elementIndex->getSExtValue()];
+            std::string element = structInfo->getElements()[elementIndex];
 
             // Operand might be a pointer to a struct, so walk up the load chain until we get to the actual struct
             Value *pointerOperand = gep->getPointerOperand();
@@ -170,10 +187,10 @@ class VariablePrintFeedback : public fuzzfactory::DomainFeedback<VariablePrintFe
                         std::regex("^struct\\."),
                         ""
                     );
-                    if ((structInfoMap.find(name) != structInfoMap.end() || !_structType->hasName()) && gepOperand->getNumOperands() == 3) {
-                        auto *_elementIndex = cast<ConstantInt>(gepOperand->getOperand(2));
+                    if (structExists(name) && gepAppliesToStruct(structInfoMap[name], gepOperand)) {
+                        auto _elementIndex = cast<ConstantInt>(gepOperand->getOperand(2))->getSExtValue();
                         StructInfo *_structInfo = structInfoMap[name];
-                        std::string _element = _structInfo ? _structInfo->getElements()[_elementIndex->getSExtValue()] : gepOperand->getName().str();
+                        std::string _element = _structInfo->getElements()[_elementIndex];
 
                         prefix = _element.append(".").append(prefix);
                         pointerOperand = gepOperand->getPointerOperand();

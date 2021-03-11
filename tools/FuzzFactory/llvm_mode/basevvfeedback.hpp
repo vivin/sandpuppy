@@ -71,7 +71,7 @@ class BaseVariableValueFeedback : public DomainFeedback<V> {
             return;
         }
 
-        if (varToDeclaredLine.find(var->getName().str()) == varToDeclaredLine.end()) {
+        if (variableExists(var->getName().str())) {
             varToDeclaredLine[var->getName().str()] = var->getLine();
 
             // TODO: at some point we need to identify strings here as well. they start off
@@ -116,6 +116,15 @@ class BaseVariableValueFeedback : public DomainFeedback<V> {
         }
     }
 
+    bool gepAppliesToStruct(StructInfo* structInfo, GetElementPtrInst* gep) {
+        if (gep->getNumOperands() != 3) {
+            return false;
+        }
+
+        auto elementIndex = cast<ConstantInt>(gep->getOperand(2))->getSExtValue();
+        return elementIndex < structInfo->getElements().size();
+    }
+
     std::string getFullyQualifiedFieldName(GetElementPtrInst* gep) {
         std::string fullyQualifiedFieldName;
         std::string structName = std::regex_replace(
@@ -124,11 +133,11 @@ class BaseVariableValueFeedback : public DomainFeedback<V> {
             ""
         );
 
-        if (structInfoMap.find(structName) != structInfoMap.end() && gep->getNumOperands() == 3) {
-            auto *elementIndex = cast<ConstantInt>(gep->getOperand(2));
+        if (structExists(structName) && gepAppliesToStruct(structInfoMap[structName], gep)) {
+            auto elementIndex = cast<ConstantInt>(gep->getOperand(2))->getSExtValue();
 
             StructInfo *structInfo = structInfoMap[structName];
-            std::string element = structInfo->getElements()[elementIndex->getSExtValue()];
+            std::string element = structInfo->getElements()[elementIndex];
 
             // Operand might be a pointer to a struct, so walk up the load chain until we get to the actual struct
             Value *pointerOperand = gep->getPointerOperand();
@@ -149,10 +158,10 @@ class BaseVariableValueFeedback : public DomainFeedback<V> {
                         std::regex("^struct\\."),
                         ""
                     );
-                    if (structInfoMap.find(name) != structInfoMap.end() && gepOperand->getNumOperands() == 3) {
-                        auto *_elementIndex = cast<ConstantInt>(gepOperand->getOperand(2));
+                    if (structExists(name) && gepAppliesToStruct(structInfoMap[name], gepOperand)) {
+                        auto _elementIndex = cast<ConstantInt>(gepOperand->getOperand(2))->getSExtValue();
                         StructInfo *_structInfo = structInfoMap[name];
-                        std::string _element = _structInfo->getElements()[_elementIndex->getSExtValue()];
+                        std::string _element = _structInfo->getElements()[_elementIndex];
 
                         prefix = _element.append(".").append(prefix);
                         pointerOperand = gepOperand->getPointerOperand();
@@ -181,6 +190,14 @@ protected:
     std::map<std::string, int> varToDeclaredLine;
     std::map<std::string, StructInfo*> structInfoMap;
 
+    bool variableExists(const std::string& variableName) {
+        return varToDeclaredLine.find(variableName) != varToDeclaredLine.end();
+    }
+
+    bool structExists(const std::string& structName) {
+        return structInfoMap.find(structName) != structInfoMap.end();
+    }
+
     std::string getVariableName(Value* variable) {
         std::string varName = variable->getName().str();
         if (auto *load = dyn_cast<LoadInst>(variable)) {
@@ -192,7 +209,7 @@ protected:
                 // Handle case where we're modifying a struct field
                 return getFullyQualifiedFieldName(gep);
             }
-        } else if (varToDeclaredLine.find(varName) != varToDeclaredLine.end()) {
+        } else if (variableExists(varName)) {
             // We're at an alloca instruction and so we should have the actual name of the variable.
             return varName;
         }
