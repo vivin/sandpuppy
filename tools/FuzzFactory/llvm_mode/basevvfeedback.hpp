@@ -5,7 +5,7 @@
 #include <fstream>
 #include <iostream>
 #include <regex>
-#include <unordered_set>
+#include <set>
 
 #ifndef BASEVVFEEDBACK_H
 #define BASEVVFEEDBACK_H
@@ -71,7 +71,7 @@ class BaseVariableValueFeedback : public DomainFeedback<V> {
             return;
         }
 
-        if (variableExists(var->getName().str())) {
+        if (!var->getName().str().empty() && !variableExists(var->getName().str())) {
             varToDeclaredLine[var->getName().str()] = var->getLine();
 
             // TODO: at some point we need to identify strings here as well. they start off
@@ -80,7 +80,7 @@ class BaseVariableValueFeedback : public DomainFeedback<V> {
             // TODO: variables.
 
             // We will recursively identify structs and their elements. This takes care of nested structs.
-            std::unordered_set<DIType*> visited;
+            std::set<DIType*> visited;
             std::stack<DIType*> frontier;
             frontier.push(var->getType());
 
@@ -147,39 +147,44 @@ class BaseVariableValueFeedback : public DomainFeedback<V> {
 
             // Recursively walk up the getelementptr chain to identify prefixes to this struct variable. This is
             // only necessary if this is a nested field access.
-            bool onlyStructs = true;
+            bool validStructAccess = true;
             std::string prefix;
-            while (isa<GetElementPtrInst>(pointerOperand) && onlyStructs) {
+            while (isa<GetElementPtrInst>(pointerOperand) && validStructAccess) {
                 auto *gepOperand = cast<GetElementPtrInst>(pointerOperand);
-                onlyStructs = gepOperand->getSourceElementType()->isStructTy();
-                if (onlyStructs) {
+                if (gepOperand->getSourceElementType()->isStructTy()) {
                     std::string name = std::regex_replace(
                         gepOperand->getSourceElementType()->getStructName().str(),
                         std::regex("^struct\\."),
                         ""
                     );
+
                     if (structExists(name) && gepAppliesToStruct(structInfoMap[name], gepOperand)) {
                         auto _elementIndex = cast<ConstantInt>(gepOperand->getOperand(2))->getSExtValue();
                         StructInfo *_structInfo = structInfoMap[name];
                         std::string _element = _structInfo->getElements()[_elementIndex];
 
                         prefix = _element.append(".").append(prefix);
+
                         pointerOperand = gepOperand->getPointerOperand();
                     } else {
-                        onlyStructs = false;
+                        validStructAccess = false;
                     }
+                } else {
+                    validStructAccess = false;
                 }
             }
 
-            if (onlyStructs) {
-                // If the struct that this field belongs to is actually a pointer argument to a function, it is suffixed
-                // with ".addr" (this is something LLVM does). We need to strip this out so that we can get the actual
-                // name of the parameter.
-                std::string structVarName = std::regex_replace(pointerOperand->getName().str(), std::regex("\\.addr"), "");
-                fullyQualifiedFieldName = structVarName + "." + prefix + element;
+            if (validStructAccess) {
+                // We're at an instruction that is not a GEP. It is probably either an alloca for the actual struct
+                // variable in question, or a load that is loading the struct address from a pointer variable. We can
+                // call getVariableName again to resolve the name.
+                std::string structVarName = getVariableName(pointerOperand);
+                if (!structVarName.empty()) {
+                    fullyQualifiedFieldName = structVarName + "." + prefix + element;
 
-                // Set the declared line of this struct field to the declared line of the struct itself.
-                varToDeclaredLine[fullyQualifiedFieldName] = varToDeclaredLine[structVarName];
+                    // Set the declared line of this struct field to the declared line of the struct itself.
+                    varToDeclaredLine[fullyQualifiedFieldName] = varToDeclaredLine[structVarName];
+                }
             }
         }
 
@@ -188,7 +193,9 @@ class BaseVariableValueFeedback : public DomainFeedback<V> {
 
 protected:
     std::map<std::string, int> varToDeclaredLine;
+    std::set<std::string> arithmeticallyModifiedPointers;
     std::map<std::string, StructInfo*> structInfoMap;
+    std::set<std::string> functionArguments;
 
     bool variableExists(const std::string& variableName) {
         return varToDeclaredLine.find(variableName) != varToDeclaredLine.end();
@@ -198,19 +205,95 @@ protected:
         return structInfoMap.find(structName) != structInfoMap.end();
     }
 
-    std::string getVariableName(Value* variable) {
-        std::string varName = variable->getName().str();
-        if (auto *load = dyn_cast<LoadInst>(variable)) {
-            // Handle case where we're actually working with a dereferenced pointer variable; we need to recursively
+    bool isFunctionArgument(const std::string& variableName) {
+        return functionArguments.find(variableName) != functionArguments.end();
+    }
+
+    bool isInvolvedInPointerArithmetic(const std::string& variableName) {
+        return arithmeticallyModifiedPointers.find(variableName) != arithmeticallyModifiedPointers.end();
+    }
+
+    bool doesPointerTypeResolveToInteger(PointerType* pointerType) {
+        Type* type = pointerType;
+        while (isa<PointerType>(type)) {
+            type = type->getPointerElementType();
+        }
+
+        return type->isIntegerTy();
+    }
+
+    Type* getPointerToIntegerType(int indirection, unsigned int bitWidth) {
+        Type* type = DomainFeedback<V>::getIntTy(bitWidth);
+        while (indirection > 0) {
+            type = PointerType::get(type, 0);
+            --indirection;
+        }
+
+        return type;
+    }
+
+    std::string getVariableName(Value* var) {
+        // Strip away .addr; this happens with function arguments
+        std::string varName = std::regex_replace(
+            var->getName().str(),
+            std::regex("\\.addr"),
+            ""
+        );
+
+        if (isa<LoadInst>(var)) {
+            // Handle case where we're actually working with a dereferenced pointer var; we need to recursively
             // walk up until we get to a gep for a struct field or an alloca.
-            return getVariableName(load->getPointerOperand());
-        } else if (auto *gep = dyn_cast<GetElementPtrInst>(variable)) {
-            if (gep->getSourceElementType()->isStructTy()) {
-                // Handle case where we're modifying a struct field
-                return getFullyQualifiedFieldName(gep);
-            }
+            return getVariableName(cast<LoadInst>(var)->getPointerOperand());
+        } else if (isa<GetElementPtrInst>(var) && cast<GetElementPtrInst>(var)->getSourceElementType()->isStructTy()) {
+            // Handle case where we're modifying a struct field
+            return getFullyQualifiedFieldName(cast<GetElementPtrInst>(var));
         } else if (variableExists(varName)) {
-            // We're at an alloca instruction and so we should have the actual name of the variable.
+            // Variable exists and we are at an alloca instruction
+            auto *alloca = cast<AllocaInst>(var);
+
+            // While we're here, let's inspect the users of this var. If this is a pointer, we are particularly
+            // interested in users that update the pointer value through pointer arithmetic. In these cases we never
+            // want to report the derefenced value as the value of the var because the pointer actually represents
+            // multiple values (like an array) instead of a single one. For example, assuming we have an integer pointer
+            // *intptr, then *intptr = 10; and *(intptr++) = 10; are actually modifying two separate locations. We only
+            // want to report the values of those pointers that have a one-to-one relationship between the pointer and
+            // the value pointed to by it. In this situation it makes sense to report the dereferenced value as the
+            // value of the pointer var. So if a pointer variable is ever involved in pointer arithmetic, we will add it
+            // to the arithmeticallyModifiedPointers set. Base classes can then decide how they want to deal with such
+            // pointers.
+            if (alloca->getAllocatedType()->isPointerTy()) {
+                bool involvedInArithmetic = false;
+                auto it = alloca->user_begin();
+                while (!involvedInArithmetic && it != alloca->user_end()) {
+                    if (!isa<StoreInst>(*it)) {
+                        // Only look for store instructions
+                        it++;
+                        continue;
+                    }
+
+                    auto *store = cast<StoreInst>(*it);
+                    auto *value = store->getValueOperand();
+                    if (!isa<GetElementPtrInst>(value)) {
+                        // If pointer arithmetic is involved, a GEP instruction is used to calculate the result. So if
+                        // this store instruction is not updating the pointer with the result of a GEP instruction, we
+                        // can ignore it
+                        it++;
+                        continue;
+                    }
+
+                    // If the GEP instruction has two operands and the second operand is a constant integer, pointer
+                    // arithmetic is being performed.
+                    auto *gep = cast<GetElementPtrInst>(value);
+                    involvedInArithmetic = gep->getNumOperands() == 2 && isa<ConstantInt>(gep->getOperand(1));
+
+                    it++;
+                }
+
+                if (involvedInArithmetic) {
+                    arithmeticallyModifiedPointers.emplace(varName);
+                }
+            }
+
             return varName;
         }
 
@@ -234,6 +317,11 @@ public:
             return;
         }
 
+        // Collect the names of the function arguments.
+        for (auto &arg : function.args()) {
+            functionArguments.emplace(arg.getName().str());
+        }
+
         // Collect all local variable info from this function (includes arguments).
         for (inst_iterator I = inst_begin(function), E = inst_end(function); I != E; ++I) {
             Instruction& instruction = *I;
@@ -246,7 +334,9 @@ public:
         processFunction(function);
 
         varToDeclaredLine.clear();
+        arithmeticallyModifiedPointers.clear();
         structInfoMap.clear();
+        functionArguments.clear();
     }
 };
 #endif //BASEVVFEEDBACK_H

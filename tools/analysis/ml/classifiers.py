@@ -59,7 +59,7 @@ def is_correlated_with_input_size(var):
         return False
 
     pearson_coefficient = features['max_value_to_input_size_correlation']
-    if pearson_coefficient >= 0.5:
+    if pearson_coefficient >= 0.6:
         return True
 
     return False
@@ -117,7 +117,7 @@ def classify_counter(var):
     # TODO: multiple_static.
     if max_values_variance == 0 and average_value_set_cardinality_ratio == 1:
         return "static"
-    elif max_value_to_input_size_correlation < 0.5:
+    elif max_value_to_input_size_correlation < 0.6:
         return "dynamic"
     else:
         return "input_size"

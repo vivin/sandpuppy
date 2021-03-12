@@ -25,6 +25,8 @@ def derive_features(variable):
             'average_value_set_cardinality_ratio': 0,
             'loop_sequence_proportion': 0,
             'loop_sequence_proportion_filtered': 0,
+            'average_counter_segment_length': 0,
+            'average_counter_segment_length_filtered': 0,
             'jaggedness_full': None,
             'jaggedness_filtered': None,
             'lag_one_autocorr_full': 0,
@@ -175,29 +177,35 @@ def derive_features(variable):
     features['average_value_set_cardinality_ratio'] = proportion_sum / features['num_traces']
 
     if len(combined_trace) > 0:
-        filtered_segments = [s for s in combined_trace_counter_segments if len(s) > 2]
-        if len(filtered_segments) > 0:
+        features['average_counter_segment_length'] = numpy.mean(
+            [len(s) for s in combined_trace_counter_segments if len(s) > 1]
+        )
+        filtered_segments_gt2 = [s for s in combined_trace_counter_segments if len(s) > 2]
+        if len(filtered_segments_gt2) > 0:
             features['lag_one_autocorr_full'] = numpy.mean([
-                lag_one_autocorrelate(s) for s in filtered_segments
+                lag_one_autocorrelate(s) for s in filtered_segments_gt2
             ])
 
     combined_deltas = []
     if len(combined_filtered_trace) > 0:
-        filtered_segments = [s for s in combined_filtered_trace_counter_segments if len(s) > 2]
-        if len(filtered_segments) > 0:
+        filtered_segments_gt1 = [s for s in combined_filtered_trace_counter_segments if len(s) > 1]
+        features['average_counter_segment_length_filtered'] = numpy.mean([len(s) for s in filtered_segments_gt1])
+
+        filtered_segments_gt2 = [s for s in combined_filtered_trace_counter_segments if len(s) > 2]
+        if len(filtered_segments_gt2) > 0:
             features['lag_one_autocorr_filtered'] = numpy.mean([
-                lag_one_autocorrelate(s) for s in filtered_segments
+                lag_one_autocorrelate(s) for s in filtered_segments_gt2
             ])
             features['loop_sequence_proportion_filtered'] = sum(
-                [len(s) for s in combined_filtered_trace_counter_segments if len(s) > 1]
+                [len(s) for s in filtered_segments_gt1]
             ) / len(combined_filtered_trace)
 
             if len(combined_trace) > 0:
                 features['loop_sequence_proportion'] = sum(
-                    [len(s) for s in combined_filtered_trace_counter_segments if len(s) > 1]
+                    [len(s) for s in filtered_segments_gt1]
                 ) / len(combined_trace)
 
-        for s in [s for s in combined_filtered_trace_counter_segments if len(s) > 1]:
+        for s in filtered_segments_gt1:
             combined_deltas += numpy.diff(s).tolist()
 
     if len(combined_deltas) > 1:

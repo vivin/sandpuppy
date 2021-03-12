@@ -7,7 +7,7 @@
 
 #define WIDTH    8u
 #define CUSTOM_CRASH 1
-
+/*
 struct message_struct {
     int other;
     int* mtype;
@@ -70,7 +70,7 @@ typedef struct {
         };
         int raw[3];
     };
-} VEC3D;
+} VEC3D; */
 
 const int MIN_MESSAGE_TYPE = 1;
 const int MAX_MESSAGE_TYPE = 8;
@@ -90,13 +90,46 @@ const unsigned int MAGIC_SEQUENCE = (TYPE_1 << (3u * WIDTH)) +
 const char delimiter = ':';
 unsigned int current_sequence = 0u;
 
-int coolio(COMMAND* cmdptr, UNION_STRUCT* us, VEC3D* vec3d, int val) {
-    cmdptr->other = val;
+int coolio(/*COMMAND* cmdptr, UNION_STRUCT* us, VEC3D* vec3d, */int val, int *ptr_val, int **ptr_ptr_val, char *string, char **nextword) {
+    /*cmdptr->other = val;
     us->o = val;
     *us->m = val;
     vec3d->x = val;
     vec3d->y = val;
-    vec3d->z = val;
+    vec3d->z = val;*/
+    if (string) {
+        printf("string is not null");
+    }
+
+    if (nextword) {
+        printf("nextword is not null");
+    }
+    
+    val = 10;
+    *ptr_val = 10;
+    **ptr_ptr_val = 10;
+
+    int arr[5] = {};
+    int* arr_ptr = arr;
+
+    *arr_ptr = 10;
+    arr_ptr++;
+    *arr_ptr = 20;
+    arr_ptr++;
+    *arr_ptr = 30;
+    arr_ptr--;
+    *arr_ptr = 40;
+    *(++arr_ptr) = 50;
+    *(arr_ptr++) = 60;
+
+    **ptr_ptr_val = 70;
+
+    arr_ptr = arr_ptr + 5;
+    *(arr_ptr) = 90;
+    *(arr_ptr + 1) = val;
+
+    printf("%d", *ptr_val);
+    return 0;
 }
 
 int process_message(const char* message_type_str, const char* message) {
@@ -116,11 +149,13 @@ int process_message(const char* message_type_str, const char* message) {
         return -1;
     }
 
+    int message_type = (int) value;
+
+    printf ("%d:%s\n", message_type, message);
+ /*
     const char *thecoolstring;
     int **foofoofoo;
     int *barbarbar;
-
-    int message_type = (int) value;
 
     barbarbar = &message_type;
     foofoofoo = &barbarbar;
@@ -181,8 +216,14 @@ int process_message(const char* message_type_str, const char* message) {
 
     struct anon an;
     an.ab = message_type;
+*/
+    int *mt_ptr = &message_type;
+    int **mt_ptr_ptr = &mt_ptr;
 
-    coolio(cptr, &us, vec3dptr, message_type);
+    int *num;
+
+    char *string;
+    coolio(/*cptr, &us, vec3dptr, */message_type, num, &num, string, &string/*mt_ptr, mt_ptr_ptr*/);
 
     current_sequence = (current_sequence << WIDTH) + message_type;
     printf("magic is: %d the current sequence is: %d\n", MAGIC_SEQUENCE, current_sequence);

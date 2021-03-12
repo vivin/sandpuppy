@@ -39,6 +39,7 @@ def graph_classes(path, variables, classes):
     data = {
         'lsp': [],
         'lspf': [],
+        'l1ac': [],
         'l1acf': [],
         'tmisc': [],
         'avscr': [],
@@ -52,6 +53,7 @@ def graph_classes(path, variables, classes):
         variable_features = variable_to_graph['features']
         data['lsp'].append(variable_features['loop_sequence_proportion'])
         data['lspf'].append(variable_features['loop_sequence_proportion_filtered'])
+        data['l1ac'].append(variable_features['lag_one_autocorr_full'])
         data['l1acf'].append(variable_features['lag_one_autocorr_filtered'])
         data['tmisc'].append(variable_features['times_modified_to_input_size_correlation'])
         data['varying_deltas'].append("varying" if variable_features['varying_deltas'] else "nonvarying")
@@ -68,35 +70,49 @@ def graph_classes(path, variables, classes):
         'l1acf',
         "Loop sequence proportion",
         "Lag-one auto-correlation (filtered)",
-        f"{path}/all_counters_enums_lsp_l1acf.png"
+        f"{path}/lsp_l1acf.png"
     )
     plot_group_scatterplots_for_features(
         'lspf',
         'l1acf',
         "Loop sequence proportion (filtered)",
         "Lag-one auto-correlation (filtered)",
-        f"{path}/all_counters_enums_lspf_l1acf.png"
+        f"{path}/lspf_l1acf.png"
     )
     plot_group_scatterplots_for_features(
         'tmisc',
         'l1acf',
         "Times modified to input-size correlation",
         "Lag-one auto-correlation (filtered)",
-        f"{path}/all_counters_enums_tmisc_l1acf.png"
+        f"{path}/tmisc_l1acf.png"
+    )
+    plot_group_scatterplots_for_features(
+        'avscr',
+        'l1ac',
+        "Average value set cardinality ratio",
+        "Lag-one auto-correlation",
+        f"{path}/avscr_l1acf.png"
     )
     plot_group_scatterplots_for_features(
         'avscr',
         'l1acf',
         "Average value set cardinality ratio",
         "Lag-one auto-correlation (filtered)",
-        f"{path}/all_counters_enums_avscr_l1acf.png"
+        f"{path}/avscr_l1acf.png"
     )
     plot_group_scatterplots_for_features(
         'avscr',
-        'average_delta',
+        'lsp',
         "Average value set cardinality ratio",
-        "Average delta",
-        f"{path}/all_counters_enums_avscr_average_delta.png"
+        "Loop sequence proportion",
+        f"{path}/avscr_average_delta.png"
+    )
+    plot_group_scatterplots_for_features(
+        'avscr',
+        'lspf',
+        "Average value set cardinality ratio",
+        "Loop sequence proportion (filtered)",
+        f"{path}/avscr_average_delta.png"
     )
 
     plot_group_histograms_for_feature(

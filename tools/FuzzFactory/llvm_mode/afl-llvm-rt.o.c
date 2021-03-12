@@ -81,6 +81,7 @@ static u8 is_persistent;
 
 static u8 vvdump_named_pipe_available;
 static u8 vvdump_env_vars_available;
+static u8 vvdump_debug_mode;
 static int vvdump_fd;
 
 /* SHM setup. */
@@ -427,12 +428,6 @@ uint32_t __hash_ints(uint32_t old, uint32_t val){
 }
 
 void __init_vvdump() {
-    if (access((char *) VVD_NAMED_PIPE_PATH, F_OK) == -1) {
-        vvdump_named_pipe_available = false;
-        return;
-    }
-
-    vvdump_named_pipe_available = true;
 
     u8 *experiment_name = getenv(VVD_EXP_NAME_ENV_VAR);
     u8 *subject = getenv(VVD_SUBJECT_ENV_VAR);
@@ -445,25 +440,41 @@ void __init_vvdump() {
     }
 
     vvdump_env_vars_available = true;
-    vvdump_fd = open(VVD_NAMED_PIPE_PATH, O_WRONLY); // | O_NONBLOCK would be fast but would cause us to lose messages if pipe fills up
+
+    u8 *debug_mode = getenv(VVD_DEBUG_MODE_ENV_VAR);
+    if (debug_mode) {
+        vvdump_debug_mode = true;
+    }
+
+    if (!vvdump_debug_mode && access((char *) VVD_NAMED_PIPE_PATH, F_OK) == -1) {
+        vvdump_named_pipe_available = false;
+        return;
+    }
+
+    if (!vvdump_debug_mode) {
+        vvdump_fd = open(VVD_NAMED_PIPE_PATH, O_WRONLY); // | O_NONBLOCK would be fast but would cause us to lose messages if pipe fills up
+        vvdump_named_pipe_available = true;
+    }
 
     // Unfortunately we can't explicitly close this but it does get automatically closed when program exits
 }
 
 void __dump_variable_value(const char* filename, const char* function_name, const char* variable_name, int declared_line, int modified_line, const char* var_val_format, ...) {
-    if (!vvdump_named_pipe_available) {
-        return;
-    }
-
     if (!vvdump_env_vars_available) {
-        // write an error to named pipe with pid
+        // write/print an error to named pipe with pid
         int pid = getpid();
 
         s32 len = snprintf(NULL, 0, "%d:error missing environment variables\n", pid);
         u8* line = malloc(len + 1);
-        sprintf((char *) line, "%d:error missing environment variables\n", pid);
-        write(vvdump_fd, line, len);
-        free(line);
+
+        if (vvdump_named_pipe_available && !vvdump_debug_mode) {
+            sprintf((char *) line, "%d:error missing environment variables\n", pid);
+            write(vvdump_fd, line, len);
+        } else {
+            printf("%d:error; missing environment variables\n", pid);
+        }
+
+       free(line);
 
         return;
     }
@@ -496,7 +507,6 @@ void __dump_variable_value(const char* filename, const char* function_name, cons
         (unsigned long long)(tv.tv_usec);
 
     // Now build the rest of it.
-
     s32 len = snprintf(
         NULL, 0, "%s:%s:%s:%s:%d:%s:%s:%s:%d:%d:%llu:%s\n",
          experiment_name,
@@ -513,43 +523,45 @@ void __dump_variable_value(const char* filename, const char* function_name, cons
          var_val
     );
 
-    u8* var_val_trace = malloc(len + 1);
-    if (var_val_trace) {
-        /*printf("%s:%s:%s:%s:%d:%s:%s:%s:%d:%d:%llu:%s\n",
-                experiment_name,
-                subject,
-                binary_context,
-                exec_context,
-                pid,
-                filename,
-                function_name,
-                variable_name,
-                declared_line,
-                modified_line,
-                timestamp,
-                var_val
-        );*/
+    if (vvdump_named_pipe_available && !vvdump_debug_mode) {
+        u8* var_val_trace = malloc(len + 1);
+        if (var_val_trace) {
+            sprintf((char *) var_val_trace, "%s:%s:%s:%s:%d:%s:%s:%s:%d:%d:%llu:%s\n",
+                    experiment_name,
+                    subject,
+                    binary_context,
+                    exec_context,
+                    pid,
+                    filename,
+                    function_name,
+                    variable_name,
+                    declared_line,
+                    modified_line,
+                    timestamp,
+                    var_val
+            );
 
-        sprintf((char *) var_val_trace, "%s:%s:%s:%s:%d:%s:%s:%s:%d:%d:%llu:%s\n",
-                experiment_name,
-                subject,
-                binary_context,
-                exec_context,
-                pid,
-                filename,
-                function_name,
-                variable_name,
-                declared_line,
-                modified_line,
-                timestamp,
-                var_val
+            write(vvdump_fd, var_val_trace, len);
+            free(var_val_trace);
+        }
+    } else {
+        printf("%s:%s:%s:%s:%d:%s:%s:%s:%d:%d:%llu:%s\n",
+               experiment_name,
+               subject,
+               binary_context,
+               exec_context,
+               pid,
+               filename,
+               function_name,
+               variable_name,
+               declared_line,
+               modified_line,
+               timestamp,
+               var_val
         );
-
-        write(vvdump_fd, var_val_trace, len);
-
-        free(var_val);
-        free(var_val_trace);
     }
+
+    free(var_val);
 
     va_end(var_val_vsprintf);
     va_end(var_val_vsnprintf);

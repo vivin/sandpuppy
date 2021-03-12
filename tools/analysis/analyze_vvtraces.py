@@ -131,7 +131,7 @@ def main(experiment: str, subject: str, binary: str, execution: str):
             print("")
             labels_to_description = {
                 'constants': "Constants",
-                'correlated_with_input_size': "Constants correlated with input size",
+                'correlated_with_input_size': "Variables correlated with input size",
                 'booleans': "Booleans",
                 'static_counters': "Static Counters",
                 'dynamic_counters': "Dynamic Counters",
@@ -220,12 +220,8 @@ def classify_variables(variables):
             print("      Attempting to classify {fqn}...".format(fqn=variable['fqn']))
 
         if classifiers.is_constant(variable):
-            if classifiers.is_correlated_with_input_size(variable):
-                variable['class'] = "correlated_with_input_size"
-                classified_vars['correlated_with_input_size'].append(variable)
-            else:
-                variable['class'] = "constant"
-                classified_vars['constants'].append(variable)
+            variable['class'] = "constant"
+            classified_vars['constants'].append(variable)
         elif classifiers.is_boolean(variable):
             variable['class'] = "boolean"
             classified_vars["booleans"].append(variable)
@@ -255,7 +251,7 @@ def classify_variables(variables):
             # TODO: check maybe. maybe print out the entropy for each var?
             if variable_features['varying_deltas'] \
                 and variable_features['loop_sequence_proportion'] < 0.9 \
-                    and variable_features['lag_one_autocorr_filtered'] < 0.9 \
+                    and variable_features['lag_one_autocorr_full'] < 0.9 \
                     and classifiers.is_enum(variable):
                 if classifiers.is_enum_deriving_values_from_input(variable):
                     variable['class'] = "enum_value_from_input"

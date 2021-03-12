@@ -62,7 +62,7 @@ class VariablePrintFeedback : public fuzzfactory::DomainFeedback<VariablePrintFe
             return;
         }
 
-        if (variableExists(var->getName().str())) {
+        if (!variableExists(var->getName().str())) {
             varToDeclaredLine[var->getName().str()] = var->getLine();
 
             std::cout << "  " << var->getName().str() << " declared on line " << var->getLine() << "\n";

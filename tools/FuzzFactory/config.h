@@ -367,6 +367,7 @@
 #define VVD_SUBJECT_ENV_VAR         "__VVD_SUBJECT"
 #define VVD_BIN_CONTEXT_ENV_VAR     "__VVD_BIN_CONTEXT"
 #define VVD_EXEC_CONTEXT_ENV_VAR    "__VVD_EXEC_CONTEXT"
+#define VVD_DEBUG_MODE_ENV_VAR      "__VVD_DEBUG_MODE"
 
 #define VVD_NAMED_PIPE_PATH         "/tmp/vvdump"
 

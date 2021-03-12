@@ -17,27 +17,68 @@ class VariableValueDumpFeedback : public BaseVariableValueFeedback<VariableValue
 
     Function *dumpVariableValueFunction;
 
-    void instrumentIfNecessary(Function* function, StoreInst *store) {
-        // Only instrument if the store instruction has debug metadata (without it we won't know what line the variable
-        // is being modified on).
-        // For now only handle int values. In future we can look at doubles, floats, etc., as well as strings. But
-        // strings will be tough (what if the pointer is to garbage? do we print? and also what if the strings are
-        // gigantic? limit to only 256 chars?).
-        if (store->getDebugLoc() && store->getValueOperand()->getType()->isIntegerTy()) {
-            std::string sourceFileName= store->getModule()->getSourceFileName();
-            std::string functionName = function->getName();
+    static bool modifiesIntegerVariable(StoreInst* store) {
+        return store->getDebugLoc() && store->getValueOperand()->getType()->isIntegerTy();
+    }
 
-            Value* value = store->getValueOperand();
-            Value* variable = store->getPointerOperand();
-            std::string variableName = getVariableName(variable);
-            if (!variableName.empty()) {
+    bool initializesIntegerFunctionArgument(StoreInst* store, const std::string& variableName) {
+        Type* valueType = store->getValueOperand()->getType();
+        /*std::cout << variableName << "is function arg: " << isFunctionArgument(variableName) << "\n"
+                  << "value operand is integer type: " << valueType->isIntegerTy() << "\n"
+                  << "value operand is pointer type: " << valueType->isPointerTy() << "\n";
+        if (valueType->isPointerTy()) {
+            std::cout << "resolves to integer: " << doesPointerTypeResolveToInteger(cast<PointerType>(valueType)) << "\n";
+        }*/
+
+        bool result = isFunctionArgument(variableName)
+                 && (valueType->isIntegerTy()
+                     || (valueType->isPointerTy() && doesPointerTypeResolveToInteger(cast<PointerType>(valueType))));
+
+        //std::cout << "result is " << result << "\n";
+        return result;
+    }
+
+    void instrumentIfNecessary(Function* function, StoreInst *store) {
+        std::string sourceFileName= store->getModule()->getSourceFileName();
+        std::string functionName = function->getName();
+
+        Value* value = store->getValueOperand();
+        Value* variable = store->getPointerOperand();
+        std::string variableName = getVariableName(variable);
+
+        // Only instrument if we could get a variable name and if the store instruction is modifying an integer variable
+        // or if the store instruction is initializing an integer function argument (we want to log those values).
+        if (!variableName.empty() && !isInvolvedInPointerArithmetic(variableName)
+            && (modifiesIntegerVariable(store) || initializesIntegerFunctionArgument(store, variableName))) {
                 createDumpVariableValueCall(function, store, variableName, value);
-            }
         }
     }
 
     void createDumpVariableValueCall(Function* function, StoreInst* store, const std::string& variableName, Value* value) {
         auto irb = insert_after(*store);
+
+        if (isFunctionArgument(variableName) && store->getValueOperand()->getType()->isPointerTy()) {
+            auto *type = store->getValueOperand()->getType();
+            int indirection = 0;
+            while (type->isPointerTy()) {
+                indirection++;
+                type = type->getPointerElementType();
+            }
+
+            // We can assume that at this point the type is an integer type because in instrumentIfNecessary we made
+            // sure that the function argument eventually resolves to an integer type even if it is a pointer. What
+            // we will do next is insert as many load statements as necessary in order to dereference the pointer. This
+            // depends on the level of indirection, which we have calculated.
+            Value* load = value;
+            unsigned int bitWidth = type->getIntegerBitWidth();
+            while (indirection > 0) {
+                load = (indirection == 1) ? irb.CreateLoad(getIntTy(bitWidth), load)
+                                          : irb.CreateLoad(getPointerToIntegerType(indirection - 1, bitWidth), load);
+                --indirection;
+            }
+
+            value = load;
+        }
 
         Value *variableNameValue = variableNameToValue[variableName];
         if (!variableNameValue) {
@@ -51,7 +92,8 @@ class VariableValueDumpFeedback : public BaseVariableValueFeedback<VariableValue
         }
 
         Value *declaredLineValue = getConst(varToDeclaredLine[variableName]);
-        Value *modifiedLineValue = getConst((int) store->getDebugLoc()->getLine());
+        Value *modifiedLineValue = store->getDebugLoc() ? getConst((int) store->getDebugLoc()->getLine())
+                                                        : getConst(varToDeclaredLine[variableName]);
 
         std::string valueFormatString = getFormatSpecifierForValue(value);
         Value *formatStringValue = formatStringToValue[valueFormatString];
@@ -150,7 +192,7 @@ protected:
         // Instrument store instructions to log variable values
         for (inst_iterator I = inst_begin(function), E = inst_end(function); I != E; ++I) {
             Instruction& instruction = *I;
-            if (instruction.hasMetadata() && isa<StoreInst>(instruction)) {
+            if (isa<StoreInst>(instruction)) {
                 instrumentIfNecessary(&function, cast<StoreInst>(&instruction));
             }
         }
