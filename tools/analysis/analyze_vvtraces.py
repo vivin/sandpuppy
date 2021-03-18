@@ -72,6 +72,15 @@ def main(experiment: str, subject: str, binary: str, execution: str):
     if not os.path.isdir(base_graphs_path):
         os.makedirs(base_graphs_path)
 
+    # TODO: see if you can parallelize this further. Collect everything into a list of tuples, including variables.
+    # TODO: The tuple would look like (filename, function, variables). Then you can use process pool executor over
+    # TODO: list. The function used should return classified variables for the given filename, function combination.
+    # TODO: This does mean that we need to maintain literally everything in memory... We would also be retrieving the
+    # TODO: variable traces first before we analyze them. Ideally it would be better to parallelize the retrieval and
+    # TODO: analysis for a filename, function, variable combination. This would mean starting a new session each time
+    # TODO: though because we cannot pickle the cassandra session. Not sure of the overhead of that, but I'm guessing
+    # TODO: it is lower than having to process each filename, function, variable combination serially. The execution
+    # TODO: time is dominated by the analysis and retrieval anyway. 
     all_classified_variables = []
     filenames = cassandra_trace_db.get_subject_filenames(session, subject)
     print("Subject {subject} has {num} files\n".format(subject=subject, num=len(filenames)))
