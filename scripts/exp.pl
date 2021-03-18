@@ -30,42 +30,42 @@ my $log = Log::Simple::Color->new;
               build => \&infantheap::build,
               fuzz  => \&infantheap::fuzz
           },
-          fuzz_time => 300
+          fuzz_time => 600
       },
       rarebug => {
           tasks => {
               build => \&rarebug::build,
               fuzz  => \&rarebug::fuzz
           },
-          fuzz_time => 300
+          fuzz_time => 600
       },
       maze => {
           tasks => {
               build => \&maze::build,
               fuzz  => \&maze::fuzz
           },
-          fuzz_time => 600
+          fuzz_time => 1200
       },
       libpng => {
           tasks => {
               build => \&libpng::build,
               fuzz  => \&libpng::fuzz
           },
-          fuzz_time => 3600
+          fuzz_time => 7200
       },
       readelf => {
           tasks => {
               build => \&readelf::build,
               fuzz  => \&readelf::fuzz
           },
-          fuzz_time => 3600
+          fuzz_time => 7200
       },
       libtpms => {
           tasks     => {
               build => \&libtpms::build,
               fuzz  => \&libtpms::fuzz
           },
-          fuzz_time => 3600
+          fuzz_time => 7200
       }
   };
 

@@ -1,5 +1,6 @@
 #define AFL_LLVM_PASS
 
+#include "llvm/Transforms/Utils/BasicBlockUtils.h"
 #include "fuzzfactory.hpp"
 #include <sstream>
 #include <fstream>
@@ -176,8 +177,9 @@ class BaseVariableValueFeedback : public DomainFeedback<V> {
 
             if (validStructAccess) {
                 // We're at an instruction that is not a GEP. It is probably either an alloca for the actual struct
-                // variable in question, or a load that is loading the struct address from a pointer variable. We can
-                // call getVariableName again to resolve the name.
+                // variable in question, a load that is loading the struct address from a pointer variable, or just
+                // a Value referring to the struct pointer (without a corresponding alloca). To resolve the name, we
+                // call getVariableName again.
                 std::string structVarName = getVariableName(pointerOperand);
                 if (!structVarName.empty()) {
                     fullyQualifiedFieldName = structVarName + "." + prefix + element;
@@ -222,14 +224,33 @@ protected:
         return type->isIntegerTy();
     }
 
-    Type* getPointerToIntegerType(int indirection, unsigned int bitWidth) {
+    IntegerType* unwrapToIntegerType(PointerType* pointerType) {
+        Type* type = pointerType;
+        while (isa<PointerType>(type)) {
+            type = type->getPointerElementType();
+        }
+
+        if (!type->isIntegerTy()) {
+            std::cerr << "Cannot unwrap to IntegerType as provided type is not a pointer to one.";
+            abort();
+        }
+
+        return cast<IntegerType>(type);
+    }
+
+    PointerType* getPointerToIntegerType(int indirection, unsigned int bitWidth) {
+        if (indirection <= 0) {
+            std::cerr << "Cannot create a pointer to integer type with zero or negative levels of indirection.\n";
+            abort();
+        }
+
         Type* type = DomainFeedback<V>::getIntTy(bitWidth);
         while (indirection > 0) {
             type = PointerType::get(type, 0);
             --indirection;
         }
 
-        return type;
+        return cast<PointerType>(type);
     }
 
     std::string getVariableName(Value* var) {
@@ -247,7 +268,7 @@ protected:
         } else if (isa<GetElementPtrInst>(var) && cast<GetElementPtrInst>(var)->getSourceElementType()->isStructTy()) {
             // Handle case where we're modifying a struct field
             return getFullyQualifiedFieldName(cast<GetElementPtrInst>(var));
-        } else if (variableExists(varName)) {
+        } else if (variableExists(varName) && isa<AllocaInst>(var)) {
             // Variable exists and we are at an alloca instruction
             auto *alloca = cast<AllocaInst>(var);
 
@@ -294,6 +315,10 @@ protected:
                 }
             }
 
+            return varName;
+        } else if (variableExists(varName)) {
+            // There is no alloca; var is probably just a Value. This is seen in cases where a GEP uses as pointer
+            // operand, a struct without a corresponding alloca.
             return varName;
         }
 

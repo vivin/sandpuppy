@@ -90,24 +90,18 @@ const unsigned int MAGIC_SEQUENCE = (TYPE_1 << (3u * WIDTH)) +
 const char delimiter = ':';
 unsigned int current_sequence = 0u;
 
-int coolio(/*COMMAND* cmdptr, UNION_STRUCT* us, VEC3D* vec3d, */int val, int *ptr_val, int **ptr_ptr_val, char *string, char **nextword) {
+int coolio(/*COMMAND* cmdptr, UNION_STRUCT* us, VEC3D* vec3d, */int val, /*int *ptr_val, int **ptr_ptr_val,*/ char *string, char **nextword) {
     /*cmdptr->other = val;
     us->o = val;
     *us->m = val;
     vec3d->x = val;
     vec3d->y = val;
     vec3d->z = val;*/
-    if (string) {
-        printf("string is not null");
-    }
 
-    if (nextword) {
-        printf("nextword is not null");
-    }
-    
     val = 10;
+    /*
     *ptr_val = 10;
-    **ptr_ptr_val = 10;
+    **ptr_ptr_val = 10;*/
 
     int arr[5] = {};
     int* arr_ptr = arr;
@@ -122,13 +116,13 @@ int coolio(/*COMMAND* cmdptr, UNION_STRUCT* us, VEC3D* vec3d, */int val, int *pt
     *(++arr_ptr) = 50;
     *(arr_ptr++) = 60;
 
-    **ptr_ptr_val = 70;
+    //**ptr_ptr_val = 70;
 
     arr_ptr = arr_ptr + 5;
     *(arr_ptr) = 90;
     *(arr_ptr + 1) = val;
 
-    printf("%d", *ptr_val);
+    //printf("%d", *ptr_val);
     return 0;
 }
 
@@ -222,8 +216,10 @@ int process_message(const char* message_type_str, const char* message) {
 
     int *num;
 
-    char *string;
-    coolio(/*cptr, &us, vec3dptr, */message_type, num, &num, string, &string/*mt_ptr, mt_ptr_ptr*/);
+    char *weirdo_string = NULL;
+    coolio(/*cptr, &us, vec3dptr, */message_type, /*num, &num,*/ weirdo_string, &weirdo_string/*, mt_ptr, mt_ptr_ptr*/);
+    weirdo_string = "hello";
+    coolio(message_type, weirdo_string, &weirdo_string);
 
     current_sequence = (current_sequence << WIDTH) + message_type;
     printf("magic is: %d the current sequence is: %d\n", MAGIC_SEQUENCE, current_sequence);

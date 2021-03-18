@@ -62,10 +62,10 @@ sub build {
 
     if ($waypoints ne "none") {
         $ENV{"WAYPOINTS"} = $waypoints;
-        system ("autoreconf --verbose --force --install && CC=\"$build_command\" ./configure --with-openssl --with-tpm2 && make -j8");
+        system ("autoreconf --verbose --force --install && CC=\"$build_command\" ./configure --with-openssl --with-tpm2 && make -j12");
         delete $ENV{"WAYPOINTS"};
     } else {
-        system ("autoreconf --verbose --force --install && CC=\"$build_command\" ./configure --with-openssl --with-tpm2 && make -j8");
+        system ("autoreconf --verbose --force --install && CC=\"$build_command\" ./configure --with-openssl --with-tpm2 && make -j12");
     }
 
     if ($? != 0) {

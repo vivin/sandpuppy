@@ -66,10 +66,10 @@ sub build {
 
     if ($waypoints ne "none") {
         $ENV{"WAYPOINTS"} = $waypoints;
-        system ("CC=\"$build_command\" ./configure --disable-shared && make -j8");
+        system ("CC=\"$build_command\" ./configure --disable-shared && make -j12");
         delete $ENV{"WAYPOINTS"};
     } else {
-        system ("CC=\"$build_command\" ./configure --disable-shared && make -j8");
+        system ("CC=\"$build_command\" ./configure --disable-shared && make -j12");
     }
 
     if ($? != 0) {

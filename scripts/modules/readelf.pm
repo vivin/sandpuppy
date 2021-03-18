@@ -62,10 +62,10 @@ sub build {
 
     if ($waypoints ne "none") {
         $ENV{"WAYPOINTS"} = $waypoints;
-        system ("CC=\"$build_command\" ./configure && make -j8");
+        system ("CC=\"$build_command\" ./configure && make -j12");
         delete $ENV{"WAYPOINTS"};
     } else {
-        system ("CC=\"$build_command\" ./configure && make -j8");
+        system ("CC=\"$build_command\" ./configure && make -j12");
     }
 
     if ($? != 0) {

@@ -30,9 +30,13 @@ class VariableValueDumpFeedback : public BaseVariableValueFeedback<VariableValue
             std::cout << "resolves to integer: " << doesPointerTypeResolveToInteger(cast<PointerType>(valueType)) << "\n";
         }*/
 
+        // We will ignore ints with width 8, meaning that we will ignore bytes and pointers to bytes. This is because
+        // we currently ignore char* pointers which are usually strings.
         bool result = isFunctionArgument(variableName)
                  && (valueType->isIntegerTy()
-                     || (valueType->isPointerTy() && doesPointerTypeResolveToInteger(cast<PointerType>(valueType))));
+                     || (valueType->isPointerTy()
+                         && doesPointerTypeResolveToInteger(cast<PointerType>(valueType))
+                         && unwrapToIntegerType(cast<PointerType>(valueType))->getIntegerBitWidth() > 8));
 
         //std::cout << "result is " << result << "\n";
         return result;
@@ -46,8 +50,10 @@ class VariableValueDumpFeedback : public BaseVariableValueFeedback<VariableValue
         Value* variable = store->getPointerOperand();
         std::string variableName = getVariableName(variable);
 
-        // Only instrument if we could get a variable name and if the store instruction is modifying an integer variable
-        // or if the store instruction is initializing an integer function argument (we want to log those values).
+        // Only instrument if we could get a variable name and if the variable is not involved in pointer arithmetic
+        // (doesn't make sense to log the value because the pointer could be to a set of value likes an array) and if
+        // the store instruction is modifying an integer variable or if the store instruction is initializing an integer
+        // function argument (we want to log those values).
         if (!variableName.empty() && !isInvolvedInPointerArithmetic(variableName)
             && (modifiesIntegerVariable(store) || initializesIntegerFunctionArgument(store, variableName))) {
                 createDumpVariableValueCall(function, store, variableName, value);
@@ -57,7 +63,30 @@ class VariableValueDumpFeedback : public BaseVariableValueFeedback<VariableValue
     void createDumpVariableValueCall(Function* function, StoreInst* store, const std::string& variableName, Value* value) {
         auto irb = insert_after(*store);
 
+        // If this is a function argument and it is a pointer, we need to dereference its value so that we can print it.
+        // At the same time we also need to guard dereferencing by performing null checks against the pointer.
         if (isFunctionArgument(variableName) && store->getValueOperand()->getType()->isPointerTy()) {
+            std::string notNullVariableName = variableName + ".is.not.null";
+            std::string ifVariableIsNotNullBlockName = "if." + notNullVariableName;
+            std::string ifVariableIsNotNullEndBlockName = ifVariableIsNotNullBlockName + ".end";
+
+            // Set insertion point to start at the next non-debug instruction.
+            irb.SetInsertPoint(store->getNextNonDebugInstruction());
+
+            // We need to generate an if-then so that we only log the variable value if the pointer is not null.
+            // Otherwise we will get a SIGSEGV. We will split the block before the next non-debug instruction.
+            auto *splitBeforeInstruction = store->getNextNonDebugInstruction();
+            auto *pointerType = cast<PointerType>(store->getPointerOperandType()->getPointerElementType());
+            auto *loadPointer = irb.CreateAlignedLoad(pointerType, store->getPointerOperand(), store->getAlign());
+            auto *condition = irb.CreateICmpNE(loadPointer, ConstantPointerNull::get(pointerType), notNullVariableName);
+            auto *thenBlock = SplitBlockAndInsertIfThen(condition, splitBeforeInstruction, false);
+
+            thenBlock->getParent()->setName(ifVariableIsNotNullBlockName);
+            splitBeforeInstruction->getParent()->setName(ifVariableIsNotNullEndBlockName);
+
+            irb.SetInsertPoint(thenBlock);
+
+            // Find how many levels of indirection are involved
             auto *type = store->getValueOperand()->getType();
             int indirection = 0;
             while (type->isPointerTy()) {
@@ -68,16 +97,26 @@ class VariableValueDumpFeedback : public BaseVariableValueFeedback<VariableValue
             // We can assume that at this point the type is an integer type because in instrumentIfNecessary we made
             // sure that the function argument eventually resolves to an integer type even if it is a pointer. What
             // we will do next is insert as many load statements as necessary in order to dereference the pointer. This
-            // depends on the level of indirection, which we have calculated.
-            Value* load = value;
+            // depends on the level of indirection, which we have calculated. While we do that we will also guard these
+            // with null checks as we did above.
             unsigned int bitWidth = type->getIntegerBitWidth();
-            while (indirection > 0) {
-                load = (indirection == 1) ? irb.CreateLoad(getIntTy(bitWidth), load)
-                                          : irb.CreateLoad(getPointerToIntegerType(indirection - 1, bitWidth), load);
+            Value* load = value;
+            while (indirection > 1) {
+                pointerType = getPointerToIntegerType(indirection - 1, bitWidth);
+                load = irb.CreateAlignedLoad(pointerType, load, store->getAlign());
+                condition = irb.CreateICmpNE(load, ConstantPointerNull::get(pointerType), notNullVariableName);
+                splitBeforeInstruction = cast<Instruction>(condition)->getNextNonDebugInstruction();
+                thenBlock = SplitBlockAndInsertIfThen(condition, splitBeforeInstruction, false);
+
+                thenBlock->getParent()->setName(ifVariableIsNotNullBlockName);
+                splitBeforeInstruction->getParent()->setName(ifVariableIsNotNullEndBlockName);
+
+                irb.SetInsertPoint(thenBlock);
+
                 --indirection;
             }
 
-            value = load;
+            value = irb.CreateAlignedLoad(getIntTy(bitWidth), load, store->getAlign());
         }
 
         Value *variableNameValue = variableNameToValue[variableName];
@@ -105,9 +144,6 @@ class VariableValueDumpFeedback : public BaseVariableValueFeedback<VariableValue
             );
             formatStringToValue[valueFormatString] = formatStringValue;
         }
-
-        // only need to do this if you need to load the value explicitly given a reference to the variable
-        //auto loadedValue = irb.CreateLoad(variable->getType()->getPointerElementType(), variable, variable->getName().str() + std::to_string(store->getDebugLoc()->getLine()));
 
         // Start setting up args for __dump_variable_value
         std::vector<Value *> dumpVariableValueArgs;
@@ -189,12 +225,18 @@ protected:
             function.getName().str()
         );
 
+        std::vector<StoreInst*> storeInstructions;
+
         // Instrument store instructions to log variable values
         for (inst_iterator I = inst_begin(function), E = inst_end(function); I != E; ++I) {
             Instruction& instruction = *I;
             if (isa<StoreInst>(instruction)) {
-                instrumentIfNecessary(&function, cast<StoreInst>(&instruction));
+                storeInstructions.emplace_back(cast<StoreInst>(&instruction));
             }
+        }
+
+        for (auto *storeInstruction : storeInstructions) {
+            instrumentIfNecessary(&function, storeInstruction);
         }
 
         variableNameToValue.clear();

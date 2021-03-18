@@ -82,6 +82,7 @@ static u8 is_persistent;
 static u8 vvdump_named_pipe_available;
 static u8 vvdump_env_vars_available;
 static u8 vvdump_debug_mode;
+static bool vvdump_error_printed = false;
 static int vvdump_fd;
 
 /* SHM setup. */
@@ -470,11 +471,12 @@ void __dump_variable_value(const char* filename, const char* function_name, cons
         if (vvdump_named_pipe_available && !vvdump_debug_mode) {
             sprintf((char *) line, "%d:error missing environment variables\n", pid);
             write(vvdump_fd, line, len);
-        } else {
-            printf("%d:error; missing environment variables\n", pid);
+        } else if (!vvdump_error_printed) {
+            fprintf(stderr, "%d:error; missing environment variables\n", pid);
+            vvdump_error_printed = true;
         }
 
-       free(line);
+        free(line);
 
         return;
     }
