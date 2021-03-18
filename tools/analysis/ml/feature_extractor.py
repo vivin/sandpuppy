@@ -1,55 +1,48 @@
 import numpy
 
 
-def derive_features(variable):
-    if 'features' not in variable:
-        variable['features'] = {
-            'num_traces': 0,
-            'num_modified_lines': 0,
-            'num_unique_values': 0,
-            'times_modified': [],
-            'times_modified_variance': 0,
-            'times_modified_min': 0,
-            'times_modified_max': 0,
-            'times_modified_mean': 0,
-            'times_modified_stddev': 0,
-            'input_sizes': [],
-            'input_sizes_variance': 0,
-            'min_values': [],
-            'min_values_variance': 0,
-            'max_values': [],
-            'max_values_variance': 0,
-            'max_value_to_input_size_correlation': 0,
-            'average_delta': 0,
-            'varying_deltas': False,
-            'average_value_set_cardinality_ratio': 0,
-            'loop_sequence_proportion': 0,
-            'loop_sequence_proportion_filtered': 0,
-            'average_counter_segment_length': 0,
-            'average_counter_segment_length_filtered': 0,
-            'jaggedness_full': None,
-            'jaggedness_filtered': None,
-            'lag_one_autocorr_full': 0,
-            'lag_one_autocorr_filtered': 0,
-            'order_of_magnitudes_stddev': 0,
-            'times_modified_to_input_size_correlation': 0
-        }
+def extract_features(variable):
+    features = {
+        'num_traces': len(variable['info']['traces']),
+        'num_modified_lines': len(variable['info']['modified_lines']),
+        'num_unique_values': len(set(variable['info']['variable_values'])),
+        'values_set': set(variable['info']['variable_values']),
+        'times_modified': [],
+        'times_modified_variance': 0,
+        'times_modified_min': 0,
+        'times_modified_max': 0,
+        'times_modified_mean': 0,
+        'times_modified_stddev': 0,
+        'input_sizes': [],
+        'input_sizes_variance': 0,
+        'min_values': [],
+        'min_values_variance': 0,
+        'max_values': [],
+        'max_values_variance': 0,
+        'max_value_to_input_size_correlation': 0,
+        'average_delta': 0,
+        'varying_deltas': False,
+        'average_value_set_cardinality_ratio': 0,
+        'loop_sequence_proportion': 0,
+        'loop_sequence_proportion_filtered': 0,
+        'average_counter_segment_length': 0,
+        'average_counter_segment_length_filtered': 0,
+        'jaggedness_full': None,
+        'jaggedness_filtered': None,
+        'lag_one_autocorr_full': 0,
+        'lag_one_autocorr_filtered': 0,
+        'order_of_magnitudes_stddev': 0,
+        'times_modified_to_input_size_correlation': 0
+    }
 
     # If there are no traces for this variable, return
-    if len(variable['info']['traces']) < 1:
-        return
-
-    features = variable['features']
+    if features['num_traces'] < 1:
+        return features
 
     # First we derive some basic features that are useful when deriving additional features. Among these we have
     # max_values, max_values_variance, input_sizes, input_sizes_variance, and max_value_to_input_size_correlation, which
     # can help us identify "size" or "length" type variables, including counters that count up to some value that is
     # correlated with input size.
-
-    features['num_traces'] = len(variable['info']['traces'])
-    features['num_modified_lines'] = len(variable['info']['modified_lines'])
-    features['num_unique_values'] = len(set(variable['info']['variable_values']))
-
     times_modified = features['times_modified']
     input_sizes = features['input_sizes']
     min_values = features['min_values']
@@ -243,7 +236,7 @@ def derive_features(variable):
     # We will use the standard deviation of the order of magnitudes to make sure that the distribution of enum
     # values do not vary too wildly. For example, something that takes on values like 1, 2, 4, and then 500000
     # is probably not an enum.
-    variable_values = numpy.array(variable['info']['variable_values'])
+    variable_values = variable['info']['variable_values']
     order_of_magnitudes = [numpy.log10(v) if v > 0 else 0 for v in variable_values]
     features['order_of_magnitudes_stddev'] = numpy.std(order_of_magnitudes)
 
@@ -260,3 +253,5 @@ def derive_features(variable):
     if times_modified_variance > 0 and input_sizes_variance > 0:
         r = numpy.corrcoef(times_modified, input_sizes)
         features['times_modified_to_input_size_correlation'] = r[0, 1]
+
+    return features

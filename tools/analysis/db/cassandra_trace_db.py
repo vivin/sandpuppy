@@ -82,7 +82,11 @@ def get_subject_file_function_variables_of_type(session, subject, filename, func
 
 
 def populate_variable_value_traces(variable, session, experiment, subject, binary, execution, exit_status, filename,
-                                   function, declared_line, variable_type, variable_name):
+                                   function):
+    declared_line = variable['declared_line']
+    variable_type = variable['type']
+    variable_name = variable['name']
+
     trace_statement = session.prepare(
         "SELECT pid, input_size, modified_line, variable_value, timestamp FROM process_variable_value_traces "
         "WHERE experiment = ? "
@@ -138,6 +142,14 @@ def populate_variable_value_traces(variable, session, experiment, subject, binar
 
         info['modified_line_values'][modified_line].append(variable_value)
 
-    info['traces'] = info['pid_traces'].values()
+    info['traces'] = list(info['pid_traces'].values()) # Need to do this otherwise stupid multiprocessing doesn't work
 
     variable['info'] = info
+
+    print("      Retrieving value traces for {file}::{function}::{type} {name}:{line}".format(
+        file=filename,
+        function=function,
+        type=variable['type'],
+        name=variable['name'],
+        line=variable['declared_line']
+    ))
