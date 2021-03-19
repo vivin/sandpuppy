@@ -3,21 +3,19 @@ import numpy
 
 def extract_features(variable):
     features = {
-        'num_traces': len(variable['info']['traces']),
-        'num_modified_lines': len(variable['info']['modified_lines']),
-        'num_unique_values': len(set(variable['info']['variable_values'])),
-        'values_set': set(variable['info']['variable_values']),
-        'times_modified': [],
+        'num_traces': len(variable['traces_info']['traces']),
+        'num_modified_lines': len(variable['traces_info']['modified_lines']),
+        'num_unique_values': len(set(variable['traces_info']['variable_values'])),
+        'values_set': set(variable['traces_info']['variable_values']),
         'times_modified_variance': 0,
         'times_modified_min': 0,
         'times_modified_max': 0,
         'times_modified_mean': 0,
         'times_modified_stddev': 0,
-        'input_sizes': [],
         'input_sizes_variance': 0,
-        'min_values': [],
+        'most_min_value': 0,
         'min_values_variance': 0,
-        'max_values': [],
+        'most_max_value': 0,
         'max_values_variance': 0,
         'max_value_to_input_size_correlation': 0,
         'average_delta': 0,
@@ -43,11 +41,11 @@ def extract_features(variable):
     # max_values, max_values_variance, input_sizes, input_sizes_variance, and max_value_to_input_size_correlation, which
     # can help us identify "size" or "length" type variables, including counters that count up to some value that is
     # correlated with input size.
-    times_modified = features['times_modified']
-    input_sizes = features['input_sizes']
-    min_values = features['min_values']
-    max_values = features['max_values']
-    for trace in variable['info']['traces']:
+    times_modified = []
+    input_sizes = []
+    min_values = []
+    max_values = []
+    for trace in variable['traces_info']['traces']:
         trace_values = trace['values']
         times_modified.append(len(trace_values))
         if len(trace_values) > 0:
@@ -66,9 +64,11 @@ def extract_features(variable):
         features['input_sizes_variance'] = numpy.var(input_sizes)
 
     if len(min_values) > 0:
+        features['most_min_value'] = min(min_values)
         features['min_values_variance'] = numpy.var(min_values)
 
     if len(max_values) > 0:
+        features['most_max_value'] = max(max_values)
         features['max_values_variance'] = numpy.var(max_values)
 
     input_sizes_variance = features['input_sizes_variance']
@@ -145,7 +145,7 @@ def extract_features(variable):
     combined_filtered_trace = []
     combined_filtered_trace_counter_segments = []
     traces = []
-    for trace in variable['info']['traces']:
+    for trace in variable['traces_info']['traces']:
         trace_values = trace['values']
         proportion_sum += len(set(trace_values)) / features['num_unique_values']
 
@@ -236,7 +236,7 @@ def extract_features(variable):
     # We will use the standard deviation of the order of magnitudes to make sure that the distribution of enum
     # values do not vary too wildly. For example, something that takes on values like 1, 2, 4, and then 500000
     # is probably not an enum.
-    variable_values = variable['info']['variable_values']
+    variable_values = variable['traces_info']['variable_values']
     order_of_magnitudes = [numpy.log10(v) if v > 0 else 0 for v in variable_values]
     features['order_of_magnitudes_stddev'] = numpy.std(order_of_magnitudes)
 

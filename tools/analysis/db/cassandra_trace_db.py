@@ -66,6 +66,8 @@ def get_subject_file_function_variables_of_type(session, subject, filename, func
     variables = []
     for row in rows:
         variables.append({
+            'filename': filename,
+            'function': function,
             'type': row[0],
             'name': row[1],
             'fqn': "{filename}::{function}::{variable_type} {variable_name}:{declared_line}".format(
@@ -81,8 +83,8 @@ def get_subject_file_function_variables_of_type(session, subject, filename, func
     return variables
 
 
-def populate_variable_value_traces(variable, session, experiment, subject, binary, execution, exit_status, filename,
-                                   function):
+def retrieve_variable_value_traces_information(variable, session, experiment, subject, binary, execution, exit_status,
+                                               filename, function):
     declared_line = variable['declared_line']
     variable_type = variable['type']
     variable_name = variable['name']
@@ -105,51 +107,54 @@ def populate_variable_value_traces(variable, session, experiment, subject, binar
     rows = session.execute(trace_statement, [experiment, subject, binary, execution, exit_status, filename, function,
                                              declared_line, variable_type, variable_name])
 
-    info = {
+    traces_info = {
         'traces': [],
-        'pid_traces': {},
         'modified_lines': set(),
         'variable_values': [],
         'modified_line_values': {}
     }
 
+    traces_by_pid = {}
     for row in rows:
+
         pid = row[0]
-        if pid not in info["pid_traces"]:
-            info["pid_traces"][pid] = {
-                'input_size': -1,
+        input_size = row[1]
+        if pid not in traces_by_pid:
+            traces_by_pid[pid] = {
+                'pid': pid,
+                'input_size': input_size,
                 'items': [],
                 'values': []
             }
 
-        input_size = row[1]
+        pid_trace = traces_by_pid[pid]
+
         modified_line = row[2]
         variable_value = int(row[3]) if variable_type == "int" else row[3]
 
-        info['pid_traces'][pid]['input_size'] = input_size
-        info['pid_traces'][pid]['items'].append({
+        pid_trace['items'].append({
             'modified_line': modified_line,
             'variable_value': variable_value,
             'ts': row[4]
         })
-        info['pid_traces'][pid]['values'].append(variable_value)
+        pid_trace['values'].append(variable_value)
 
-        info['modified_lines'].add(modified_line)
-        info['variable_values'].append(variable_value)
+        traces_info['modified_lines'].add(modified_line)
+        traces_info['variable_values'].append(variable_value)
 
-        if modified_line not in info['modified_line_values']:
-            info['modified_line_values'][modified_line] = []
+        if modified_line not in traces_info['modified_line_values']:
+            traces_info['modified_line_values'][modified_line] = []
 
-        info['modified_line_values'][modified_line].append(variable_value)
+        traces_info['modified_line_values'][modified_line].append(variable_value)
 
-    info['traces'] = list(info['pid_traces'].values()) # Need to do this otherwise stupid multiprocessing doesn't work
+    # Need to wrap with list(...) otherwise stupid multiprocessing doesn't work
+    traces_info['traces'] = list(traces_by_pid.values())
 
-    variable['info'] = info
-
-    print("      Retrieving value traces for {file}::{function}::{type} {name}:{line}".format(
-        file=filename,
-        function=function,
-        type=variable['type'],
-        name=variable['name'],
-        line=variable['declared_line']
-    ))
+    # print("  Retrieved value traces for {file}::{function}::{type} {name}:{line}".format(
+    #     file=filename,
+    #     function=function,
+    #     type=variable['type'],
+    #     name=variable['name'],
+    #     line=variable['declared_line']
+    # ))
+    return traces_info

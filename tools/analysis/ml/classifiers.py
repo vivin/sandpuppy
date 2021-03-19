@@ -3,7 +3,7 @@ def is_constant(features):
         return False
 
     num_unique_values = features['num_unique_values']
-    most_min_value = min(features['min_values'])
+    most_min_value = features['most_min_value']
     variable_values_set = features['values_set']
 
     # If the variable takes on only one unique value, it is a constant. However a variable could be defined and then
@@ -23,11 +23,6 @@ def is_boolean(features):
 
 
 def is_correlated_with_input_size(features):
-    max_values = features['max_values']
-    input_sizes = features['input_sizes']
-    if len(max_values) == 0 or len(input_sizes) == 0:
-        return False
-
     max_values_variance = features['max_values_variance']
     input_sizes_variance = features['input_sizes_variance']
     if max_values_variance == 0 or input_sizes_variance == 0:
