@@ -168,7 +168,7 @@ sub fuzz {
 
     # For non-deterministic... libtpms runs super slow. so to get an adequate distribution of values, we need it to
     # run through provided testcases
-    $fuzz_command .= " -d";
+    #$fuzz_command .= " -d";
 
     $fuzz_command .= " $binary \@\@";
 

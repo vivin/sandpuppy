@@ -29,6 +29,8 @@ def extract_features(variable):
         'jaggedness_filtered': None,
         'lag_one_autocorr_full': 0,
         'lag_one_autocorr_filtered': 0,
+        'second_difference_roughness': -1,
+        'second_difference_roughness_filtered': -1,
         'order_of_magnitudes_stddev': 0,
         'times_modified_to_input_size_correlation': 0
     }
@@ -95,6 +97,11 @@ def extract_features(variable):
 
         return smoothed
 
+    # Note that this function will also return segments containing a run of same values if they are present in the
+    # array. These are technically not counter segments since the values don't change. However it shouldn't really
+    # affect "true" counters as far as roughness measures are concerned, because these segments are still smooth.
+    # We do ignore such segments however, when we calculate the loop-sequence proportion since these segments are not
+    # part of a loop.
     def counter_segments(arr):
         segments = []
 
@@ -128,6 +135,17 @@ def extract_features(variable):
             return 1
 
         return 0
+
+    def roughness(x):
+        first_d = numpy.diff(x)
+        if numpy.min(first_d) < 0:
+            first_d += numpy.abs(numpy.min(first_d))
+
+        norm_denominator = numpy.max(first_d) - numpy.min(first_d)
+        first_d_norm = (first_d - numpy.min(first_d)) / (norm_denominator if norm_denominator != 0 else 1)
+        second_d_norm = numpy.diff(first_d_norm)
+
+        return numpy.mean(numpy.divide(numpy.square(second_d_norm), 4))
 
     # First we are going to filter out and clean up traces. We ignore any trace with less than two items. Then we
     # will clean up "runs" of values in a trace. Runs of values can happen normally for non-counter variables. But
@@ -173,10 +191,13 @@ def extract_features(variable):
         features['average_counter_segment_length'] = numpy.mean(
             [len(s) for s in combined_trace_counter_segments if len(s) > 1]
         )
-        filtered_segments_gt2 = [s for s in combined_trace_counter_segments if len(s) > 2]
-        if len(filtered_segments_gt2) > 0:
+        segments_gt2 = [s for s in combined_trace_counter_segments if len(s) > 2]
+        if len(segments_gt2) > 0:
             features['lag_one_autocorr_full'] = numpy.mean([
-                lag_one_autocorrelate(s) for s in filtered_segments_gt2
+                lag_one_autocorrelate(s) for s in segments_gt2
+            ])
+            features['second_difference_roughness'] = numpy.mean([
+                roughness(s) for s in segments_gt2
             ])
 
     combined_deltas = []
@@ -189,10 +210,15 @@ def extract_features(variable):
             features['lag_one_autocorr_filtered'] = numpy.mean([
                 lag_one_autocorrelate(s) for s in filtered_segments_gt2
             ])
-            features['loop_sequence_proportion_filtered'] = sum(
-                [len(s) for s in filtered_segments_gt1]
-            ) / len(combined_filtered_trace)
+            features['second_difference_roughness_filtered'] = numpy.mean([
+                roughness(s) for s in filtered_segments_gt2
+            ])
+            features['loop_sequence_proportion_filtered'] = sum([
+                len(s) for s in filtered_segments_gt1
+            ]) / len(combined_filtered_trace)
 
+            # Here we don't use counter segments identified in the combined trace because those can include runs of
+            # similar values, and so aren't part of a loop.
             if len(combined_trace) > 0:
                 features['loop_sequence_proportion'] = sum(
                     [len(s) for s in filtered_segments_gt1]
@@ -247,8 +273,6 @@ def extract_features(variable):
     # Each array has an entry per process trace. The first array will holds the number of times a variable was
     # modified, and the second holds corresponding input sizes.
     times_modified_variance = features['times_modified_variance']
-
-    # TODO: add second roughness/jaggedness measure.
 
     if times_modified_variance > 0 and input_sizes_variance > 0:
         r = numpy.corrcoef(times_modified, input_sizes)

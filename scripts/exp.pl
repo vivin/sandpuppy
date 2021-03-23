@@ -51,7 +51,7 @@ my $log = Log::Simple::Color->new;
               build => \&libpng::build,
               fuzz  => \&libpng::fuzz
           },
-          fuzz_time => 7200
+          fuzz_time => 14400
       },
       readelf => {
           tasks => {
@@ -65,7 +65,7 @@ my $log = Log::Simple::Color->new;
               build => \&libtpms::build,
               fuzz  => \&libtpms::fuzz
           },
-          fuzz_time => 7200
+          fuzz_time => 14400
       }
   };
 
