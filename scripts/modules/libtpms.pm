@@ -4,6 +4,7 @@ use strict;
 use warnings;
 use Log::Simple::Color;
 use File::Path qw(make_path);
+use utils;
 
 my $log = Log::Simple::Color->new;
 my $BASEPATH = glob "~/Projects/phd";
@@ -55,18 +56,18 @@ sub build {
 
     my $use_asan = ($context =~ /asan/);
     if ($use_asan) {
-        $build_command .= " -fsanitize=address";
+        $ENV{"AFL_USE_ASAN"} = 1;
     }
-
-    # TODO: have to account for WEJON instrumentation waypoint eventually... similar arg like functions file
 
     if ($waypoints ne "none") {
         $ENV{"WAYPOINTS"} = $waypoints;
         system ("autoreconf --verbose --force --install && CC=\"$build_command\" ./configure --with-openssl --with-tpm2 && make -j12");
-        delete $ENV{"WAYPOINTS"};
     } else {
         system ("autoreconf --verbose --force --install && CC=\"$build_command\" ./configure --with-openssl --with-tpm2 && make -j12");
     }
+
+    delete $ENV{"WAYPOINTS"};
+    delete $ENV{"AFL_USE_ASAN"};
 
     if ($? != 0) {
         die "Make failed";
@@ -76,27 +77,14 @@ sub build {
 
     my $binary_base = "$workspace/binaries";
     my $binary_dir =  "$binary_base/$context";
-    my $binary = "$binary_dir/readtpmc";
-
-    if (-d $binary_dir and -e $binary) {
-        my $result = `find $binary_dir -type f -name "*backup[0-9]" | sed -e 's,^.*backup,,' | sort -nr | head -1`;
-        if ($result eq "") {
-            $result = -1;
-        }
-
-        my $new_version = ++$result;
-
-        $log->info("Backing up existing binary to backup version $new_version");
-        system ("cp $binary $binary_dir/readtpmc.backup$new_version");
-    } elsif (! -d $binary_dir) {
-        make_path($binary_dir);
-    }
+    my $binary_name = "readtpmc";
+    utils::create_binary_dir_and_backup_existing($binary_dir, $binary_name);
 
     chdir $libtpms_base_dir;
 
     $log->info("Building readtpmc..");
 
-    system ("$build_command $libtpms_resources/readtpmc.c -I$libtpms_src_dir/include -ltpms -L$libtpms_src_dir/src/.libs -Wl,-rpath,$libtpms_src_dir/src/.libs -o $binary");
+    system ("$build_command $libtpms_resources/readtpmc.c -I$libtpms_src_dir/include -ltpms -L$libtpms_src_dir/src/.libs -Wl,-rpath,$libtpms_src_dir/src/.libs -o $binary_dir/$binary_name");
     if ($? != 0) {
         die "Building readtpmc failed";
     }
@@ -119,19 +107,7 @@ sub fuzz {
     my $results_dir = "$results_base/$exec_context";
 
     if (!$resume) {
-        if (-d $results_dir) {
-            my $result = `find $results_base -type d -regex '.*$exec_context.backup[0-9]+' | sed -e 's,^.*backup,,' | sort -nr | head -1`;
-            if ($result eq "") {
-                $result = -1;
-            }
-
-            my $new_version = ++$result;
-
-            $log->info("Backing up existing results directory to backup version $new_version");
-            system ("mv $results_dir $results_base/$exec_context.backup$new_version");
-        }
-
-        make_path($results_dir);
+        utils::create_results_dir_and_backup_existing($results_base, $exec_context);
     } elsif (! -d $results_dir) {
         die "Cannot resume because cannot find results dir at $results_dir";
     }
@@ -158,17 +134,14 @@ sub fuzz {
 
     my $use_asan = ($binary_context =~ /asan/);
     if ($use_asan) {
-        $ENV{"ASAN_OPTIONS"} = "abort_on_error=1:detect_leaks=0:symbolize=0:exitcode=86";
+        $ENV{"ASAN_OPTIONS"} = "abort_on_error=1:detect_leaks=0:symbolize=0:exitcode=86:allocator_may_return_null=1";
         $fuzz_command .= " -m none";
     }
 
     if ($waypoints =~ /vvdump/) {
         $fuzz_command .= " -t 60000+";
+        $fuzz_command .= " -d";
     }
-
-    # For non-deterministic... libtpms runs super slow. so to get an adequate distribution of values, we need it to
-    # run through provided testcases
-    #$fuzz_command .= " -d";
 
     $fuzz_command .= " $binary \@\@";
 

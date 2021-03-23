@@ -18,7 +18,7 @@ use libtpms;
       POSIX::mkfifo("/tmp/vvdump", 0700) or die "Could not create /tmp/vvdump";
   }
 
-my $log = Log::Simple::Color->new;
+  my $log = Log::Simple::Color->new;
 
   my $BASEPATH = glob "~/Projects/phd";
   my $BASEWORKSPACEPATH = "$BASEPATH/workspace";
@@ -105,23 +105,12 @@ my $log = Log::Simple::Color->new;
       make_path("$workspace/results");
   }
 
-  if (! -d "$workspace/traces") {
-      $log->info("Creating $workspace/traces");
-      make_path("$workspace/traces");
-  }
-
   if (!$subjects->{$subject}) {
       die "No subject named $subject";
   }
 
-  my $tasks = $subjects->{$subject}->{tasks};
-
   if ($task eq "build") {
-      if (!$tasks->{build}) {
-          die "No build task for $subject.";
-      }
-
-      &{$tasks->{build}}($experiment_name, $subject, $version, $context, $waypoints);
+      &build;
   } elsif ($task eq "fuzz") {
       if ($ARGV[5] ne "using") {
           die "Expected \"using\":\n  $0 $experiment_name $original_subject $context $waypoints $task using <binary-context>";
@@ -131,15 +120,37 @@ my $log = Log::Simple::Color->new;
           die "Expected <binary-context>:\n  $0 $experiment_name $original_subject $context $waypoints $task using <binary-context>";
       }
 
+     &fuzz;
+  } elsif ($task eq "smartfuzz") {
+
+  }
+
+  sub build {
+      my $tasks = $subjects->{$subject}->{tasks};
+      if (!$tasks) {
+          die "No tasks for $subject.";
+      }
+
+      if (!$tasks->{build}) {
+          die "No build task for $subject.";
+      }
+
+      &{$tasks->{build}}($experiment_name, $subject, $version, $context, $waypoints);
+  }
+
+  sub fuzz {
+      my $tasks = $subjects->{$subject}->{tasks};
+      if (!$tasks) {
+          die "No tasks for $subject.";
+      }
+
       if (!$tasks->{fuzz}) {
           die "No fuzz task for $subject.";
       }
 
-      # We are going to start the trace processor. We will start it as a child process and communicate its STDOUT to
-      # the parent script.
-
-      if ($binary_context =~ /vvdump/) {
-
+      # If the waypoints include vvdump, it means that we are capturing variable-value traces. So we have to start up
+      # the trace processor to read in those traces.
+      if ($waypoints =~ /vvdump/) {
           $ENV{"__VVD_EXP_NAME"} = $experiment_name;
           $ENV{"__VVD_SUBJECT"} = $full_subject;
           $ENV{"__VVD_BIN_CONTEXT"} = $binary_context;
@@ -148,15 +159,18 @@ my $log = Log::Simple::Color->new;
           pipe my $reader, my $writer;
           $writer->autoflush(1);
 
+          # We are going to start the trace processor. We will start it as a child process and communicate its STDOUT to
+          # the parent script.
           my $vvdproc_pid = fork;
           if ($vvdproc_pid) {
-              # In the parent process. Here we will start the fuzzer in another child process. The fuzzer STDOUT will still
-              # be sent to the parent STDOUT (which we want). Note that after spawning the child fuzzer process, we start
-              # reading from the trace processor's STDOUT. We do not print anything from it initially as we want to see the
-              # fuzzer output. However, if the fuzzer is stopped (Ctrl-C) it sends out a poison pill trace which the trace
-              # processor will read. When it does, it will output a message saying "Fuzzer has shut down". Once we detect
-              # this string in the trace processor's STDOUT, we will start printing the trace processor output. The trace
-              # processor output tells us how many traces from how many processes remain to be inserted into the db.
+              # In the parent process. Here we will start the fuzzer in another child process. The fuzzer STDOUT will
+              # still be sent to the parent STDOUT (which we want). Note that after spawning the child fuzzer process
+              # we start reading from the trace processor's STDOUT. We do not print anything from it initially as we
+              # want to see the fuzzer output. However, if the fuzzer is stopped (Ctrl-C) it sends out a poison pill
+              # trace which the trace processor will read. When it does, it will output a message saying "Fuzzer has
+              # shut down". Once we detect this string in the trace processor's STDOUT, we will start printing the trace
+              # processor output. The trace processor output tells us how many traces from how many processes remain to
+              # be inserted into the db.
 
               close $writer;
               $SIG{INT} = 'IGNORE';
@@ -188,11 +202,10 @@ my $log = Log::Simple::Color->new;
               delete $ENV{"__VVD_EXEC_CONTEXT"};
               delete $ENV{"ASAN_OPTIONS"};
           } else {
-              # Start the trace processor using open, and redirect its STDOUT to a file handle (using -|). Write the STDOUT
-              # content to $writer, which will send it back to the main script.
-              # Also make sure we ignore SIGINT because the processor knows to stop on its own (afl-fuzz sends a poison pill
-              # in the trace when it is stopped).
-
+              # Start the trace processor using open, and redirect its STDOUT to a file handle (using -|). Write the
+              # STDOUT content to $writer, which will send it back to the main script. Also make sure we ignore SIGINT
+              # because the processor knows to stop on its own (afl-fuzz sends a poison pill in the trace when it is
+              # stopped).
               close $reader;
               $SIG{INT} = 'IGNORE';
 

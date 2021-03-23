@@ -4,6 +4,7 @@ use strict;
 use warnings;
 use Log::Simple::Color;
 use File::Path qw(make_path);
+use utils;
 
 my $log = Log::Simple::Color->new;
 my $BASEPATH = glob "~/Projects/phd";
@@ -23,28 +24,15 @@ sub build {
 
     my $binary_base = "$workspace/binaries";
     my $binary_dir =  "$binary_base/$context";
-    my $binary = "$binary_dir/rarebug";
-
-    if (-d $binary_dir and -e $binary) {
-        my $result = `find $binary_dir -type f -name "*backup[0-9]" | sed -e 's,^.*backup,,' | sort -nr | head -1`;
-        if ($result eq "") {
-            $result = -1;
-        }
-
-        my $new_version = ++$result;
-
-        $log->info("Backing up existing binary to backup version $new_version");
-        system ("cp $binary $binary_dir/rarebug.backup$new_version");
-    } elsif (! -d $binary_dir) {
-        make_path($binary_dir);
-    }
+    my $binary_name = "rarebug";
+    utils::create_binary_dir_and_backup_existing($binary_dir, $binary_name);
 
     my $FUZZ_FACTORY = "$TOOLS/FuzzFactory";
     my $build_command = "$FUZZ_FACTORY/afl-clang-fast -fno-inline-functions -fno-discard-value-names -fno-unroll-loops";
 
     my $use_asan = ($context =~ /asan/);
     if ($use_asan) {
-        $build_command .= " -fsanitize=address";
+        $ENV{"AFL_USE_ASAN"} = 1;
     }
 
     my $use_vvperm = ($waypoints =~ /vvperm/);
@@ -54,15 +42,17 @@ sub build {
 
     my $src_dir = "$SUBJECTS/rarebug";
 
-    $build_command .= " $src_dir/rarebug.c -o $binary_dir/rarebug";
+    $build_command .= " $src_dir/rarebug.c -o $binary_dir/$binary_name";
 
     if ($waypoints ne "none") {
         $ENV{"WAYPOINTS"} = $waypoints;
         system $build_command;
-        delete $ENV{"WAYPOINTS"};
     } else {
         system $build_command;
     }
+
+    delete $ENV{"WAYPOINTS"};
+    delete $ENV{"AFL_USE_ASAN"};
 }
 
 sub fuzz {
@@ -82,19 +72,7 @@ sub fuzz {
     my $results_dir = "$results_base/$exec_context";
 
     if (!$resume) {
-        if (-d $results_dir) {
-            my $result = `find $results_base -type d -regex '.*$exec_context.backup[0-9]+' | sed -e 's,^.*backup,,' | sort -nr | head -1`;
-            if ($result eq "") {
-                $result = -1;
-            }
-
-            my $new_version = ++$result;
-
-            $log->info("Backing up existing results directory to backup version $new_version");
-            system ("mv $results_dir $results_base/$exec_context.backup$new_version");
-        }
-
-        make_path($results_dir);
+        utils::create_results_dir_and_backup_existing($results_base, $exec_context);
     } elsif (! -d $results_dir) {
         die "Cannot resume because cannot find results dir at $results_dir";
     }
@@ -119,14 +97,9 @@ sub fuzz {
 
     $fuzz_command .= " -o $results_dir -T \"rarebug-$experiment_name-$exec_context\"";
 
-    my $use_trace_dir = ($waypoints =~ /trace/);
-    if ($use_trace_dir) {
-        $fuzz_command .= " -R $workspace/traces";
-    }
-
     my $use_asan = ($binary_context =~ /asan/);
     if ($use_asan) {
-        $ENV{"ASAN_OPTIONS"} = "abort_on_error=1:detect_leaks=0:symbolize=0:exitcode=86";
+        $ENV{"ASAN_OPTIONS"} = "abort_on_error=1:detect_leaks=0:symbolize=0:exitcode=86:allocator_may_return_null=1";
         $fuzz_command .= " -m none";
     }
 
