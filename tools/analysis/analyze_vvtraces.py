@@ -231,7 +231,7 @@ def main(experiment: str, subject: str, binary: str, execution: str):
                                 num_value_combinations = pair[0]['features']['num_unique_values'] * \
                                                          pair[1]['features']['num_unique_values']
 
-                                # Only include pairs if the number of unique value combinations is greater than 20
+                                # Only include pairs if the number of unique value combinations is greater than 10
                                 if num_value_combinations > 10:
                                     variables_to_instrument['hash'].append([
                                         f"{filename}:{function}:{variable['name']}:{variable['declared_line']}"
