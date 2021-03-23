@@ -1,9 +1,11 @@
 import sys
 import os
 import warnings
-from datetime import datetime
 import concurrent.futures
+import yaml
 
+from datetime import datetime
+from itertools import combinations
 from cassandra.cluster import Cluster
 
 from db import cassandra_trace_db
@@ -159,6 +161,13 @@ def main(experiment: str, subject: str, binary: str, execution: str):
             )
 
     print("")
+
+    variables_to_instrument = {
+        'max': [],
+        'perm': [],
+        'hash': []
+    }
+
     labels_to_description = {
         'constant': "Constants",
         'correlated_with_input_size': "Variables correlated with input size",
@@ -170,6 +179,14 @@ def main(experiment: str, subject: str, binary: str, execution: str):
         'enum_value_from_input': "Enums deriving value from input",
         'related': "Related variables"
     }
+
+    # For instrumentation passes where we are maximizing the values of certain variables, or maximizing permutations of
+    # enum variable values, it would be advantageous to exclude duplicates. Duplicates are basically the same variable
+    # that happens to show up as a separate one because it has been passed to another function. We can identify
+    # duplicates by comparing the features of variables. If any two variables have the same features then they can be
+    # considered to be the same variable. The instrumented set will keep track of variables we have already considered
+    # for instrumentation.
+    instrumented = set()
 
     for filename in sorted(variables_by_filename_and_function.keys()):
         for function in sorted(variables_by_filename_and_function[filename].keys()):
@@ -188,10 +205,46 @@ def main(experiment: str, subject: str, binary: str, execution: str):
                         for related in function_variables[label]:
                             print("    {related}".format(related=sorted([variable['fqn'] for variable in related])))
 
+                    if label in ['correlated_with_input_size', 'dynamic_counter', 'input_size_counter']:
+                        variables_to_instrument['max'] += [
+                            f"{filename}:{function}:{variable['name']}:{variable['declared_line']}"
+                            for variable in function_variables[label] if features_string(variable) not in instrumented
+                        ]
+
+                        for variable in function_variables[label]:
+                            instrumented.add(features_string(variable))
+
+                    if label == "enum_value_from_input":
+                        variables_to_instrument['perm'] += [
+                            f"{filename}:{function}:{variable['name']}:{variable['declared_line']}"
+                            for variable in function_variables[label]
+                            if features_string(variable) not in instrumented
+                            and variable['features']['num_unique_values'] > 4
+                        ]
+
+                        for variable in function_variables[label]:
+                            instrumented.add(features_string(variable))
+
+                    if label == "related":
+                        for related in function_variables[label]:
+                            for pair in combinations(related, 2):
+                                num_value_combinations = pair[0]['features']['num_unique_values'] * \
+                                                         pair[1]['features']['num_unique_values']
+
+                                # Only include pairs if the number of unique value combinations is greater than 20
+                                if num_value_combinations > 10:
+                                    variables_to_instrument['hash'].append([
+                                        f"{filename}:{function}:{variable['name']}:{variable['declared_line']}"
+                                        for variable in pair
+                                    ])
+
             all_classified_variables += [
                 {'class': v['class'], 'fqn': v['fqn'], 'features': v['features']}
                 for v in function_variables['variables'] if v['class'] != 'zero_traces'
             ]
+
+    with open(f"{base_results_path}/variables_to_instrument.yml", "w") as f:
+        yaml.dump(variables_to_instrument, f, default_flow_style=False, indent=2)
 
     graph.graph_classes(
         base_graphs_path,
@@ -297,7 +350,8 @@ def identify_related_variables(filename, function, variables_by_filename_and_fun
             for line in [modified_line - delta, modified_line + delta]:
                 if line in variables_by_modified_line:
                     vars_modified_on_line = set([
-                        var['fqn'] for var in variables_by_modified_line[line] if var['class'] != 'constant'
+                        var['fqn'] for var in variables_by_modified_line[line]
+                        if var['class'] != 'constant' and var['class'] != 'boolean'
                     ]).difference([variable['fqn']])
                     if len(vars_modified_on_line) > 0:
                         # print("        Variables modified on line {l} ({delta}): {vars}".format(

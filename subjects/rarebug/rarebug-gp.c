@@ -90,6 +90,10 @@ const unsigned int MAGIC_SEQUENCE = (TYPE_1 << (3u * WIDTH)) +
 const char delimiter = ':';
 unsigned int current_sequence = 0u;
 
+int foo(int *ptr_val) {
+    *ptr_val = 10;
+}
+
 int coolio(/*COMMAND* cmdptr, UNION_STRUCT* us, VEC3D* vec3d, */int val, /*int *ptr_val, int **ptr_ptr_val,*/ char *string, char **nextword) {
     /*cmdptr->other = val;
     us->o = val;
@@ -220,6 +224,7 @@ int process_message(const char* message_type_str, const char* message) {
     coolio(/*cptr, &us, vec3dptr, */message_type, /*num, &num,*/ weirdo_string, &weirdo_string/*, mt_ptr, mt_ptr_ptr*/);
     weirdo_string = "hello";
     coolio(message_type, weirdo_string, &weirdo_string);
+    foo(&message_type);
 
     current_sequence = (current_sequence << WIDTH) + message_type;
     printf("magic is: %d the current sequence is: %d\n", MAGIC_SEQUENCE, current_sequence);

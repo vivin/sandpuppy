@@ -68,6 +68,7 @@ python-dateutil==2.8.1
 python-utils==2.4.0
 pytz==2020.1
 pyvex==8.20.6.1
+PyYAML==5.4.1
 requests==2.23.0
 requests-oauthlib==1.3.0
 rpyc==4.1.5

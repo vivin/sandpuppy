@@ -2,8 +2,6 @@ import pandas
 import matplotlib.pyplot as plt
 import seaborn
 
-from collections.abc import Iterable
-
 
 def graph_classes(path, variables, classes):
 
