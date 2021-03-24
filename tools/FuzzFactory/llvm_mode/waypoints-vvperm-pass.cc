@@ -1,97 +1,10 @@
 #include <fstream>
 #include <iostream>
-#include <utility>
 #include "basevvfeedback.hpp"
 #include "../include/vvdump.h"
 
 
 using namespace fuzzfactory;
-
-class TargetedVariable {
-    std::string variableName;
-    int declaredLine;
-    int shiftWidth;
-
-public:
-    TargetedVariable(std::string variableName, int declaredLine, int shiftWidth) : variableName(std::move(variableName)),
-                                                                                   declaredLine(declaredLine),
-                                                                                   shiftWidth(shiftWidth) {}
-
-    const std::string &getVariableName() const {
-        return variableName;
-    }
-
-    int getDeclaredLine() const {
-        return declaredLine;
-    }
-
-    int getShiftWidth() const {
-        return shiftWidth;
-    }
-};
-
-class TargetedFunction {
-    std::string functionName;
-    std::map<std::string, TargetedVariable*> targetedVariables;
-
-    static std::string getKey(const std::string& variableName, int declaredLine) {
-        return variableName + ":" + std::to_string(declaredLine);
-    }
-
-public:
-    explicit TargetedFunction(std::string functionName) : functionName(std::move(functionName)) {}
-
-    std::string getFunctionName() const {
-        return functionName;
-    }
-
-    void addTargetedVariable(const std::string& variableName, int declaredLine, int shiftWidth) {
-        std::string key = getKey(variableName, declaredLine);
-        targetedVariables[key] = new TargetedVariable(variableName, declaredLine, shiftWidth);
-    }
-
-    int getShiftWidthForVariable(const std::string& variableName, int declaredLine) const {
-        if (targetsVariable(variableName, declaredLine)) {
-            std::string key = getKey(variableName, declaredLine);
-            return targetedVariables.at(key)->getShiftWidth();
-        }
-
-        return 0;
-    }
-
-    bool targetsVariable(const std::string& variableName, int declaredLine) const {
-        std::string key = getKey(variableName, declaredLine);
-        return targetedVariables.find(key) != targetedVariables.end();
-    }
-};
-
-class TargetedFile {
-    std::string filename;
-    std::map<std::string, TargetedFunction*> targetedFunctions;
-
-public:
-    explicit TargetedFile(std::string filename) : filename(std::move(filename)) {}
-
-    std::string getFilename() const {
-        return filename;
-    }
-
-    TargetedFunction* addTargetedFunctionIfNotExists(const std::string& functionName) {
-        if (!targetsFunction(functionName)) {
-            targetedFunctions[functionName] = new TargetedFunction(functionName);
-        }
-
-        return targetedFunctions[functionName];
-    }
-
-    TargetedFunction *getTargetedFunction(const std::string& functionName) const {
-        return targetedFunctions.at(functionName);
-    }
-
-    bool targetsFunction(const std::string& functionName) const {
-        return targetedFunctions.find(functionName) != targetedFunctions.end();
-    }
-};
 
 class VariablePermutationConfiguration {
     const int NUM_COMPONENTS = 5;
@@ -124,7 +37,11 @@ class VariablePermutationConfiguration {
                        // TODO: try shifting only by 4 and setting instead of incrementing.
     };
 
-    std::map<std::string, TargetedFile*> targetedFiles;
+    std::string targetedFilename;
+    std::string targetedFunctionName;
+    std::string targetedVariableName;
+    int targetedVariableDeclaredLine = 0;
+    int targetedVariableShiftWidth = 0;
 
     void initializeFromVariablesFile() {
         std::ifstream variablesFile(VariablesFile);
@@ -135,36 +52,22 @@ class VariablePermutationConfiguration {
 
         bool error = false;
         std::string line;
-        while (std::getline(variablesFile, line) && !error) {
+        if (std::getline(variablesFile, line)) {
             std::vector<std::string> components = split(line, ':');
-
             if (components.size() == NUM_COMPONENTS) {
-                const StringRef filename = components[Components::filename];
-                std::cout << "Adding filename |" << filename.str() << "|\n";
-
-                TargetedFile* targetedFile = addTargetedFileIfNotExists(filename.str());
-
-                const StringRef functionName = components[Components::functionName];
-                TargetedFunction* targetedFunction = targetedFile->addTargetedFunctionIfNotExists(functionName.str());
-
-                std::cout << "Adding function " << functionName.str() << "\n";
-
-                const StringRef variableName = components[Components::variableName];
-                const int declaredLine = std::stoi(components[Components::declaredLine]);
-                const int shiftWidth = std::stoi(components[Components::shiftWidth]);
-
-                std::cout << "Adding variable " << variableName.str() << ":" << declaredLine << " sw: " << shiftWidth << "\n";
-
-                targetedFunction->addTargetedVariable(variableName.str(), declaredLine, shiftWidth);
-            } else if(!components.empty()) {
-                std::cerr << "Invalid number of components (" << components.size() << ") in line:\n  " << line << "\n";
+                targetedFilename = components[Components::filename];
+                targetedFunctionName = components[Components::functionName];
+                targetedVariableName = components[Components::variableName];
+                targetedVariableDeclaredLine = std::stoi(components[Components::declaredLine]);
+                targetedVariableShiftWidth = std::stoi(components[Components::shiftWidth]);
+            } else if (!components.empty()) {
+                std::cerr << "Invalid number of components: " << components.size() << "\n";
                 error = true;
             }
         }
 
         if (error) {
             std::cerr << "Pass will not do anything; there was an error while reading the variables file.\n";
-            targetedFiles.clear();
         }
 
         variablesFile.close();
@@ -177,27 +80,24 @@ public:
         }
     }
 
-    TargetedFile* addTargetedFileIfNotExists(const std::string& filename) {
-        if (!targetsFile(filename)) {
-            targetedFiles[filename] = new TargetedFile(filename);
-        }
-
-        return targetedFiles[filename];
-    }
-
-    TargetedFile* getTargetedFile(const std::string& filename) const {
-        return targetedFiles.at(filename);
-    }
-
     bool targetsFile(const std::string& filename) const {
-        /*std::cout << "total number of files " << targetedFiles.size() << "\n";
-        std::cout << "is " << filename << " there:" << (targetedFiles.find(filename) != targetedFiles.end() ? "yes" : "no") << "\n";
+        return targetedFilename == filename;
+    }
 
-        for(auto p  = targetedFiles.begin(); p != targetedFiles.end(); ++p) {
-            std::cout << "key is |" << p->first << "|\n";
-        }*/
+    bool targetsFunction(const std::string& functionName) const {
+        return targetedFunctionName == functionName;
+    }
 
-        return targetedFiles.find(filename) != targetedFiles.end();
+    const std::string &getTargetedVariableName() const {
+        return targetedVariableName;
+    }
+
+    int getTargetedVariableDeclaredLine() const {
+        return targetedVariableDeclaredLine;
+    }
+
+    int getTargetedVariableShiftWidth() const {
+        return targetedVariableShiftWidth;
     }
 };
 
@@ -210,69 +110,71 @@ class VariableValuePermuteFeedback : public BaseVariableValueFeedback<VariableVa
     Function *shiftAddFunction;
     Function *printValFunction;
 
-    void instrumentIfNecessary(const TargetedFunction* targetedFunction, Function* function, StoreInst *store) {
-        Value* value = store->getValueOperand();
+    void instrument(Function* function, StoreInst *store) {
         Value* variable = store->getPointerOperand();
-
         std::string variableName = getVariableName(variable);
-        if (variableName.empty()) {
+
+        auto irb = insert_after(*store);
+
+        // If this is a function argument and it is a pointer, we need to safely dereference (i.e., with null checks)
+        // its value so that we can use it.
+        Value* value = store->getValueOperand();
+        if (isFunctionArgument(variableName) && value->getType()->isPointerTy()) {
+            value = safelyDereferenceStoreValueOperand(store, variableName, irb);
+        }
+
+        // For now, we only deal with int variables. So if the value is not an int, print an error and return
+        if (!value->getType()->isIntegerTy()) {
+            std::cerr << function->getParent()->getSourceFileName() << "::"
+                      << function->getName().str() << "::"
+                      << variableName << ":" << configuration.getTargetedVariableDeclaredLine()
+                      << " is not an integer-like variable.\n";
             return;
         }
 
-        if (varToDeclaredLine.find(variableName) != varToDeclaredLine.end()) {
+        int declaredLine = varToDeclaredLine[variableName];
 
-            int declaredLine = varToDeclaredLine[variableName];
-            if (targetedFunction->targetsVariable(variableName, declaredLine)) {
-                // For now, we only deal with int variables. So if the value is not an int, print an error and return
-                if (!value->getType()->isIntegerTy()) {
-                    std::cerr << function->getParent()->getSourceFileName() << "::"
-                              << targetedFunction->getFunctionName() << "::"
-                              << variableName << ":" << declaredLine << " is not an integer-like variable.\n";
-                    return;
-                }
+        // Check to see if there already is a global variable that keeps track of value permutations. If there
+        // isn't, create one and initialize it to zero.
+        Module* module = function->getParent();
+        std::string permutationVariableName = getQualifiedVariableName(function, variableName) + "_" + std::to_string(declaredLine) + "_perm";
+        GlobalVariable* permutationVariable = module->getNamedGlobal(permutationVariableName);
+        if (!permutationVariable) {
+            module->getOrInsertGlobal(permutationVariableName, Int32Ty);
 
-                // Check to see if there already is a global variable that keeps track of value permutations. If there
-                // isn't, create one and initialize it to zero.
-                Module* module = function->getParent();
-                std::string permutationVariableName = variableName + "_" + std::to_string(declaredLine) + "_perm";
-                GlobalVariable* permutationVariable = module->getNamedGlobal(permutationVariableName);
-                if (!permutationVariable) {
-                    module->getOrInsertGlobal(permutationVariableName, Int32Ty);
-
-                    permutationVariable = module->getNamedGlobal(permutationVariableName);
-                    permutationVariable->setLinkage(GlobalValue::CommonLinkage);
-                    permutationVariable->setAlignment(MaybeAlign(4));
-                    permutationVariable->setInitializer(getConst(0));
-                }
-
-                auto irb = insert_after(*store);
-
-                // Load the current value of the global variable
-                Value *permutationVariableValue = irb.CreateAlignedLoad(permutationVariable, MaybeAlign(4));
-
-                //irb.CreateCall(printValFunction, { permutationVariableValue });
-
-                // Make a call to the shift_add function to calculate (permutationVariable << shiftWidthValue) + value
-                Value *shiftWidthValue = getConst(
-                    targetedFunction->getShiftWidthForVariable(variableName, declaredLine)
-                );
-                auto shiftAddResult = irb.CreateCall(shiftAddFunction, {
-                    permutationVariableValue,
-                    shiftWidthValue,
-                    value
-                });
-
-                // Use the shifted and added value as an index into the dsf map and set the value at that location to 1
-                irb.CreateCall(dsfSetFunction, {
-                    DsfMapVariable,
-                    shiftAddResult,
-                    getConst(1)
-                });
-
-                // Store the shifted and added result back into the global variable
-                irb.CreateAlignedStore(shiftAddResult, permutationVariable, MaybeAlign(4), false);
-            }
+            permutationVariable = module->getNamedGlobal(permutationVariableName);
+            permutationVariable->setLinkage(GlobalValue::CommonLinkage);
+            permutationVariable->setAlignment(MaybeAlign(4));
+            permutationVariable->setInitializer(getConst(0));
         }
+
+        // Load the current value of the global variable
+        Value *permutationVariableValue = irb.CreateAlignedLoad(permutationVariable, MaybeAlign(4));
+
+        //irb.CreateCall(printValFunction, { permutationVariableValue });
+
+        // If value is greater than 32 bits, truncate.
+        if (value->getType()->getIntegerBitWidth() > 32) {
+            value = irb.CreateTrunc(value, Int32Ty);
+        }
+
+        // Make a call to the shift_add function to calculate (permutationVariable << shiftWidthValue) + value
+        Value *shiftWidthValue = getConst(configuration.getTargetedVariableShiftWidth());
+        auto shiftAddResult = irb.CreateCall(shiftAddFunction, {
+            permutationVariableValue,
+            shiftWidthValue,
+            value
+        });
+
+        // Use the shifted and added value as an index into the dsf map and set the value at that location to 1
+        irb.CreateCall(dsfSetFunction, {
+            DsfMapVariable,
+            shiftAddResult,
+            getConst(1)
+        });
+
+        // Store the shifted and added result back into the global variable
+        irb.CreateAlignedStore(shiftAddResult, permutationVariable, MaybeAlign(4), false);
     }
 
 protected:
@@ -282,9 +184,8 @@ protected:
             return false;
         }
 
-        const TargetedFile* targetedFile = configuration.getTargetedFile(filename.str());
         const StringRef functionName = function.getFunction().getName();
-        if (!targetedFile->targetsFunction(functionName.str())) {
+        if (!configuration.targetsFunction(functionName.str())) {
             return false;
         }
 
@@ -292,18 +193,11 @@ protected:
     }
 
     void processFunction(Function &function) override {
-        const StringRef filename = function.getParent()->getSourceFileName();
-        const TargetedFile* targetedFile = configuration.getTargetedFile(filename.str());
-
-        const StringRef functionName = function.getFunction().getName();
-        const TargetedFunction* targetedFunction = targetedFile->getTargetedFunction(functionName.str());
-
         // Next we will instrument (if the variable is targeted) with permutation code, at every location that the
         // variable is modified.
-        for (inst_iterator I = inst_begin(function), E = inst_end(function); I != E; ++I) {
-            Instruction& instruction = *I;
-            if (instruction.hasMetadata() && isa<StoreInst>(instruction)) {
-                instrumentIfNecessary(targetedFunction, &function, cast<StoreInst>(&instruction));
+        for (auto *storeInstruction : storeInstructions) {
+            if (isStoreInstForVariable(storeInstruction, configuration.getTargetedVariableName())) {
+                instrument(&function, storeInstruction);
             }
         }
 

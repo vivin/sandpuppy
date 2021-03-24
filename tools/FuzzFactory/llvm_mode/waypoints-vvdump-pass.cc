@@ -27,7 +27,7 @@ class VariableValueDumpFeedback : public BaseVariableValueFeedback<VariableValue
                   << "value operand is integer type: " << valueType->isIntegerTy() << "\n"
                   << "value operand is pointer type: " << valueType->isPointerTy() << "\n";
         if (valueType->isPointerTy()) {
-            std::cout << "resolves to integer: " << doesPointerTypeResolveToInteger(cast<PointerType>(valueType)) << "\n";
+            std::cout << "resolves to integer: " << isPointerTypeResolvingToIntegerType(cast<PointerType>(valueType)) << "\n";
         }*/
 
         // We will ignore ints with width 8, meaning that we will ignore bytes and pointers to bytes. This is because
@@ -35,8 +35,8 @@ class VariableValueDumpFeedback : public BaseVariableValueFeedback<VariableValue
         bool result = isFunctionArgument(variableName)
                  && (valueType->isIntegerTy()
                      || (valueType->isPointerTy()
-                         && doesPointerTypeResolveToInteger(cast<PointerType>(valueType))
-                         && unwrapToIntegerType(cast<PointerType>(valueType))->getIntegerBitWidth() > 8));
+                         && isPointerTypeResolvingToIntegerType(valueType)
+                         && unwrapPointerTypeToIntegerType(valueType)->getIntegerBitWidth() > 8));
 
         //std::cout << "result is " << result << "\n";
         return result;
@@ -46,7 +46,6 @@ class VariableValueDumpFeedback : public BaseVariableValueFeedback<VariableValue
         std::string sourceFileName= store->getModule()->getSourceFileName();
         std::string functionName = function->getName();
 
-        Value* value = store->getValueOperand();
         Value* variable = store->getPointerOperand();
         std::string variableName = getVariableName(variable);
 
@@ -56,72 +55,23 @@ class VariableValueDumpFeedback : public BaseVariableValueFeedback<VariableValue
         // function argument (we want to log those values).
         if (!variableName.empty() && !isInvolvedInPointerArithmetic(variableName)
             && (modifiesIntegerVariable(store) || initializesIntegerFunctionArgument(store, variableName))) {
-                createDumpVariableValueCall(function, store, variableName, value);
+                createDumpVariableValueCall(function, store, variableName);
         }
     }
 
-    void createDumpVariableValueCall(Function* function, StoreInst* store, const std::string& variableName, Value* value) {
+    void createDumpVariableValueCall(Function* function, StoreInst* store, const std::string& variableName) {
         auto irb = insert_after(*store);
 
-        // If this is a function argument and it is a pointer, we need to dereference its value so that we can print it.
-        // At the same time we also need to guard dereferencing by performing null checks against the pointer.
-        if (isFunctionArgument(variableName) && store->getValueOperand()->getType()->isPointerTy()) {
-            std::string notNullVariableName = variableName + ".is.not.null";
-            std::string ifVariableIsNotNullBlockName = "if." + notNullVariableName;
-            std::string ifVariableIsNotNullEndBlockName = ifVariableIsNotNullBlockName + ".end";
-
-            // Set insertion point to start at the next non-debug instruction.
-            irb.SetInsertPoint(store->getNextNonDebugInstruction());
-
-            // We need to generate an if-then so that we only log the variable value if the pointer is not null.
-            // Otherwise we will get a SIGSEGV. We will split the block before the next non-debug instruction.
-            auto *splitBeforeInstruction = store->getNextNonDebugInstruction();
-            auto *pointerType = cast<PointerType>(store->getPointerOperandType()->getPointerElementType());
-            auto *loadPointer = irb.CreateAlignedLoad(pointerType, store->getPointerOperand(), store->getAlign());
-            auto *condition = irb.CreateICmpNE(loadPointer, ConstantPointerNull::get(pointerType), notNullVariableName);
-            auto *thenBlock = SplitBlockAndInsertIfThen(condition, splitBeforeInstruction, false);
-
-            thenBlock->getParent()->setName(ifVariableIsNotNullBlockName);
-            splitBeforeInstruction->getParent()->setName(ifVariableIsNotNullEndBlockName);
-
-            irb.SetInsertPoint(thenBlock);
-
-            // Find how many levels of indirection are involved
-            auto *type = store->getValueOperand()->getType();
-            int indirection = 0;
-            while (type->isPointerTy()) {
-                indirection++;
-                type = type->getPointerElementType();
-            }
-
-            // We can assume that at this point the type is an integer type because in instrumentIfNecessary we made
-            // sure that the function argument eventually resolves to an integer type even if it is a pointer. What
-            // we will do next is insert as many load statements as necessary in order to dereference the pointer. This
-            // depends on the level of indirection, which we have calculated. While we do that we will also guard these
-            // with null checks as we did above.
-            unsigned int bitWidth = type->getIntegerBitWidth();
-            Value* load = value;
-            while (indirection > 1) {
-                pointerType = getPointerToIntegerType(indirection - 1, bitWidth);
-                load = irb.CreateAlignedLoad(pointerType, load, store->getAlign());
-                condition = irb.CreateICmpNE(load, ConstantPointerNull::get(pointerType), notNullVariableName);
-                splitBeforeInstruction = cast<Instruction>(condition)->getNextNonDebugInstruction();
-                thenBlock = SplitBlockAndInsertIfThen(condition, splitBeforeInstruction, false);
-
-                thenBlock->getParent()->setName(ifVariableIsNotNullBlockName);
-                splitBeforeInstruction->getParent()->setName(ifVariableIsNotNullEndBlockName);
-
-                irb.SetInsertPoint(thenBlock);
-
-                --indirection;
-            }
-
-            value = irb.CreateAlignedLoad(getIntTy(bitWidth), load, store->getAlign());
+        // If this is a function argument and it is a pointer, we need to safely dereference (i.e., with null checks)
+        // its value so that we can print it.
+        Value* value = store->getValueOperand();
+        if (isFunctionArgument(variableName) && value->getType()->isPointerTy()) {
+            value = safelyDereferenceStoreValueOperand(store, variableName, irb);
         }
 
         Value *variableNameValue = variableNameToValue[variableName];
         if (!variableNameValue) {
-            std::string variableVariableName = "__vvdump_variable_" + function->getName().str() + "." + variableName;
+            std::string variableVariableName = "__vvdump_variable_" + getQualifiedVariableName(function, variableName);
             variableNameValue = getOrCreateGlobalStringVariable(
                 function->getParent(),
                 variableVariableName,
@@ -214,27 +164,14 @@ protected:
 
     void processFunction(Function &function) override {
         Module* module = function.getParent();
-        std::string functionNameVariableName = "__vvdump_function_" + std::regex_replace(
-            module->getSourceFileName(),
-            std::regex("[/]"),
-            "_"
-        ) + "_" + function.getName().str();
+        std::string functionNameVariableName = "__vvdump_function_" + getQualifiedFunctionName(&function);
         functionNameValue = getOrCreateGlobalStringVariable(
             module,
             functionNameVariableName,
             function.getName().str()
         );
 
-        std::vector<StoreInst*> storeInstructions;
-
         // Instrument store instructions to log variable values
-        for (inst_iterator I = inst_begin(function), E = inst_end(function); I != E; ++I) {
-            Instruction& instruction = *I;
-            if (isa<StoreInst>(instruction)) {
-                storeInstructions.emplace_back(cast<StoreInst>(&instruction));
-            }
-        }
-
         for (auto *storeInstruction : storeInstructions) {
             instrumentIfNecessary(&function, storeInstruction);
         }

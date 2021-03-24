@@ -194,6 +194,7 @@ class BaseVariableValueFeedback : public DomainFeedback<V> {
     }
 
 protected:
+    std::vector<StoreInst*> storeInstructions;
     std::map<std::string, int> varToDeclaredLine;
     std::set<std::string> arithmeticallyModifiedPointers;
     std::map<std::string, StructInfo*> structInfoMap;
@@ -215,8 +216,11 @@ protected:
         return arithmeticallyModifiedPointers.find(variableName) != arithmeticallyModifiedPointers.end();
     }
 
-    bool doesPointerTypeResolveToInteger(PointerType* pointerType) {
-        Type* type = pointerType;
+    bool isPointerTypeResolvingToIntegerType(Type* type) {
+        if (!type->isPointerTy()) {
+            return false;
+        }
+
         while (isa<PointerType>(type)) {
             type = type->getPointerElementType();
         }
@@ -224,8 +228,12 @@ protected:
         return type->isIntegerTy();
     }
 
-    IntegerType* unwrapToIntegerType(PointerType* pointerType) {
-        Type* type = pointerType;
+    IntegerType* unwrapPointerTypeToIntegerType(Type* type) {
+        if (!type->isPointerTy()) {
+            std::cerr << "Cannot unwrap as provided type is not a pointer type.";
+            abort();
+        }
+
         while (isa<PointerType>(type)) {
             type = type->getPointerElementType();
         }
@@ -236,6 +244,26 @@ protected:
         }
 
         return cast<IntegerType>(type);
+    }
+
+    bool isStoreInstForVariable(StoreInst *store, const std::string& variableName) {
+        return variableName == getVariableName(store->getPointerOperand());
+    }
+
+    std::string getQualifiedFunctionName(Function* function) {
+        return std::regex_replace(
+            std::regex_replace(
+                function->getParent()->getSourceFileName(),
+                std::regex("^/"),
+                ""
+            ),
+            std::regex("[/]"),
+            "."
+        ) + "." + function->getName().str();
+    }
+
+    std::string getQualifiedVariableName(Function* function, const std::string& variableName) {
+        return getQualifiedFunctionName(function) + "." + variableName;
     }
 
     PointerType* getPointerToIntegerType(int indirection, unsigned int bitWidth) {
@@ -325,6 +353,64 @@ protected:
         return "";
     }
 
+    Value* safelyDereferenceStoreValueOperand(StoreInst *store, const std::string &variableName, IRBuilder<> &irb) {
+        Value* value = store->getValueOperand();
+        if (!value->getType()->isPointerTy() || !isPointerTypeResolvingToIntegerType(value->getType())) {
+            std::cerr << variableName << " is not a pointer that resolves to an integer.\n";
+            abort();
+        }
+
+        std::string notNullVariableName = variableName + ".is.not.null";
+        std::string ifVariableIsNotNullBlockName = "if." + notNullVariableName;
+        std::string ifVariableIsNotNullEndBlockName = ifVariableIsNotNullBlockName + ".end";
+
+        // Set insertion point to start at the next non-debug instruction.
+        irb.SetInsertPoint(store->getNextNonDebugInstruction());
+
+        // We need to generate an if-then so that we only use the variable value if the pointer is not null.
+        // Otherwise we will get a SIGSEGV. We will split the block before the next non-debug instruction.
+        auto *splitBeforeInstruction = store->getNextNonDebugInstruction();
+        auto *pointerType = cast<PointerType>(store->getPointerOperandType()->getPointerElementType());
+        auto *loadPointer = irb.CreateAlignedLoad(pointerType, store->getPointerOperand(), store->getAlign());
+        auto *condition = irb.CreateICmpNE(loadPointer, ConstantPointerNull::get(pointerType), notNullVariableName);
+        auto *thenBlock = SplitBlockAndInsertIfThen(condition, splitBeforeInstruction, false);
+
+        thenBlock->getParent()->setName(ifVariableIsNotNullBlockName);
+        splitBeforeInstruction->getParent()->setName(ifVariableIsNotNullEndBlockName);
+
+        irb.SetInsertPoint(thenBlock);
+
+        // Find how many levels of indirection are involved
+        auto *type = store->getValueOperand()->getType();
+        int indirection = 0;
+        while (type->isPointerTy()) {
+            indirection++;
+            type = type->getPointerElementType();
+        }
+
+        // We will now insert as many load statements as necessary in order to dereference the pointer. This depends on
+        // the level of indirection, which we have calculated. While we do that we will also guard these with null
+        // checks as we did above. We can assume this is an integer type because we have checked for that earlier.
+        unsigned int bitWidth = type->getIntegerBitWidth();
+        Value* load = value;
+        while (indirection > 1) {
+            pointerType = getPointerToIntegerType(indirection - 1, bitWidth);
+            load = irb.CreateAlignedLoad(pointerType, load, store->getAlign());
+            condition = irb.CreateICmpNE(load, ConstantPointerNull::get(pointerType), notNullVariableName);
+            splitBeforeInstruction = cast<Instruction>(condition)->getNextNonDebugInstruction();
+            thenBlock = SplitBlockAndInsertIfThen(condition, splitBeforeInstruction, false);
+
+            thenBlock->getParent()->setName(ifVariableIsNotNullBlockName);
+            splitBeforeInstruction->getParent()->setName(ifVariableIsNotNullEndBlockName);
+
+            irb.SetInsertPoint(thenBlock);
+
+            --indirection;
+        }
+
+        return irb.CreateAlignedLoad(DomainFeedback<V>::getIntTy(bitWidth), load, store->getAlign());
+    }
+
     virtual bool shouldProcess(llvm::Function &function) = 0;
     virtual void processFunction(llvm::Function &function) = 0;
 
@@ -356,8 +442,17 @@ public:
             }
         }
 
+        // Collect all store instructions
+        for (inst_iterator I = inst_begin(function), E = inst_end(function); I != E; ++I) {
+            Instruction& instruction = *I;
+            if (isa<StoreInst>(instruction)) {
+                storeInstructions.emplace_back(cast<StoreInst>(&instruction));
+            }
+        }
+
         processFunction(function);
 
+        storeInstructions.clear();
         varToDeclaredLine.clear();
         arithmeticallyModifiedPointers.clear();
         structInfoMap.clear();

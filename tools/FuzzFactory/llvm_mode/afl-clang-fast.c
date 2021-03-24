@@ -179,7 +179,7 @@ static void edit_params(u32 argc, char** argv) {
     cc_params[cc_par_cnt++] = alloc_printf("%s/waypoints-%s-pass.so", obj_path, domain);
     cc_params[cc_par_cnt++] = alloc_printf("%s/waypoints-%s-rt.o", obj_path, domain);
 
-    if (strcmp(domain, "vvperm") == 0 || strcmp(domain, "vvhash") == 0) {
+    if (strcmp(domain, "vvperm") == 0 || strcmp(domain, "vvhash") == 0 || strcmp(domain, "vvmax") == 0) {
         include_variables_file = 1;
     }
 

@@ -74,6 +74,14 @@ public:
         return targetedFunctionName == functionName;
     }
 
+    const std::string &getTargetedFilename() const {
+        return targetedFilename;
+    }
+
+    const std::string &getTargetedFunctionName() const {
+        return targetedFunctionName;
+    }
+
     const std::string &getFirstVariable() const {
         return firstVariable;
     }
@@ -105,24 +113,57 @@ class VariableValueHashFeedback : public BaseVariableValueFeedback<VariableValue
     Function *hashIntsFunction;
     Function *printValFunction;
 
-    void instrument(StoreInst *storeInstVariable1, StoreInst *storeInstVariable2) {
-        // We gotta see which store inst comes last because we will be inserting it after that one.
-        unsigned int modifiedLineVariable1 = storeInstVariable1->getDebugLoc()->getLine();
-        unsigned int modifiedLineVariable2 = storeInstVariable2->getDebugLoc()->getLine();
+    void instrument(StoreInst *storeInstVariable1, StoreInst *storeInstVariable2, bool variable1ModifiedFirst) {
 
-        auto irb = (modifiedLineVariable1 > modifiedLineVariable2) ?
-            insert_after(*storeInstVariable1) : insert_after(*storeInstVariable2);
+        // We need to see which store inst comes last because we will be inserting our instrumentation after it.
+        auto irb = variable1ModifiedFirst ? insert_after(*storeInstVariable2) : insert_after(*storeInstVariable1);
 
+        // If either of these variables are function arguments and are pointers, we need to safely dereference their
+        // values (i.e., with null checks) so that we can use them.
+        auto variable1Name = getVariableName(storeInstVariable1->getPointerOperand());
         auto *valueVariable1 = storeInstVariable1->getValueOperand();
+        if (isFunctionArgument(variable1Name) && valueVariable1->getType()->isPointerTy()) {
+            valueVariable1 = safelyDereferenceStoreValueOperand(storeInstVariable1, variable1Name, irb);
+        }
+
+        // For now, we only deal with int variables. So if the value is not an int, print an error and return
+        if (!valueVariable1->getType()->isIntegerTy()) {
+            std::cerr << configuration.getTargetedFilename() << "::"
+                      << configuration.getTargetedFunctionName() << "::"
+                      << variable1Name << ":" << configuration.getFirstDeclaredLine()
+                      << " is not an integer-like variable.\n";
+            return;
+        }
+
+        // If value is greater than 32 bits, truncate.
+        if (valueVariable1->getType()->getIntegerBitWidth() > 32) {
+            valueVariable1 = irb.CreateTrunc(valueVariable1, Int32Ty);
+        }
+
+        auto variable2Name = getVariableName(storeInstVariable2->getPointerOperand());
         auto *valueVariable2 = storeInstVariable2->getValueOperand();
+        if (isFunctionArgument(variable2Name) && valueVariable2->getType()->isPointerTy()) {
+            valueVariable2 = safelyDereferenceStoreValueOperand(storeInstVariable2, variable2Name, irb);
+        }
+
+        // For now, we only deal with int variables. So if the value is not an int, print an error and return
+        if (!valueVariable2->getType()->isIntegerTy()) {
+            std::cerr << configuration.getTargetedFilename() << "::"
+                      << configuration.getTargetedFunctionName() << "::"
+                      << variable2Name << ":" << configuration.getSecondDeclaredLine()
+                      << " is not an integer-like variable.\n";
+            return;
+        }
+
+        // If value is greater than 32 bits, truncate.
+        if (valueVariable2->getType()->getIntegerBitWidth() > 32) {
+            valueVariable2 = irb.CreateTrunc(valueVariable2, Int32Ty);
+        }
+
         auto *hash = irb.CreateCall(hashIntsFunction, { valueVariable1, valueVariable2 });
         //irb.CreateCall(printValFunction, { hash });
 
         irb.CreateCall(dsfSetFunction, { DsfMapVariable, hash, getConst(1) });
-    }
-
-    bool isStoreInstForVariable(StoreInst *store, const std::string& variableName) {
-        return variableName == getVariableName(store->getPointerOperand());
     }
 
 protected:
@@ -144,24 +185,34 @@ protected:
 
         // Start iterating and look for store instructions that involve our variables. We are looking for
         // two store instructions at a time.
-        StoreInst* storeInstVariable1;
-        StoreInst* storeInstVariable2;
+        StoreInst* storeInstVariable1 = nullptr;
+        StoreInst* storeInstVariable2 = nullptr;
 
-        for (inst_iterator I = inst_begin(function), E = inst_end(function); I != E; ++I) {
-            Instruction& instruction = *I;
-            if (instruction.hasMetadata() && isa<StoreInst>(instruction)) {
-                if (isStoreInstForVariable(cast<StoreInst>(&instruction), configuration.getFirstVariable())) {
-                    storeInstVariable1 = cast<StoreInst>(&instruction);
-                } else if (isStoreInstForVariable(cast<StoreInst>(&instruction), configuration.getSecondVariable())) {
-                    storeInstVariable2 = cast<StoreInst>(&instruction);
+        bool firstStoreFound = false;
+        bool variable1ModifiedFirst;
+        for (auto *storeInstruction : storeInstructions) {
+            if (isStoreInstForVariable(storeInstruction, configuration.getFirstVariable())) {
+                storeInstVariable1 = storeInstruction;
+                if (!firstStoreFound) {
+                    variable1ModifiedFirst = true;
+                    firstStoreFound = true;
                 }
-
-                if (storeInstVariable1 && storeInstVariable2) {
-                    instrument(storeInstVariable1, storeInstVariable2);
-
-                    storeInstVariable1 = nullptr;
-                    storeInstVariable2 = nullptr;
+            } else if (isStoreInstForVariable(storeInstruction, configuration.getSecondVariable())) {
+                storeInstVariable2 = storeInstruction;
+                if (!firstStoreFound) {
+                    variable1ModifiedFirst = false;
+                    firstStoreFound = true;
                 }
+            }
+
+            if (storeInstVariable1 && storeInstVariable2) {
+                instrument(storeInstVariable1, storeInstVariable2, variable1ModifiedFirst);
+
+                firstStoreFound = false;
+                variable1ModifiedFirst = false;
+
+                storeInstVariable1 = nullptr;
+                storeInstVariable2 = nullptr;
             }
         }
     }
