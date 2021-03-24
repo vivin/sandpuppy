@@ -4,6 +4,8 @@ import seaborn
 
 
 def graph_classes(path, variables, classes):
+    if len(variables) == 0:
+        return
 
     def plot_group_scatterplots_for_features(f1_name, f2_name, x_label, y_label, filename):
         for label, group in grouped_by_type:

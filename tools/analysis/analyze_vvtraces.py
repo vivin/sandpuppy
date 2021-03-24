@@ -208,7 +208,12 @@ def main(experiment: str, subject: str, binary: str, execution: str):
                     if label in ['correlated_with_input_size', 'dynamic_counter', 'input_size_counter']:
                         variables_to_instrument['max'] += [
                             f"{filename}:{function}:{variable['name']}:{variable['declared_line']}"
-                            for variable in function_variables[label] if features_string(variable) not in instrumented
+                            for variable in function_variables[label]
+                            if features_string(variable) not in instrumented and
+                            ((label != 'correlated_with_input_size' and
+                              variable['features']['average_counter_segment_length_filtered'] > 4) or
+                             (label == 'correlated_with_input_size' and
+                              variable['features']['num_unique_values'] > 9))
                         ]
 
                         for variable in function_variables[label]:
@@ -243,7 +248,7 @@ def main(experiment: str, subject: str, binary: str, execution: str):
                 for v in function_variables['variables'] if v['class'] != 'zero_traces'
             ]
 
-    with open(f"{base_results_path}/variables_to_instrument.yml", "w") as f:
+    with open(f"{base_results_path}/sandpuppy_variable_targets.yml", "w") as f:
         yaml.dump(variables_to_instrument, f, default_flow_style=False, indent=2)
 
     graph.graph_classes(
