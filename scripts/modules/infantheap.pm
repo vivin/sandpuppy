@@ -17,20 +17,24 @@ sub build {
     my $experiment_name = $_[0];
     my $subject = $_[1];
     my $version = $_[2];
-    my $context = $_[3];
+    my $binary_context = $_[3];
     my $waypoints = $_[4];
+    my $additional_clang_args = $_[5];
 
     my $workspace = "$BASEWORKSPACEPATH/$experiment_name/$subject";
 
     my $binary_base = "$workspace/binaries";
-    my $binary_dir = "$binary_base/$context";
+    my $binary_dir = "$binary_base/$binary_context";
     my $binary_name = "infantheap";
     utils::create_binary_dir_and_backup_existing($binary_dir, $binary_name);
 
     my $FUZZ_FACTORY = "$TOOLS/FuzzFactory";
     my $build_command = "$FUZZ_FACTORY/afl-clang-fast -fno-inline-functions -fno-discard-value-names -fno-unroll-loops";
+    if ($additional_clang_args) {
+        $build_command .= " $additional_clang_args";
+    }
 
-    my $use_asan = ($context =~ /asan/);
+    my $use_asan = ($binary_context =~ /asan/);
     if ($use_asan) {
         $ENV{"AFL_USE_ASAN"} = 1;
     }
@@ -45,60 +49,49 @@ sub build {
         system $build_command;
     }
 
+    if ($? != 0) {
+        die "Build failed";
+    }
+
     delete $ENV{"WAYPOINTS"};
     delete $ENV{"AFL_USE_ASAN"};
 }
 
 sub fuzz {
-    my $pid = fork;
-    return $pid if $pid;
-
     my $experiment_name = $_[0];
     my $subject = $_[1];
     my $version = $_[2];
     my $exec_context = $_[3];
     my $waypoints = $_[4];
     my $binary_context = $_[5];
-    my $resume = $_[6];
+    my $options = $_[6];
 
-    my $workspace = "$BASEWORKSPACEPATH/$experiment_name/$subject";
-    my $results_base = "$workspace/results";
-    my $results_dir = "$results_base/$exec_context";
+    my $fuzz_command = utils::build_fuzz_command(
+        $experiment_name,
+        $subject,
+        $version,
+        $exec_context,
+        $waypoints,
+        $binary_context,
+        {
+            binary_name          => "infantheap",
+            resume               => $options->{resume},
+            use_asan             => $binary_context =~ /asan/ ? 1 : 0,
+            hang_timeout         => 0,
+            non_deterministic    => 0,
+            seeds_directory      => "$RESOURCES/seeds/infantheap/non-crashing",
+            dictionary_file      => 0,
+            binary_arguments     => 0,
+            sync_directory       => $options->{sync_directory},
+            parallel_fuzz_mode   => $options->{parallel_fuzz_mode}
+        }
+    );
 
-    if (!$resume) {
-        utils::create_results_dir_and_backup_existing($results_base, $exec_context);
-    } elsif (! -d $results_dir) {
-        die "Cannot resume because cannot find results dir at $results_dir";
-    }
+    my $pid = fork;
+    return $pid if $pid;
 
-    my $binary = "$workspace/binaries/$binary_context/infantheap";
-    if (! -e $binary) {
-        die "Could not find binary for binary context $binary_context at $binary";
-    }
-
-    my $FUZZ_FACTORY = "$TOOLS/FuzzFactory";
-    my $fuzz_command = "$FUZZ_FACTORY/afl-fuzz";
-    if ($waypoints ne "none") {
-        $fuzz_command .= " -p";
-    }
-
-    if ($resume) {
-        $fuzz_command .= " -i-"
-    } else {
-        my $seeds_directory = "$RESOURCES/seeds/infantheap/non-crashing";
-        $fuzz_command .= " -i $seeds_directory";
-    }
-
-    $fuzz_command .= " -o $results_dir -T \"infantheap-$experiment_name-$exec_context\"";
-
-    my $use_asan = ($binary_context =~ /asan/);
-    if ($use_asan) {
-        $ENV{"ASAN_OPTIONS"} = "abort_on_error=1:detect_leaks=0:symbolize=0:exitcode=86:allocator_may_return_null=1";
-        $fuzz_command .= " -m none";
-    }
-
-    $fuzz_command .= " $binary";
-
+    # Need to run in shell using exec otherwise it runs it as sh -c $fuzz_command and the pid we get is of sh. So when
+    # we try to kill it, it doesn't work.
     exec "exec $fuzz_command";
 }
 
