@@ -54,13 +54,14 @@ def main(experiment: str, subject: str, binary: str, execution: str):
     print("Binary:     {binary}".format(binary=binary))
     print("Execution:  {execution}\n".format(execution=execution))
 
-    base_results_path = f"{BASE_WORKSPACE_PATH}/{experiment}/{subject}/results/{execution}"
-    if not os.path.isdir(base_results_path):
-        raise Exception(f"Could not find results directory at {base_results_path}")
+    base_results_path = f"{BASE_WORKSPACE_PATH}/{experiment}/{subject}/results"
+    results_path = f"{base_results_path}/{execution}"
+    if not os.path.isdir(results_path):
+        raise Exception(f"Could not find results directory at {results_path}")
 
-    base_graphs_path = f"{base_results_path}/graphs"
-    if not os.path.isdir(base_graphs_path):
-        os.makedirs(base_graphs_path)
+    graphs_path = f"{results_path}/graphs"
+    if not os.path.isdir(graphs_path):
+        os.makedirs(graphs_path)
 
     print("Identifying files, functions, and variables...")
 
@@ -162,7 +163,7 @@ def main(experiment: str, subject: str, binary: str, execution: str):
 
     print("")
 
-    variables_to_instrument = {
+    interesting_variables = {
         'max': [],
         'perm': [],
         'hash': []
@@ -206,7 +207,7 @@ def main(experiment: str, subject: str, binary: str, execution: str):
                             print("    {related}".format(related=sorted([variable['fqn'] for variable in related])))
 
                     if label in ['correlated_with_input_size', 'dynamic_counter', 'input_size_counter']:
-                        variables_to_instrument['max'] += [
+                        interesting_variables['max'] += [
                             f"{filename}:{function}:{variable['name']}:{variable['declared_line']}"
                             for variable in function_variables[label]
                             if features_string(variable) not in instrumented and
@@ -220,7 +221,7 @@ def main(experiment: str, subject: str, binary: str, execution: str):
                             instrumented.add(features_string(variable))
 
                     if label == "enum_value_from_input":
-                        variables_to_instrument['perm'] += [
+                        interesting_variables['perm'] += [
                             f"{filename}:{function}:{variable['name']}:{variable['declared_line']}"
                             for variable in function_variables[label]
                             if features_string(variable) not in instrumented
@@ -238,7 +239,7 @@ def main(experiment: str, subject: str, binary: str, execution: str):
 
                                 # Only include pairs if the number of unique value combinations is greater than 10
                                 if num_value_combinations > 10:
-                                    variables_to_instrument['hash'].append([
+                                    interesting_variables['hash'].append([
                                         f"{filename}:{function}:{variable['name']}:{variable['declared_line']}"
                                         for variable in pair
                                     ])
@@ -248,11 +249,11 @@ def main(experiment: str, subject: str, binary: str, execution: str):
                 for v in function_variables['variables'] if v['class'] != 'zero_traces'
             ]
 
-    with open(f"{base_results_path}/sandpuppy_variable_targets.yml", "w") as f:
-        yaml.dump(variables_to_instrument, f, default_flow_style=False, indent=2)
+    with open(f"{base_results_path}/sandpuppy_interesting_variables.yml", "w") as f:
+        yaml.dump(interesting_variables, f, default_flow_style=False, indent=2)
 
     graph.graph_classes(
-        base_graphs_path,
+        graphs_path,
         all_classified_variables,
         ["static_counter", "dynamic_counter", "input_size_counter", "enum", "enum_value_from_input"]
     )

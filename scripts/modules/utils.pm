@@ -4,6 +4,8 @@ use strict;
 use warnings;
 use Log::Simple::Color;
 use File::Path qw(make_path);
+use List::Util qw(reduce);
+use POSIX;
 
 my $log = Log::Simple::Color->new;
 my $BASEPATH = glob "~/Projects/phd";
@@ -12,12 +14,23 @@ my $TOOLS = "$BASEPATH/tools";
 my $RESOURCES = "$BASEPATH/resources";
 my $SUBJECTS = "$BASEPATH/subjects";
 
-sub create_binary_dir_and_backup_existing {
+my $ASAN_MEMORY_LIMIT = 20971586; # Depends on the system. For 64-bit ASAN allocates something ridiculous like 20 TB.
+
+sub get_workspace {
+    my $experiment_name = $_[0];
+    my $subject = $_[1];
+    my $version = $_[2];
+
+    return "$BASEWORKSPACEPATH/$experiment_name/$subject" . ($version ? "-$version" : "");
+}
+
+sub create_binary_dir {
     my $binary_dir = $_[0];
     my $binary_name = $_[1];
+    my $backup = $_[2];
 
     my $binary = "$binary_dir/$binary_name";
-    if (-d $binary_dir and -e $binary) {
+    if (-d $binary_dir && -e $binary && $backup) {
         my $result = `find $binary_dir -type f -name "*backup[0-9]" | sed -e 's,^.*backup,,' | sort -nr | head -1`;
         if ($result eq "") {
             $result = -1;
@@ -52,35 +65,52 @@ sub create_results_dir_and_backup_existing {
     make_path($results_dir);
 }
 
+sub build_options_string {
+    if (!defined $_[0]) {
+        return "";
+    }
+
+    my %options = %{$_[0]};
+    return reduce { $a . " -$b=\"$options{$b}\"" } "", keys(%options);
+}
+
 sub build_fuzz_command {
     my $experiment_name = $_[0];
     my $subject = $_[1];
     my $version = $_[2];
-    my $exec_context = $_[3];
-    my $waypoints = $_[4];
-    my $binary_context = $_[5];
+    my $waypoints = $_[3];
+    my $binary_context = $_[4];
+    my $exec_context = $_[5];
     my $options = $_[6];
     my $binary_name = $options->{binary_name};
     my $resume = $options->{resume};
     my $use_asan = $options->{use_asan};
     my $hang_timeout = $options->{hang_timeout};
     my $non_deterministic = $options->{non_deterministic};
+    my $slow_target = $options->{slow_target};
     my $seeds_directory = $options->{seeds_directory};
     my $dictionary_file = $options->{dictionary_file};
     my $binary_arguments = $options->{binary_arguments};
-    my $sync_directory = $options->{sync_directory};
+    my $fuzzer_id = $options->{fuzzer_id};
+    my $sync_directory_name = $options->{sync_directory_name};
     my $parallel_fuzz_mode = $options->{parallel_fuzz_mode};
 
-    if (($sync_directory && !$parallel_fuzz_mode) || (!$sync_directory && $parallel_fuzz_mode)) {
-        die "If sync_directory is provided, parallel_fuzz_mode must be provided and vice-versa";
+    my %ENV_VARS = ();
+    if ($slow_target) {
+        $ENV_VARS{AFL_FAST_CAL} = 1;
     }
 
-    my $workspace = "$BASEWORKSPACEPATH/$experiment_name/$subject" . ($version ? "-$version" : "");
+    if (($fuzzer_id || $sync_directory_name || $parallel_fuzz_mode) &&
+        (!$fuzzer_id || !$sync_directory_name || !$parallel_fuzz_mode)) {
+        die "If any of fuzzer_id, sync_directory_name, or parallel_fuzz_mode is provided, all must be provided";
+    }
+
+    my $workspace = get_workspace($experiment_name, $subject, $version);
     my $results_base = "$workspace/results";
-    my $results_dir = !$sync_directory ? "$results_base/$exec_context" : "$results_base/$sync_directory";
+    my $results_dir = !$sync_directory_name ? "$results_base/$exec_context" : "$results_base/$sync_directory_name";
 
     if (!$resume) {
-        create_results_dir_and_backup_existing($results_base, $exec_context);
+        create_results_dir_and_backup_existing($results_base, $exec_context) if !$fuzzer_id;
     } elsif (! -d $results_dir) {
         die "Cannot resume because cannot find results dir at $results_dir";
     }
@@ -111,17 +141,15 @@ sub build_fuzz_command {
     my $banner = $subject . ($version ? "-$version" : "") . "-$experiment_name-$exec_context";
     $fuzz_command .= " -o $results_dir -T \"$banner\"";
 
-    if ($sync_directory) {
-        $fuzz_command .= (($parallel_fuzz_mode eq "parent" ? " -M " : " -S ") . "\"$exec_context\"");
-
-        # During parallel fuzzing we will monitor these instances on our own, so redirect STDOUT and STDERR to /dev/null
-        open STDOUT, ">",  "/dev/null" or die "$0: open: $!";
-        open STDERR, ">&", \*STDOUT    or exit 1;
+    if ($fuzzer_id) {
+        $ENV_VARS{AFL_IMPORT_FIRST} = 1;
+        $ENV_VARS{AFL_NO_UI} = 1;
+        $fuzz_command .= (($parallel_fuzz_mode eq "parent" ? " -M " : " -S ") . "\"$fuzzer_id\"");
     }
 
     if ($use_asan) {
-        $ENV{"ASAN_OPTIONS"} = "abort_on_error=1:detect_leaks=0:symbolize=0:exitcode=86:allocator_may_return_null=1";
-        $fuzz_command .= " -m 15000"; # Hard to estimate on 64 bit; let's set it to 15 gig.
+        $ENV_VARS{ASAN_OPTIONS} = "abort_on_error=1:detect_leaks=0:symbolize=0:exitcode=86:allocator_may_return_null=1";
+        $fuzz_command .= " -m $ASAN_MEMORY_LIMIT"; # Hard to estimate on 64 bit; let's set it to 15 gig.
     }
 
     if ($hang_timeout) {
@@ -139,5 +167,48 @@ sub build_fuzz_command {
         $fuzz_command .= " $binary_arguments";
     }
 
-    return $fuzz_command;
+    return ($fuzz_command, \%ENV_VARS);
+}
+
+sub interleave {
+    my @a = @{$_[0]};
+    my @b = @{$_[1]};
+
+    my @interleaved = ();
+    my ($limit, @c) = (scalar @a < scalar @b) ? (scalar @a, @b) : (scalar @b, @a);
+    for (my $i = 0; $i < $limit; $i ++) {
+        push @interleaved, ($a[$i], $b[$i]);
+    }
+
+    push @interleaved, @c[$limit..(scalar @c - 1)];
+    return \@interleaved;
+}
+
+sub chunk {
+    my @array = @{$_[0]};
+    my $chunk_size = $_[1];
+
+    my $num_chunks = floor(scalar @array / $chunk_size);
+    my @chunks = ();
+    for (my $i = 0; $i < $num_chunks; $i++) {
+        my $start = $i * $chunk_size;
+        my $end = ($start + $chunk_size) - 1;
+        my @chunk = @array[$start..$end];
+        push @chunks, \@chunk;
+    }
+
+    my $remaining = scalar @array % $chunk_size;
+    if ($remaining > 0) {
+        my $start = $num_chunks * $chunk_size;
+        my $end = $start + ($remaining - 1);
+        my @chunk = @array[$start..$end];
+        push @chunks, \@chunk;
+    }
+
+    return \@chunks;
+}
+
+sub get_random_fuzzer_id {
+    chomp(my $id = `cat /dev/urandom | tr -dc 'a-zA-Z0-9' | fold -w 16 | head -n 1`);
+    return $id;
 }

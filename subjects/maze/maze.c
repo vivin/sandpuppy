@@ -45,8 +45,8 @@ bool can_move_to(int row, int column) {
            maze[row][column] == ' ' || maze[row][column] == '*';
 }
 
-bool found_target(int row, int column) {
-    return maze[row][column] == '*';
+bool found_target(const int* row, const int* column) {
+    return maze[*row][*column] == '*';
 }
 
 int main(int argc, char* argv[]) {
@@ -114,7 +114,7 @@ int main(int argc, char* argv[]) {
             player_row += delta_row;
             player_col += delta_col;
 
-            if (found_target(player_row, player_col)) {
+            if (found_target(&player_row, &player_col)) {
                 printf("You found the treasure!\n");
                 done = true;
             }

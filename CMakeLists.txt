@@ -66,6 +66,8 @@ add_executable(PhD
         tools/FuzzFactory/llvm_mode/waypoints-vvperm-rt.c
         tools/FuzzFactory/llvm_mode/waypoints-vvhash-pass.cc
         tools/FuzzFactory/llvm_mode/waypoints-vvhash-rt.c
+        tools/FuzzFactory/llvm_mode/waypoints-vvmax-pass.cc
+        tools/FuzzFactory/llvm_mode/waypoints-vvmax-rt.c
         tools/FuzzFactory/afl-analyze.c
         tools/FuzzFactory/afl-as.c
         tools/FuzzFactory/afl-as.h

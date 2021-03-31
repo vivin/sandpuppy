@@ -595,7 +595,7 @@ static void locate_diffs(u8* ptr1, u8* ptr2, u32 len, s32* first, s32* last) {
    returned should be five characters or less for all the integers we reasonably
    expect to see. */
 
-static u8* DI(u64 val) {
+static u8*sDI(u64 val) {
 
   static u8 tmp[12][16];
   static u8 cur;
@@ -3847,16 +3847,21 @@ static void write_stats_file(double bitmap_cvg, double stability, double eps) {
 /* Update the plot file if there is a reason to. */
 
 static void maybe_update_plot_file(double bitmap_cvg, double eps) {
-
-  static u32 prev_qp, prev_pf, prev_pnf, prev_ce, prev_md;
+    /* total, favored, found, imported
+   int queued_paths, queued_favored, queued_discovered, queued_imported,
+        max_depth;*/
+  static u32 prev_qp, prev_qd, prev_qi, prev_pf, prev_pnf, prev_ce, prev_md;
   static u64 prev_qc, prev_uc, prev_uh;
 
-  if (prev_qp == queued_paths && prev_pf == pending_favored && 
-      prev_pnf == pending_not_fuzzed && prev_ce == current_entry &&
+  if (prev_qp == queued_paths && prev_qd == queued_discovered &&
+      prev_qi == queued_imported && prev_pf == pending_favored &&
+      prev_pnf == pending_not_fuzzed &&prev_ce == current_entry &&
       prev_qc == queue_cycle && prev_uc == unique_crashes &&
       prev_uh == unique_hangs && prev_md == max_depth) return;
 
   prev_qp  = queued_paths;
+  prev_qd  = queued_discovered;
+  prev_qi  = queued_imported;
   prev_pf  = pending_favored;
   prev_pnf = pending_not_fuzzed;
   prev_ce  = current_entry;
@@ -3867,23 +3872,23 @@ static void maybe_update_plot_file(double bitmap_cvg, double eps) {
 
   /* Fields in the file:
 
-     unix_time, cycles_done, cur_path, paths_total, paths_not_fuzzed,
-     favored_not_fuzzed, unique_crashes, unique_hangs, max_depth,
-     execs_per_sec */
+     unix_time, cycles_done, cur_path, paths_total, paths_found,
+     paths_imported, paths_not_fuzzed, favored_not_fuzzed, bitmap_coverage,
+     unique_crashes, unique_hangs, max_depth, execs_per_sec, num_dsf_inputs */
 
   if (save_everything) {
     fprintf(plot_file, 
-            "%llu, %llu, %u, %u, %u, %u, %0.02f%%, %llu, %llu, %u, %0.02f, %llu\n",
+            "%llu, %llu, %u, %u, %u, %u, %u, %u, %0.02f%%, %llu, %llu, %u, %0.02f, %llu\n",
             get_cur_time() / 1000, queue_cycle - 1, current_entry, queued_paths,
-            pending_not_fuzzed, pending_favored, bitmap_cvg, unique_crashes,
-            unique_hangs, max_depth, eps, num_dsf_inputs); /* ignore errors */
+            queued_discovered, queued_imported, pending_not_fuzzed, pending_favored,
+            bitmap_cvg, unique_crashes, unique_hangs, max_depth, eps, num_dsf_inputs); /* ignore errors */
   }
   else {
     fprintf(plot_file, 
-            "%llu, %llu, %u, %u, %u, %u, %0.02f%%, %llu, %llu, %u, %0.02f\n",
+            "%llu, %llu, %u, %u, %u, %u, %u, %u, %0.02f%%, %llu, %llu, %u, %0.02f\n",
             get_cur_time() / 1000, queue_cycle - 1, current_entry, queued_paths,
-            pending_not_fuzzed, pending_favored, bitmap_cvg, unique_crashes,
-            unique_hangs, max_depth, eps); /* ignore errors */
+            queued_discovered, queued_imported, pending_not_fuzzed, pending_favored,
+            bitmap_cvg, unique_crashes, unique_hangs, max_depth, eps); /* ignore errors */
   }
   fflush(plot_file);
 
@@ -7660,13 +7665,15 @@ EXP_ST void setup_dirs_fds(void) {
 
   if (save_everything) {
     fprintf(plot_file, "# unix_time, cycles_done, cur_path, paths_total, "
-                       "pending_total, pending_favs, map_size, unique_crashes, "
-                       "unique_hangs, max_depth, execs_per_sec, num_dsf_inputs\n");
+                       "paths_found, paths_imported, pending_total, pending_favs, "
+                       "map_coverage, unique_crashes, unique_hangs, max_depth, "
+                       "execs_per_sec, num_dsf_inputs\n");
                        /* ignore errors */
   } else {
     fprintf(plot_file, "# unix_time, cycles_done, cur_path, paths_total, "
-                       "pending_total, pending_favs, map_size, unique_crashes, "
-                       "unique_hangs, max_depth, execs_per_sec\n");
+                       "paths_found, paths_imported, pending_total, pending_favs, "
+                       "map_coverage, unique_crashes, unique_hangs, max_depth, "
+                       "execs_per_sec\n");
                        /* ignore errors */
   
   }
