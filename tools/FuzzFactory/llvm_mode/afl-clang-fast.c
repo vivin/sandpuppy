@@ -249,6 +249,10 @@ static void edit_params(u32 argc, char** argv) {
       cc_params[cc_par_cnt++] = "-U_FORTIFY_SOURCE";
       cc_params[cc_par_cnt++] = "-fsanitize=address";
 
+      if (getenv("AFL_USE_ASAN_DSO")) {
+          cc_params[cc_par_cnt++] = "-shared-libasan";
+      }
+
     } else if (getenv("AFL_USE_MSAN")) {
 
       if (getenv("AFL_USE_ASAN"))

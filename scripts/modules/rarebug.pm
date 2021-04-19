@@ -1,7 +1,7 @@
 package rarebug;
 
 use strict;
-use warnings;
+use warnings FATAL => 'all';
 use Log::Simple::Color;
 use File::Path qw(make_path);
 use utils;
@@ -25,7 +25,11 @@ sub build {
     my $binary_base = "$workspace/binaries";
     my $binary_dir =  "$binary_base/$binary_context";
     my $binary_name = "rarebug";
-    utils::create_binary_dir($binary_dir, $binary_name, $options->{backup});
+    utils::create_binary_dir({
+        binary_dir     => $binary_dir,
+        artifact_names => [$binary_name],
+        backup         => $options->{backup}
+    });
 
     my $FUZZ_FACTORY = "$TOOLS/FuzzFactory";
     my $build_command = "$FUZZ_FACTORY/afl-clang-fast -fno-inline-functions -fno-discard-value-names -fno-unroll-loops"

@@ -1,7 +1,7 @@
 package utils;
 
 use strict;
-use warnings;
+use warnings FATAL => 'all';
 use Log::Simple::Color;
 use File::Path qw(make_path);
 use List::Util qw(reduce);
@@ -16,6 +16,18 @@ my $SUBJECTS = "$BASEPATH/subjects";
 
 my $ASAN_MEMORY_LIMIT = 20971586; # Depends on the system. For 64-bit ASAN allocates something ridiculous like 20 TB.
 
+sub get_clang_library_path {
+    return "/usr/lib/llvm-10/lib/clang/10.0.0/lib/linux"
+}
+
+sub get_clang_asan_dso {
+    return get_clang_library_path() . "/libclang_rt.asan-x86_64.so";
+}
+
+sub get_clang_asan_static_lib {
+    return get_clang_library_path() . "/libclang_rt.asan-x86_64.a";
+}
+
 sub get_workspace {
     my $experiment_name = $_[0];
     my $subject = $_[1];
@@ -25,23 +37,28 @@ sub get_workspace {
 }
 
 sub create_binary_dir {
-    my $binary_dir = $_[0];
-    my $binary_name = $_[1];
-    my $backup = $_[2];
+    my $options = $_[0];
+    my $binary_dir = $options->{binary_dir};
+    my $artifact_names = $options->{artifact_names};
+    my $backup = $options->{backup};
 
-    my $binary = "$binary_dir/$binary_name";
-    if (-d $binary_dir && -e $binary && $backup) {
-        my $result = `find $binary_dir -type f -name "*backup[0-9]" | sed -e 's,^.*backup,,' | sort -nr | head -1`;
-        if ($result eq "") {
-            $result = -1;
-        }
-
-        my $new_version = ++$result;
-
-        $log->info("Backing up existing binary to backup version $new_version");
-        system ("cp $binary $binary_dir/$binary_name.backup$new_version");
-    } elsif (! -d $binary_dir) {
+    if (! -d $binary_dir) {
         make_path($binary_dir);
+    } else {
+        foreach my $artifact_name (@{$artifact_names}) {
+            my $artifact = "$binary_dir/$artifact_name";
+            if (-e $artifact && $backup) {
+                my $result = `find $binary_dir -type f -name "*backup[0-9]" | sed -e 's,^.*backup,,' | sort -nr | head -1`;
+                if ($result eq "") {
+                    $result = -1;
+                }
+
+                my $new_version = ++$result;
+
+                $log->info("Backing up existing binary to backup version $new_version");
+                system ("mv $artifact $binary_dir/$artifact_name.backup$new_version");
+            }
+        }
     }
 }
 
@@ -84,7 +101,10 @@ sub build_fuzz_command {
     my $options = $_[6];
     my $binary_name = $options->{binary_name};
     my $resume = $options->{resume};
+    my $exit_when_done = $options->{exit_when_done};
+    my $preload = $options->{preload};
     my $use_asan = $options->{use_asan};
+    my $asan_memory_limit = $options->{asan_memory_limit};
     my $hang_timeout = $options->{hang_timeout};
     my $non_deterministic = $options->{non_deterministic};
     my $slow_target = $options->{slow_target};
@@ -98,6 +118,14 @@ sub build_fuzz_command {
     my %ENV_VARS = ();
     if ($slow_target) {
         $ENV_VARS{AFL_FAST_CAL} = 1;
+    }
+
+    if ($exit_when_done) {
+        $ENV_VARS{AFL_EXIT_WHEN_DONE} = 1;
+    }
+
+    if ($preload) {
+        $ENV_VARS{AFL_PRELOAD} = $preload;
     }
 
     if (($fuzzer_id || $sync_directory_name || $parallel_fuzz_mode) &&
@@ -149,7 +177,7 @@ sub build_fuzz_command {
 
     if ($use_asan) {
         $ENV_VARS{ASAN_OPTIONS} = "abort_on_error=1:detect_leaks=0:symbolize=0:exitcode=86:allocator_may_return_null=1";
-        $fuzz_command .= " -m $ASAN_MEMORY_LIMIT"; # Hard to estimate on 64 bit; let's set it to 15 gig.
+        $fuzz_command .= " -m " . ($asan_memory_limit ? $asan_memory_limit : $ASAN_MEMORY_LIMIT); # Hard to estimate on 64 bit; let's set it to 15 gig.
     }
 
     if ($hang_timeout) {

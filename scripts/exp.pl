@@ -2,7 +2,7 @@
 
 use lib glob "~/Projects/phd/scripts/modules";
 use strict;
-use warnings;
+use warnings FATAL => 'all';
 use POSIX;
 
 use tasks;
@@ -112,6 +112,6 @@ if ($task eq "build") {
     if ($task eq "fuzz") {
         tasks::fuzz($experiment_name, $subject, $version, $waypoints, $binary_context, $execution_context);
     } elsif ($task eq "spfuzz") {
-        tasks::sandpuppy_fuzz($experiment_name, $subject, $version, { use_asan => $use_asan});
+        tasks::sandpuppy_fuzz($experiment_name, $subject, $version, { use_asan => $use_asan });
     }
 }

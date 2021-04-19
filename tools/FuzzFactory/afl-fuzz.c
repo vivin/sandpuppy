@@ -595,7 +595,7 @@ static void locate_diffs(u8* ptr1, u8* ptr2, u32 len, s32* first, s32* last) {
    returned should be five characters or less for all the integers we reasonably
    expect to see. */
 
-static u8*sDI(u64 val) {
+static u8* DI(u64 val) {
 
   static u8 tmp[12][16];
   static u8 cur;
@@ -8583,7 +8583,11 @@ int main(int argc, char** argv) {
   /* If we stopped programmatically, we kill the forkserver and the current runner. 
      If we stopped manually, this is done by the signal handler. */
   if (stop_soon == 2) {
-      if (child_pid > 0) kill(child_pid, SIGKILL);
+      if (child_pid > 0) {
+          kill(child_pid, SIGKILL);
+          write_kill_trace();
+      }
+
       if (forksrv_pid > 0) kill(forksrv_pid, SIGKILL);
   }
   /* Now that we've killed the forkserver, we wait for it to be able to get rusage stats. */

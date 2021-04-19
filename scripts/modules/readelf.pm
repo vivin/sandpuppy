@@ -1,7 +1,7 @@
 package readelf;
 
 use strict;
-use warnings;
+use warnings FATAL => 'all';
 use Log::Simple::Color;
 use File::Path qw(make_path);
 use utils;
@@ -63,7 +63,7 @@ sub build {
     }
 
     my $clang_waypoint_options = utils::build_options_string($options->{clang_waypoint_options});
-    system ("CC=\"$build_command$clang_waypoint_options\" ./configure && make -j12");
+    system ("CC='$build_command$clang_waypoint_options' ./configure && make -j12");
     if ($? != 0) {
         delete $ENV{"WAYPOINTS"};
         delete $ENV{"AFL_USE_ASAN"};
@@ -79,7 +79,11 @@ sub build {
     my $binary_base = "$workspace/binaries";
     my $binary_dir =  "$binary_base/$binary_context";
     my $binary_name = "readelf";
-    utils::create_binary_dir($binary_dir, $binary_name, $options->{backup});
+    utils::create_binary_dir({
+        binary_dir     => $binary_dir,
+        artifact_names => [$binary_name],
+        backup         => $options->{backup}
+    });
 
     my $binutils_lib_version = $version;
     $binutils_lib_version =~ s/\.[0-9]$//;

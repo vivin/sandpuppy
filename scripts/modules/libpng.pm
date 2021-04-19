@@ -1,7 +1,7 @@
 package libpng;
 
 use strict;
-use warnings;
+use warnings FATAL => 'all';
 use Log::Simple::Color;
 use File::Path qw(make_path);
 use utils;
@@ -67,7 +67,7 @@ sub build {
     }
 
     my $clang_waypoint_options = utils::build_options_string($options->{clang_waypoint_options});
-    system ("CC=\"$build_command$clang_waypoint_options\" ./configure --disable-shared && make -j12");
+    system ("CC='$build_command$clang_waypoint_options' ./configure --disable-shared && make -j12");
     if ($? != 0) {
         delete $ENV{"WAYPOINTS"};
         delete $ENV{"AFL_USE_ASAN"};
@@ -75,14 +75,16 @@ sub build {
         die "Make failed";
     }
 
-    delete $ENV{"WAYPOINTS"};
-
     my $workspace = utils::get_workspace($experiment_name, $subject, $version);
 
     my $binary_base = "$workspace/binaries";
     my $binary_dir =  "$binary_base/$binary_context";
     my $binary_name = "readpng";
-    utils::create_binary_dir($binary_dir, $binary_name, $options->{backup});
+    utils::create_binary_dir({
+        binary_dir     => $binary_dir,
+        artifact_names => [$binary_name],
+        backup         => $options->{backup}
+    });
 
     my $libpng_lib_version = $version;
     $libpng_lib_version =~ s/\.[0-9]$//;
@@ -104,9 +106,13 @@ sub build {
     system ("$build_command ./readpng.c -lm -lz $libpng_lib_file -o $binary_dir/$binary_name");
     if ($? != 0) {
         die "Building readpng failed";
+
+        delete $ENV{"AFL_USE_ASAN"};
+        delete $ENV{"WAYPOINTS"};
     }
 
     delete $ENV{"AFL_USE_ASAN"};
+    delete $ENV{"WAYPOINTS"};
 }
 
 sub fuzz {

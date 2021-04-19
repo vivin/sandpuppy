@@ -1,7 +1,7 @@
 package libtpms;
 
 use strict;
-use warnings;
+use warnings FATAL => 'all';
 use Log::Simple::Color;
 use File::Path qw(make_path);
 use utils;
@@ -54,8 +54,15 @@ sub build {
     my $FUZZ_FACTORY = "$TOOLS/FuzzFactory";
     my $build_command = "$FUZZ_FACTORY/afl-clang-fast -fno-inline-functions -fno-discard-value-names -fno-unroll-loops";
 
+    # We don't want to instrument our test binary with ASAN. However the problem is that clang statically links asan
+    # into libtpms. So when building the binary we have to use -fsanitize=address so that the asan symbols can be
+    # resolved. To get around this we can tell clang to use asan as a DSO. Then we can use LD_PRELOAD to provide
+    # a path to the runtime library when running the binary.
+    my $asan_dso_option;
     if ($binary_context =~ /-asan/) {
         $ENV{"AFL_USE_ASAN"} = 1;
+        $ENV{"AFL_USE_ASAN_DSO"} = 1;
+        $asan_dso_option = " -Wl,-rpath=" . utils::get_clang_library_path();
     }
 
     if ($waypoints ne "none") {
@@ -63,33 +70,70 @@ sub build {
     }
 
     my $clang_waypoint_options = utils::build_options_string($options->{clang_waypoint_options});
-    system ("autoreconf --verbose --force --install && CC=\"$build_command$clang_waypoint_options\" ./configure --with-openssl --with-tpm2 && make -j12");
+    system ("autoreconf --verbose --force --install && CC='$build_command$asan_dso_option$clang_waypoint_options' ./configure --with-openssl --with-tpm2 && make -j12");
     if ($? != 0) {
         delete $ENV{"WAYPOINTS"};
         delete $ENV{"AFL_USE_ASAN"};
+        delete $ENV{"AFL_USE_ASAN_DSO"};
 
         die "Make failed";
     }
 
     delete $ENV{"WAYPOINTS"};
+    delete $ENV{"AFL_USE_ASAN"};
+    delete $ENV{"AFL_USE_ASAN_DSO"};
 
     my $workspace = utils::get_workspace($experiment_name, $subject, $version);
 
     my $binary_base = "$workspace/binaries";
     my $binary_dir =  "$binary_base/$binary_context";
     my $binary_name = "readtpmc";
-    utils::create_binary_dir($binary_dir, $binary_name, $options->{backup});
+    my @library_names = (
+        "libtpms.so",
+        "libtpms.so.0",
+        "libtpms.so.0.8.0",
+        "libtpms.a",
+        "libtpms_tpm2.a",
+        "libtpms_tpm12.a"
+    );
+    my @artifact_names = ($binary_name, @library_names);
+    utils::create_binary_dir({
+        binary_dir     => $binary_dir,
+        artifact_names => \@artifact_names,
+        backup         => $options->{backup}
+    });
+
+    # Copy the shared libraries into the binary dir because the binary will need to use it. We can't just provide the
+    # directory in the source to rpath because then all readtpmc binaries will use the same shared libraries, which is
+    # not what we want when we build and fuzz multiple targets.
+    foreach my $library_name (@library_names) {
+        system ("cp $libtpms_src_dir/src/.libs/$library_name $binary_dir");
+    }
 
     chdir $libtpms_base_dir;
 
     $log->info("Building readtpmc..");
 
-    system ("$build_command $libtpms_resources/readtpmc.c -I$libtpms_src_dir/include -ltpms -L$libtpms_src_dir/src/.libs -Wl,-rpath,$libtpms_src_dir/src/.libs -o $binary_dir/$binary_name");
+    # If the binary directory (which we get from the execution context) contains colons then we run into problems when
+    # providing it to the linker so that it can find the libtpms libraries that we put there. While no errors are shown
+    # while linking, ldd will show that it cannot find the libtpms so file. We could modify the execution context, but
+    # that would be kind of confusing. So instead let's just create a symlink to the binary directory, where the symlink
+    # is the name of the binary directory, but with colons replaced by dots. We can then provide this to the linker and
+    # at runtime the executable can find the so files without issue.
+    my $safe_binary_dir = $binary_dir;
+    if ($binary_dir =~ /:/) {
+        $safe_binary_dir =~ s/:/./g;
+
+        if (! -e $safe_binary_dir) {
+            system ("ln -s $binary_dir $safe_binary_dir")
+        }
+    }
+
+    # Use -Xlinker -rpath <path> instead of -Wl,-rpath,<path> because the latter breaks when paths contain commas.
+    system ("$build_command $libtpms_resources/readtpmc.c -I$libtpms_src_dir/include -L$safe_binary_dir -ltpms -Xlinker -rpath $safe_binary_dir -o $binary_dir/$binary_name\n");
     if ($? != 0) {
         die "Building readtpmc failed";
     }
-
-    delete $ENV{"AFL_USE_ASAN"};
 }
 
 sub fuzz {
@@ -112,8 +156,10 @@ sub fuzz {
             binary_name         => "readtpmc",
             resume              => $options->{resume},
             use_asan            => $binary_context =~ /-asan/ ? 1 : 0,
+            preload             => $binary_context =~ /-asan/ ? utils::get_clang_asan_dso() : 0,
+            asan_memory_limit   => 20971597,
             hang_timeout        => $waypoints =~ /vvdump/ ? "60000+" : 0,
-            non_deterministic   => 1,
+            non_deterministic   => 0,
             slow_target         => 1,
             seeds_directory     => "$RESOURCES/seeds/libtpms",
             dictionary_file     => 0,

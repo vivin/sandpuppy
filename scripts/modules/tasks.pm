@@ -1,8 +1,9 @@
 package tasks;
 use strict;
-use warnings;
+use warnings FATAL => 'all';
 use Log::Simple::Color;
 use File::Path qw(make_path);
+use File::stat;
 use Time::HiRes qw(time);
 use POSIX;
 use YAML::XS;
@@ -17,9 +18,9 @@ use libpng;
 use readelf;
 use libtpms;
 
-sub shutdown {
+sub shut_down {
     display::restore_display();
-    die;
+    exit;
 }
 
 my $log = Log::Simple::Color->new;
@@ -31,51 +32,54 @@ my $WAYPOINTS_NONE = "none";
 my $SANDPUPPY_MAIN_TARGET_NAME = "sandpuppy-main";
 my $SANDPUPPY_SYNC_DIRECTORY = "sandpuppy-sync";
 
-my @stats_columns = ("unix_time", "cycles_done", "cur_path", "paths_total", "paths_found", "paths_imported",
-    "pending_total", "pending_favs", "map_coverage", "unique_crashes", "unique_hangs", "max_depth", "execs_per_sec");
-
 my $subjects = {
     infantheap => {
-        tasks     => {
-            build => \&infantheap::build,
-            fuzz  => \&infantheap::fuzz,
+        binary_name => "infantheap",
+        tasks       => {
+            build   => \&infantheap::build,
+            fuzz    => \&infantheap::fuzz,
         },
-        fuzz_time => 600
+        fuzz_time   => 600
     },
     rarebug    => {
-        tasks     => {
-            build => \&rarebug::build,
-            fuzz  => \&rarebug::fuzz
+        binary_name => "rarebug",
+        tasks       => {
+            build   => \&rarebug::build,
+            fuzz    => \&rarebug::fuzz
         },
-        fuzz_time => 600
+        fuzz_time   => 600
     },
     maze       => {
-        tasks     => {
-            build => \&maze::build,
-            fuzz  => \&maze::fuzz
+        binary_name => "maze",
+        tasks       => {
+            build   => \&maze::build,
+            fuzz    => \&maze::fuzz
         },
-        fuzz_time => 1200
+        fuzz_time   => 1200
     },
     libpng     => {
-        tasks     => {
-            build => \&libpng::build,
-            fuzz  => \&libpng::fuzz
+        binary_name => "readpng",
+        tasks       => {
+            build   => \&libpng::build,
+            fuzz    => \&libpng::fuzz
         },
-        fuzz_time => 14400
+        fuzz_time   => 14400
     },
     readelf    => {
-        tasks     => {
-            build => \&readelf::build,
-            fuzz  => \&readelf::fuzz
+        binary_name => "readelf",
+        tasks       => {
+            build   => \&readelf::build,
+            fuzz    => \&readelf::fuzz
         },
-        fuzz_time => 7200
+        fuzz_time   => 7200
     },
     libtpms    => {
-        tasks     => {
-            build => \&libtpms::build,
-            fuzz  => \&libtpms::fuzz
+        binary_name => "readtpmc",
+        tasks       => {
+            build   => \&libtpms::build,
+            fuzz    => \&libtpms::fuzz
         },
-        fuzz_time => 14400
+        fuzz_time   => 14400
     }
 };
 
@@ -120,11 +124,25 @@ sub build {
     my $waypoints = $_[3];
     my $binary_context = $_[4];
     my $options = $_[5];
+    if ($options->{backup} && $options->{use_existing}) {
+        die "Both backup and use_existing cannot be set";
+    }
 
-    my $tasks = $subjects->{$subject}->{tasks};
-    $tasks->{build}->($experiment_name, $subject, $version, $waypoints, $binary_context, $options);
+    my $workspace = utils::get_workspace($experiment_name, $subject, $version);
+    my $binary = "$workspace/binaries/$binary_context/$subjects->{$subject}->{binary_name}";
 
-    chdir $BASEPATH;
+    my $build_anyway = 0;
+    if ($options->{use_existing} && ! -e $binary) {
+        $log->warning("use_existing is set, but cannot find a binary at $binary, so building it");
+        $build_anyway = 1;
+    }
+
+    if (!$options->{use_existing} || $build_anyway) {
+        my $tasks = $subjects->{$subject}->{tasks};
+        $tasks->{build}->($experiment_name, $subject, $version, $waypoints, $binary_context, $options);
+
+        chdir $BASEPATH;
+    }
 }
 
 sub fuzz {
@@ -146,7 +164,7 @@ sub fuzz {
         }
 
         $ENV{"__VVD_EXP_NAME"} = $experiment_name;
-        $ENV{"__VVD_SUBJECT"} = "$subject-$version";
+        $ENV{"__VVD_SUBJECT"} = $version ? "$subject-$version" : $subject;
         $ENV{"__VVD_BIN_CONTEXT"} = $binary_context;
         $ENV{"__VVD_EXEC_CONTEXT"} = $execution_context;
 
@@ -246,7 +264,7 @@ sub sandpuppy_fuzz {
     my $options = $_[3];
 
     my $NUM_CORES = 12;
-    my $OVERALL_FUZZ_TIME = 43200; # For 12 hours for now...
+    my $OVERALL_FUZZ_TIME = 302400; # For 3.5 days
 
     # We reserve one core to run the parent fuzzer which we won't shut down until we are completely done.
     # TODO: what does "done" mean? No targets have found any paths after X hours?
@@ -262,11 +280,12 @@ sub sandpuppy_fuzz {
         $options
     );
 
+    my $resume = can_resume($experiment_name, $subject, $version);
     # Now we will start parallel fuzzing. First we clear the screen, set up some signal handlers (that restore the
     # terminal to a non-annoying state on shutdown) and then start the parent fuzzer instance.
     display::init_display();
-    $SIG{INT} = \&shutdown;
-    $SIG{TERM} = \&shutdown;
+    $SIG{INT} = \&shut_down;
+    $SIG{TERM} = \&shut_down;
 
     my $overall_start_time = time();
     my $parent_fuzzer_pid = fuzz(
@@ -280,65 +299,69 @@ sub sandpuppy_fuzz {
             async               => 1,
             fuzzer_id           => $main_target->{id},
             sync_directory_name => $SANDPUPPY_SYNC_DIRECTORY,
-            parallel_fuzz_mode  => "parent"
+            parallel_fuzz_mode  => "parent",
+            resume              => $resume
         }
     );
 
     my $cycle = 1;
     my $done = 0;
     while (!$done) {
+        # Only include unfinished targets.
+        my @unfinished_targets = grep { !$_->{finished} } @{$targets};
+
+        # Retrieve stats from results directory for each target. This gives us more accurate numbers for metrics like
+        # paths found, paths imported, etc. than relying solely on plot_data. This is because in a resumed fuzzing
+        # session, the data reported by afl-fuzz only includes data from the current session. So the number of paths
+        # found, for example, will not include those discovered in previous sessions. Since we support resuming a
+        # previous sandpuppy fuzzing session, and because we also resume fuzzing targets after the first cycle, we need
+        # this data so that we can display accurate metrics.
+        $main_target->{previous_stats} = get_previous_parallel_fuzzer_stats($main_target);
+        foreach my $target (@unfinished_targets) {
+            $target->{previous_stats} = get_previous_parallel_fuzzer_stats($target);
+        }
+
         # If we have more targets than available cores, we cannot fuzz all of them at once. So we chunk the list into
         # sub-lists that are at most AVAILABLE_CORES in size.
-        my @target_batches = @{utils::chunk($targets, $AVAILABLE_CORES)};
+        my @target_batches = @{utils::chunk(\@unfinished_targets, $AVAILABLE_CORES)};
         my $num_batches = scalar @target_batches;
 
         # Iterate over each chunk. Spin up child fuzzers. Wait for an hour, then kill them and gather their stats. Once
         # done with all chunks, sort targets by number of paths found in descending order. Then re-chunk and fuzz again.
-        # TODO: Figure out when we are "done". Two ways to do this. First way is to keep track of how many paths a
-        # TODO: target has found in the last X cycles (would need to maintain cumulative stats). If it has not found
-        # TODO: any new paths in the last X cycles, we count it as "finished". Another way is to set an environment
-        # TODO: variable that tells AFL to shut down the target fuzzing when done. AFL will check to see if the target
-        # TODO: has found any new paths. If it hasn't in a while, it will shut it down. All we need to do at the end
-        # TODO: when a chunk is done, is invoke kill 0, PID against the fuzzer processes to see if they are still up.
-        # TODO: If any are already down we can count them as "finished". !!!!! will have to filter out targets that are
-        # TODO: finished before fuzzing! We can use grep before the map to look for those with finished = 0. But we will
-        # TODO: still send all targets when we display stats because we display how many targets are finished. HOWEVER
-        # TODO: when CHUNKING, we want to make sure that finished targets are not included. So I think THIS is where we
-        # TODO: need to use grep.
-
         # Fuzz each batch for an hour. Unless there is only one batch, in which case we just fuzz that one batch for the
         # whole $OVERALL_FUZZ_TIME seconds.
         my $BATCH_FUZZ_TIME = $num_batches == 1 ? $OVERALL_FUZZ_TIME : 3600; # Fuzz each batch for one hour.
         my $current_batch = 1;
         foreach my $target_batch (@target_batches) {
-            my @fuzzer_pids = map {
-                fuzz(
+
+            # Spin up fuzzers for all targets in this batch.
+            foreach my $target (@{$target_batch}) {
+                my $fuzzer_pid = fuzz(
                     $experiment_name,
                     $subject,
                     $version,
-                    $_->{waypoints},
-                    $_->{binary_context},
-                    $_->{execution_context},
+                    $target->{waypoints},
+                    $target->{binary_context},
+                    $target->{execution_context},
                     {
                         async               => 1,
-                        fuzzer_id           => $_->{id},
+                        fuzzer_id           => $target->{id},
                         sync_directory_name => $SANDPUPPY_SYNC_DIRECTORY,
                         parallel_fuzz_mode  => "child",
-                        resume              => $_->{previous_stats} ? 1 : 0
+                        resume              => $resume || $cycle > 1 ? 1 : 0,
+                        exit_when_done      => 1
                     }
-                )
-            } @{$target_batch};
+                );
 
-            #my $fuzzer_pid_list = join ", ", @fuzzer_pids;
-            #print "Started " . scalar @fuzzer_pids . " child fuzzers: $fuzzer_pid_list\n";
+                $target->{fuzzer_pid} = $fuzzer_pid;
+            }
 
             my $batch_start_time = time();
-            while (time() - $batch_start_time < $BATCH_FUZZ_TIME) {
-                sleep 1;
-
-                $main_target->{stats} = get_parallel_fuzzer_stats($main_target);
+            my $batch_done = 0;
+            while (!$batch_done) {
+                $main_target->{current_stats} = get_current_parallel_fuzzer_stats($main_target, $batch_start_time);
                 foreach my $target (@{$target_batch}) {
-                    $target->{stats} = get_parallel_fuzzer_stats($target);
+                    $target->{current_stats} = get_current_parallel_fuzzer_stats($target, $batch_start_time);
                 }
 
                 my @all_targets = ($main_target, @{$targets});
@@ -354,111 +377,76 @@ sub sandpuppy_fuzz {
                     $num_batches,
                     $overall_stats,
                     $batch_stats
-                )
+                );
+
+                check_for_finished_targets($target_batch);
+                sleep 1;
+
+                $batch_done = time() - $batch_start_time > $BATCH_FUZZ_TIME
+                    || scalar (grep { !$_->{finished} } @{$target_batch}) == 0;
             }
 
-            foreach my $fuzzer_pid (@fuzzer_pids) {
-                kill 'INT', $fuzzer_pid;
-            }
+            # Kill any children that are not already finished.
+            kill 'INT', map { $_->{fuzzer_pid} } grep { !$_->{finished} } @{$target_batch};
 
             # Get latest stats after killing children because fuzzers may have updated plot_data right before we killed
-            # them.
-            $main_target->{stats} = get_parallel_fuzzer_stats($main_target);
+            # them. While we are here we are also going to do our own checks to see whether a target is done fuzzing.
+            # This is because AFL waits until a target has gone through 100 cycles without finding any new paths and
+            # without any pending paths to fuzz, before deciding to exit. Our problem is that for slow targets it is
+            # unlikely that afl-fuzz will get through 100 cycles in a single session. But we can still tell how many
+            # cycles it did go through. So what we do is maintain a cumulative count of cycles that the target completed
+            # without finding any paths, and if this gets above 100 we check to see if there are any pending paths. If
+            # not, increment a counter that maintains the number of unproductive fuzzing sessions. If this counter gets
+            # above 1 (meaning that we fuzzed for at least 2 hours without any new paths) we mark the corresponding
+            # target as finished.
+            $main_target->{current_stats} = get_current_parallel_fuzzer_stats($main_target, $batch_start_time);
             foreach my $target (@{$target_batch}) {
-                $target->{stats} = get_parallel_fuzzer_stats($target);
+                $target->{current_stats} = get_current_parallel_fuzzer_stats($target, $batch_start_time);
+
+                # If target was already shut down by AFL there's no need for us to figure out if it is done.
+                next if $target->{finished};
+
+                if (!$target->{cycles_without_finds}) {
+                    $target->{cycles_without_finds} = 0;
+                }
+
+                if (!$target->{unproductive_fuzzing_sessions}) {
+                    $target->{unproductive_fuzzing_sessions} = 0;
+                }
+
+                # If no paths were found, update the number of cycles without finds. If any paths were found reset it to
+                # zero.
+                if ($target->{current_stats}->{paths_found} == 0) {
+                    $target->{cycles_without_finds} += $target->{current_stats}->{cycles_done};
+                } else {
+                    $target->{cycles_without_finds} = 0;
+                }
+
+                my $cycles_without_finds = $target->{cycles_without_finds};
+                my $pending_total = $target->{current_stats}->{pending_total};
+                if ($cycles_without_finds > 100 && $pending_total == 0) {
+                    $target->{finished} = ++$target->{unproductive_fuzzing_sessions} > 1;
+                } else {
+                    $target->{unproductive_fuzzing_sessions} = 0;
+                }
             }
 
             $current_batch++;
         }
 
-        # Sort all targets in descending order based on number of newly found paths.
-        my @sorted = sort {
-            ($b->{previous_stats} ? $b->{stats}->{paths_found} - $b->{previous_stats}->{paths_found} : $b->{stats}->{paths_found})
-                <=>
-            ($b->{previous_stats} ? $b->{stats}->{paths_found} - $b->{previous_stats}->{paths_found} : $b->{stats}->{paths_found})
-        } @{$targets};
+        # Sort all targets in descending order based on number of found paths
+        my @sorted = sort { $b->{current_stats}->{paths_found} <=> $a->{current_stats}->{paths_found} } @{$targets};
         $targets = \@sorted;
 
-        # Copy current stats as previous stats:
-        foreach my $target (@{$targets}) {
-            $target->{previous_stats} = eval Dumper($target->{stats});
-        }
-
         $cycle++;
+
+        # We are done if the fuzzing time limit is over, or if there are no unfinished targets left.
         $done = time() - $overall_start_time > $OVERALL_FUZZ_TIME
+            || scalar (grep { !$_->{finished} } @{$targets}) == 0;
     }
 
     display::restore_display();
     kill 'INT', $parent_fuzzer_pid;
-}
-
-sub aggregate_stats {
-    my $targets = $_[0];
-
-    my %stats = (
-        waypoints => {},
-        aggregate => {}
-    );
-
-    my $count = scalar @{$targets};
-    my $finished = 0;
-    my $total_paths = 0;
-    my $paths_imported = 0;
-    my $paths_found = 0;
-    my $unique_hangs = 0;
-    my $unique_crashes = 0;
-    my $max_depth = 0;
-    foreach my $target (@{$targets}) {
-        next if !$target->{stats};
-
-        $total_paths += $target->{stats}->{paths_total};
-        $paths_imported += $target->{stats}->{paths_imported};
-        $paths_found += $target->{stats}->{paths_found};
-        $unique_hangs += $target->{stats}->{unique_hangs};
-        $unique_crashes += $target->{stats}->{unique_crashes};
-        $max_depth = $max_depth < $target->{stats}->{max_depth} ? $target->{stats}->{max_depth} : $max_depth;
-
-        if (!$stats{waypoints}->{$target->{waypoints}}) {
-            $stats{waypoints}->{$target->{waypoints}} = {
-                count          => 0,
-                finished       => 0,
-                total_paths    => 0,
-                paths_imported => 0,
-                paths_found    => 0,
-                unique_hangs   => 0,
-                unique_crashes => 0,
-                max_depth      => 0,
-                cur_path       => []
-            }
-        }
-
-        $stats{waypoints}->{$target->{waypoints}}->{count}++;
-        if ($target->{finished}) {
-            $stats{waypoints}->{$target->{waypoints}}->{finished}++;
-            $finished++;
-        }
-
-        $stats{waypoints}->{$target->{waypoints}}->{total_paths} += $target->{stats}->{paths_total};
-        $stats{waypoints}->{$target->{waypoints}}->{paths_imported} += $target->{stats}->{paths_imported};
-        $stats{waypoints}->{$target->{waypoints}}->{paths_found} += $target->{stats}->{paths_found};
-        $stats{waypoints}->{$target->{waypoints}}->{unique_hangs} += $target->{stats}->{unique_hangs};
-        $stats{waypoints}->{$target->{waypoints}}->{unique_crashes} += $target->{stats}->{unique_crashes};
-        if ($target->{stats}->{max_depth} > $stats{waypoints}->{$target->{waypoints}}->{max_depth}) {
-            $stats{waypoints}->{$target->{waypoints}}->{max_depth} = $target->{stats}->{max_depth};
-        }
-        push @{$stats{waypoints}->{$target->{waypoints}}->{cur_path}}, $target->{stats}->{cur_path};
-    }
-
-    $stats{aggregate}->{count} = $count;
-    $stats{aggregate}->{finished} = $finished;
-    $stats{aggregate}->{total_paths} = $total_paths;
-    $stats{aggregate}->{paths_imported} = $paths_imported;
-    $stats{aggregate}->{paths_found} = $paths_found;
-    $stats{aggregate}->{unique_hangs} = $unique_hangs;
-    $stats{aggregate}->{unique_crashes} = $unique_crashes;
-    $stats{aggregate}->{max_depth} = $max_depth;
-
-    return \%stats;
 }
 
 sub build_sandpuppy_targets {
@@ -524,8 +512,6 @@ sub build_sandpuppy_targets {
         close $VVMAX;
     }
 
-    # This is temporary and only for individual binaries like infantheap, maze, and rarebug. These were built directly
-    # from the current project root and
     if (scalar @{$interesting_variables->{perm}} > 0) {
         foreach my $variable (@{$interesting_variables->{perm}}) {
             my $name = "sandpuppy-vvperm-$variable";
@@ -607,7 +593,7 @@ sub build_sandpuppy_targets {
         $version,
         $main_target->{waypoints},
         $main_target->{binary_context},
-        { backup => 0 }
+        { use_existing => 1, backup => 0 }
     );
 
     # Set AFL_INST_RATIO to 1. We will turn off regular AFL instrumentation completely because we already have an
@@ -634,6 +620,7 @@ sub build_sandpuppy_targets {
             $target->{waypoints},
             $target->{name} . ($options->{use_asan} ? "-asan" : ""),
             {
+                use_existing           => 1,
                 backup                 => 0,
                 clang_waypoint_options => {
                     variables_file => $target->{variables_file}
@@ -646,40 +633,274 @@ sub build_sandpuppy_targets {
     return $main_target, \@targets;
 }
 
-sub get_parallel_fuzzer_stats {
+sub can_resume {
+    my $experiment_name = $_[0];
+    my $subject = $_[1];
+    my $version = $_[2];
+
+    my $workspace = utils::get_workspace($experiment_name, $subject, $version);
+    my $results_dir = "$workspace/results";
+    my $sync_dir = "$results_dir/$SANDPUPPY_SYNC_DIRECTORY";
+    if (! -d $sync_dir) {
+        return 0;
+    }
+
+    my $name_to_id = {};
+    my $name_to_id_file = "$results_dir/sandpuppy-target-name-to-id.yml";
+    if (-e $name_to_id_file) {
+        $name_to_id = YAML::XS::LoadFile($name_to_id_file);
+    } else {
+        return 0;
+    }
+
+    my $i = 0;
+    my $not_found = 0;
+    my @target_names = keys (%{$name_to_id});
+    until ($not_found || $i == scalar @target_names) {
+        my $target_id = $name_to_id->{$target_names[$i]};
+
+        my $target_dir = "$sync_dir/$target_id";
+        my $target_queue = "$target_dir/queue";
+        my $target_hangs = "$target_dir/hangs";
+        my $target_crashes = "$target_dir/crashes";
+
+        $not_found = (! -d $target_dir) || (! -d $target_queue) || (! -d $target_hangs) || (! -d $target_crashes);
+        $i++;
+    }
+
+    # We can resume if everything was found.
+    return !$not_found;
+}
+
+sub get_previous_parallel_fuzzer_stats {
     my $target = $_[0];
 
     my $workspace = utils::get_workspace($target->{experiment_name}, $target->{subject}, $target->{version});
     my $results_base = "$workspace/results";
     my $results_dir = "$results_base/$SANDPUPPY_SYNC_DIRECTORY/$target->{id}";
 
+    if (! -d $results_dir || ! -d "$results_dir/queue" || ! -d "$results_dir/hangs" || ! -d "$results_dir/crashes") {
+        return {
+            paths_total    => 0,
+            paths_found    => 0,
+            paths_imported => 0,
+            unique_hangs   => 0,
+            unique_crashes => 0
+        };
+    }
+
+    chomp(my $num_queue_inputs = `find $results_dir/queue -maxdepth 1 -type f | wc -l`);
+    chomp(my $num_original_inputs =`find $results_dir/queue -maxdepth 1 -type f | grep ",orig:" | wc -l`);
+    chomp(my $num_imported_inputs =`find $results_dir/queue -maxdepth 1 -type f | grep ",sync:" | wc -l`);
+
+    chomp(my $num_hanging_inputs = `find $results_dir/hangs -maxdepth 1 -type f | wc -l`);
+    chomp(my $num_hanging_imported_inputs = `find $results_dir/hangs -maxdepth 1 -type f | grep ",sync:" | wc -l`);
+
+    chomp(my $num_crashing_inputs = `find $results_dir/crashes -maxdepth 1 -type f | wc -l`);
+    chomp(my $num_crashing_imported_inputs = `find $results_dir/crashes -maxdepth 1 -type f | grep ",sync:" | wc -l`);
+
+    my $paths_imported = $num_imported_inputs + $num_hanging_imported_inputs + $num_crashing_imported_inputs;
+    my $total_paths = $num_queue_inputs + $paths_imported + $num_hanging_inputs + $num_crashing_inputs;
+    my $paths_found = $total_paths - $num_original_inputs - $num_imported_inputs - $num_hanging_imported_inputs - $num_crashing_imported_inputs;
+
+    my $unique_hangs = $num_hanging_inputs;
+    my $unique_crashes = $num_crashing_inputs;
+
+    my %stats = (
+        paths_total    => $total_paths,
+        paths_found    => $paths_found,
+        paths_imported => $paths_imported,
+        unique_hangs   => $unique_hangs,
+        unique_crashes => $unique_crashes
+    );
+
+    return \%stats;
+}
+
+sub get_current_parallel_fuzzer_stats {
+    my $target = $_[0];
+    my $batch_start_time = $_[1];
+
+    my @stats_columns = (
+        "unix_time", "cycles_done", "cur_path", "paths_total", "paths_found", "paths_imported", "pending_total",
+        "pending_favs", "map_coverage", "unique_crashes", "unique_hangs", "max_depth", "execs_per_sec"
+    );
+    my %stats = (
+        paths_total         => 0,
+        paths_found         => 0,
+        paths_imported      => 0,
+        unique_hangs        => 0,
+        unique_crashes      => 0,
+        max_depth           => 0,
+        cycles_done         => 0,
+        cur_path            => 0,
+        last_new_path_found => -1
+    );
+    my $workspace = utils::get_workspace($target->{experiment_name}, $target->{subject}, $target->{version});
+    my $results_base = "$workspace/results";
+    my $results_dir = "$results_base/$SANDPUPPY_SYNC_DIRECTORY/$target->{id}";
+    my $plot_data_file = "$results_dir/plot_data";
+
     # We will use plot_data instead of fuzzer_stats because plot_data is updated more frequently. But sometimes the
-    # fuzzer may not be ready yet and so plot_data may not exist or may be empty.
-    if ((! -e "$results_dir/plot_data") || (-z "$results_dir/plot_data")) {
-        return $target->{stats} ? $target->{stats} : {};
+    # fuzzer may not be ready yet and so plot_data may not exist or may be empty. We also want to make sure that
+    # the last modified time of the file is after we started this particular batch, because otherwise we end up getting
+    # data from the previous session.
+    if ((! -e $plot_data_file) || (-z $plot_data_file) || stat($plot_data_file)->mtime < $batch_start_time) {
+        return $target->{current_stats} ? $target->{current_stats} : \%stats;
     }
 
     # If there are at least two lines in the file, then we have data. This is because the first line is for the header.
-    chomp(my $num_lines = `wc -l $results_dir/plot_data | awk '{ print \$1 }'`);
+    chomp(my $num_lines = `wc -l $plot_data_file | awk '{ print \$1 }'`);
     if ($num_lines > 1) {
-        chomp(my $line = `tail -1 $results_dir/plot_data`);
+        chomp(my $line = `tail -1 $plot_data_file`);
         my @components = split /,\s+/, $line;
 
-        my %stats = map { ($stats_columns[$_] => $components[$_]) } (0..(scalar @stats_columns - 1));
+        %stats = map { ($stats_columns[$_] => $components[$_]) } (0..(scalar @stats_columns - 1));
 
         # When we resume fuzzing a previously-fuzzed target, a new plot_data is created. The very first data point is
         # right after the fuzzer starts, and will have total paths set to whatever the number of initial seeds is. The
         # imported paths from previous sessions don't show up until the next data point. So if the target already has
         # stats, we will return those if there is only one data point in the plot_data file.
-        if ($target->{stats} && $num_lines == 2) {
-            return $target->{stats};
+        if ($target->{current_stats} && $num_lines == 2) {
+            return $target->{current_stats};
+        }
+
+        if ((!$target->{current_stats} && $stats{paths_found} > 0) ||
+            ($target->{current_stats} && $stats{paths_found} > $target->{current_stats}->{paths_found})) {
+            $stats{last_new_path_found} = time();
+        } elsif ($target->{current_stats}) {
+            $stats{last_new_path_found} = $target->{current_stats}->{last_new_path_found};
         }
 
         return \%stats;
-    } elsif ($target->{stats}) {
-        return $target->{stats};
+    } elsif ($target->{current_stats}) {
+        return $target->{current_stats};
     } else {
-        return {};
+        return \%stats;
+    }
+}
+
+sub aggregate_stats {
+    my $targets = $_[0];
+
+    my %stats = (
+        waypoints => {},
+        aggregate => {}
+    );
+
+    my $count = scalar @{$targets};
+    my $finished = 0;
+    my $total_paths = 0;
+    my $paths_imported = 0;
+    my $paths_found = 0;
+    my $unique_hangs = 0;
+    my $unique_crashes = 0;
+    my $max_depth = 0;
+    my $path_progress = [];
+    my $cycles_done = [];
+    my $execs_per_sec = [];
+    my $last_new_path_found = -1;
+
+    foreach my $target (sort { $a->{name} cmp $b->{name} } @{$targets}) {
+
+        if (!$stats{waypoints}->{$target->{waypoints}}) {
+            $stats{waypoints}->{$target->{waypoints}} = {
+                count               => 0,
+                finished            => 0,
+                total_paths         => 0,
+                paths_imported      => 0,
+                paths_found         => 0,
+                unique_hangs        => 0,
+                unique_crashes      => 0,
+                max_depth           => 0,
+                last_new_path_found => -1
+            }
+        }
+
+        $stats{waypoints}->{$target->{waypoints}}->{count}++;
+        next if !$target->{current_stats};
+
+        my $previous_paths_total = $target->{previous_stats}->{paths_total};
+        my $previous_paths_imported = $target->{previous_stats}->{paths_imported};
+        my $previous_paths_found = $target->{previous_stats}->{paths_found};
+        my $previous_unique_hangs = $target->{previous_stats}->{unique_hangs};
+        my $previous_unique_crashes = $target->{previous_stats}->{unique_crashes};
+
+        my $current_paths_imported = $target->{current_stats}->{paths_imported};
+        my $current_paths_found = $target->{current_stats}->{paths_found};
+        my $current_unique_hangs = $target->{current_stats}->{unique_hangs};
+        my $current_unique_crashes = $target->{current_stats}->{unique_crashes};
+        my $current_max_depth = $target->{current_stats}->{max_depth};
+        my $current_cur_path = $target->{current_stats}->{cur_path};
+        my $current_cycles_done = $target->{current_stats}->{cycles_done};
+        my $current_execs_per_sec = $target->{current_stats}->{execs_per_sec};
+        my $current_last_new_path_found = $target->{current_stats}->{last_new_path_found};
+
+        my $target_total_paths = $previous_paths_total + $current_paths_found + $current_paths_imported;
+        my $target_paths_imported = $previous_paths_imported + $current_paths_imported;
+        my $target_paths_found = $previous_paths_found + $current_paths_found;
+        my $target_unique_hangs = $previous_unique_hangs + $current_unique_hangs;
+        my $target_unique_crashes = $previous_unique_crashes + $current_unique_crashes;
+
+        if ($target->{finished}) {
+            $stats{waypoints}->{$target->{waypoints}}->{finished}++;
+            $finished++;
+        }
+
+        $total_paths += $target_total_paths;
+        $paths_imported += $target_paths_imported;
+        $paths_found += $target_paths_found;
+        $unique_hangs += $target_unique_hangs;
+        $unique_crashes += $target_unique_crashes;
+        $max_depth = $max_depth < $current_max_depth ? $current_max_depth : $max_depth;
+        push @{$path_progress},
+            { waypoints => $target->{waypoints}, path_progress => $target_total_paths == 0 ? 0 : ($current_cur_path / $target_total_paths) * 100 };
+        push @{$cycles_done},
+            { waypoints => $target->{waypoints}, cycles_done => $current_cycles_done };
+        push @{$execs_per_sec},
+            { waypoints => $target->{waypoints}, execs_per_sec => $current_execs_per_sec ? $current_execs_per_sec : 0 };
+
+        if ($current_last_new_path_found > $last_new_path_found) {
+            $last_new_path_found = $current_last_new_path_found;
+        }
+
+        $stats{waypoints}->{$target->{waypoints}}->{total_paths} += $target_total_paths;
+        $stats{waypoints}->{$target->{waypoints}}->{paths_imported} += $target_paths_imported;
+        $stats{waypoints}->{$target->{waypoints}}->{paths_found} += $target_paths_found;
+        $stats{waypoints}->{$target->{waypoints}}->{unique_hangs} += $target_unique_hangs;
+        $stats{waypoints}->{$target->{waypoints}}->{unique_crashes} += $target_unique_crashes;
+
+#        print Dumper($target);
+#        print Dumper(\%stats);
+        if ($current_max_depth > $stats{waypoints}->{$target->{waypoints}}->{max_depth}) {
+            $stats{waypoints}->{$target->{waypoints}}->{max_depth} = $current_max_depth;
+        }
+
+        if ($current_last_new_path_found > $stats{waypoints}->{$target->{waypoints}}->{last_new_path_found}) {
+            $stats{waypoints}->{$target->{waypoints}}->{last_new_path_found} = $current_last_new_path_found;
+        }
+    }
+
+    $stats{aggregate}->{count} = $count;
+    $stats{aggregate}->{finished} = $finished;
+    $stats{aggregate}->{total_paths} = $total_paths;
+    $stats{aggregate}->{paths_imported} = $paths_imported;
+    $stats{aggregate}->{paths_found} = $paths_found;
+    $stats{aggregate}->{unique_hangs} = $unique_hangs;
+    $stats{aggregate}->{unique_crashes} = $unique_crashes;
+    $stats{aggregate}->{max_depth} = $max_depth;
+    $stats{aggregate}->{path_progress} = $path_progress;
+    $stats{aggregate}->{cycles_done} = $cycles_done;
+    $stats{aggregate}->{execs_per_sec} = $execs_per_sec;
+    $stats{aggregate}->{last_new_path_found} = $last_new_path_found;
+
+    return \%stats;
+}
+
+sub check_for_finished_targets {
+    my $targets = $_[0];
+    foreach my $target (@{$targets}) {
+        $target->{finished} = !kill 'ZERO', $target->{fuzzer_pid};
     }
 }
 
