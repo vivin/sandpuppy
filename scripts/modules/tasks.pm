@@ -79,7 +79,7 @@ my $subjects = {
             build   => \&libtpms::build,
             fuzz    => \&libtpms::fuzz
         },
-        fuzz_time   => 14400
+        fuzz_time   => 43200
     }
 };
 
@@ -693,11 +693,11 @@ sub get_previous_parallel_fuzzer_stats {
     chomp(my $num_original_inputs =`find $results_dir/queue -maxdepth 1 -type f | grep ",orig:" | wc -l`);
     chomp(my $num_imported_inputs =`find $results_dir/queue -maxdepth 1 -type f | grep ",sync:" | wc -l`);
 
-    chomp(my $num_hanging_inputs = `find $results_dir/hangs -maxdepth 1 -type f | wc -l`);
-    chomp(my $num_hanging_imported_inputs = `find $results_dir/hangs -maxdepth 1 -type f | grep ",sync:" | wc -l`);
+    chomp(my $num_hanging_inputs = `find $results_dir -maxdepth 2 -type f -name "id:*" | grep "/hangs" | sed -e 's,^.*/id,id,' | sort | uniq | wc -l`);
+    chomp(my $num_hanging_imported_inputs = `find $results_dir -maxdepth 2 -type f -name "id:*" | grep "/hangs" | sed -e 's,^.*/id,id,' | grep ",sync:" | sort | uniq | wc -l`);
 
-    chomp(my $num_crashing_inputs = `find $results_dir/crashes -maxdepth 1 -type f | wc -l`);
-    chomp(my $num_crashing_imported_inputs = `find $results_dir/crashes -maxdepth 1 -type f | grep ",sync:" | wc -l`);
+    chomp(my $num_crashing_inputs = `find $results_dir -maxdepth 2 -type f -name "id:*" | grep "/crashes" | sed -e 's,^.*/id,id,' | sort | uniq | wc -l`);
+    chomp(my $num_crashing_imported_inputs = `find $results_dir -maxdepth 2 -type f -name "id:*" | grep "/crashes" | sed -e 's,^.*/id,id,' | grep ",sync:" | sort | uniq | wc -l`);
 
     my $paths_imported = $num_imported_inputs + $num_hanging_imported_inputs + $num_crashing_imported_inputs;
     my $total_paths = $num_queue_inputs + $paths_imported + $num_hanging_inputs + $num_crashing_inputs;

@@ -54,15 +54,8 @@ sub build {
     my $FUZZ_FACTORY = "$TOOLS/FuzzFactory";
     my $build_command = "$FUZZ_FACTORY/afl-clang-fast -fno-inline-functions -fno-discard-value-names -fno-unroll-loops";
 
-    # We don't want to instrument our test binary with ASAN. However the problem is that clang statically links asan
-    # into libtpms. So when building the binary we have to use -fsanitize=address so that the asan symbols can be
-    # resolved. To get around this we can tell clang to use asan as a DSO. Then we can use LD_PRELOAD to provide
-    # a path to the runtime library when running the binary.
-    my $asan_dso_option;
     if ($binary_context =~ /-asan/) {
         $ENV{"AFL_USE_ASAN"} = 1;
-        $ENV{"AFL_USE_ASAN_DSO"} = 1;
-        $asan_dso_option = " -Wl,-rpath=" . utils::get_clang_library_path();
     }
 
     if ($waypoints ne "none") {
@@ -70,18 +63,15 @@ sub build {
     }
 
     my $clang_waypoint_options = utils::build_options_string($options->{clang_waypoint_options});
-    system ("autoreconf --verbose --force --install && CC='$build_command$asan_dso_option$clang_waypoint_options' ./configure --with-openssl --with-tpm2 && make -j12");
+    system ("autoreconf --verbose --force --install && CC='$build_command$clang_waypoint_options' ./configure --with-openssl --with-tpm2 && make -j12");
     if ($? != 0) {
         delete $ENV{"WAYPOINTS"};
         delete $ENV{"AFL_USE_ASAN"};
-        delete $ENV{"AFL_USE_ASAN_DSO"};
 
         die "Make failed";
     }
 
     delete $ENV{"WAYPOINTS"};
-    delete $ENV{"AFL_USE_ASAN"};
-    delete $ENV{"AFL_USE_ASAN_DSO"};
 
     my $workspace = utils::get_workspace($experiment_name, $subject, $version);
 
@@ -91,7 +81,7 @@ sub build {
     my @library_names = (
         "libtpms.so",
         "libtpms.so.0",
-        "libtpms.so.0.8.0",
+        "libtpms.so.0.9.0",
         "libtpms.a",
         "libtpms_tpm2.a",
         "libtpms_tpm12.a"
@@ -130,10 +120,14 @@ sub build {
     }
 
     # Use -Xlinker -rpath <path> instead of -Wl,-rpath,<path> because the latter breaks when paths contain commas.
-    system ("$build_command $libtpms_resources/readtpmc.c -I$libtpms_src_dir/include -L$safe_binary_dir -ltpms -Xlinker -rpath $safe_binary_dir -o $binary_dir/$binary_name\n");
+    system ("$build_command $libtpms_resources/readtpmc.c -I$libtpms_src_dir/include -L$safe_binary_dir -lb64 -ltpms -Xlinker -rpath $safe_binary_dir -o $binary_dir/$binary_name\n");
     if ($? != 0) {
         die "Building readtpmc failed";
+
+        delete $ENV{"AFL_USE_ASAN"};
     }
+
+    delete $ENV{"AFL_USE_ASAN"};
 }
 
 sub fuzz {
@@ -156,10 +150,11 @@ sub fuzz {
             binary_name         => "readtpmc",
             resume              => $options->{resume},
             use_asan            => $binary_context =~ /-asan/ ? 1 : 0,
-            preload             => $binary_context =~ /-asan/ ? utils::get_clang_asan_dso() : 0,
+            preload             => 0, #$binary_context =~ /-asan/ ? utils::get_clang_asan_dso() : 0,
             asan_memory_limit   => 20971597,
             hang_timeout        => $waypoints =~ /vvdump/ ? "60000+" : 0,
-            non_deterministic   => 0,
+            non_deterministic   => 0, #$waypoints =~ /vvdump/ ? 1 : 0,
+            exit_when_done      => $options->{exit_when_done},
             slow_target         => 1,
             seeds_directory     => "$RESOURCES/seeds/libtpms",
             dictionary_file     => 0,

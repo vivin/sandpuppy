@@ -3,15 +3,38 @@
 #include <string.h>
 #include <unistd.h>
 #include <assert.h>
-#include "base64.h"
+#include <b64/cencode.h>
+#include <b64/cdecode.h>
 
 #include <libtpms/tpm_types.h>
 #include <libtpms/tpm_library.h>
 #include <libtpms/tpm_error.h>
 #include <libtpms/tpm_memory.h>
 
+#define BUFFER_SIZE 255
 #define EXIT_TEST_SKIP 77
 
+// Based on https://raw.githubusercontent.com/libb64/libb64/master/examples/c-example1.c
+__attribute__((no_sanitize("address")))
+char* decode(const char* input, int* length) {
+    /* set up a destination buffer large enough to hold the encoded data */
+    char* output = (char*) malloc(BUFFER_SIZE);
+
+    /* keep track of our decoded position */
+    char* c = output;
+
+    /* we need a decoder state */
+    base64_decodestate s;
+
+    /* initialise the decoder state */
+    base64_init_decodestate(&s);
+
+    /* decode the input data */
+    *length = base64_decode_block(input, strlen(input), c, &s);
+    return output;
+}
+
+__attribute__((no_sanitize("address")))
 int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size)
 {
     unsigned char *rbuffer = NULL;
@@ -76,9 +99,9 @@ int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size)
     return response_code == TPM_SUCCESS ? 0 : 1;
 }
 
+__attribute__((no_sanitize("address")))
 int main(int argc, char **argv)
 {
-    int i;
     int exit_code = 0;
 
     char *name = argv[1];
@@ -95,7 +118,7 @@ int main(int argc, char **argv)
 
     while (exit_code == 0 && (read = getline(&line, &len, f)) != -1) {
         int command_length;
-        unsigned char *command = unbase64(line, read - 1, &command_length);
+        char *command = decode(line, &command_length);
         exit_code = LLVMFuzzerTestOneInput((void *)command, (size_t) command_length);
     }
 
@@ -106,45 +129,3 @@ int main(int argc, char **argv)
 
     return exit_code;
 }
-
-/*
-int main(int argc, char **argv)
-{
-    int i;
-    int exit_code;
-
-    for (i = 1; i < argc; i++) {
-        char *name = argv[i];
-        ssize_t size;
-        FILE *f = fopen(name, "rb");
-        char *buf;
-
-        fprintf(stdout, "%s...\n", name);
-        if (f == NULL) {
-            perror("fopen() failed");
-            continue;
-        }
-        fseek(f, 0, SEEK_END);
-        size = ftell(f);
-        if (size < 0) {
-            fclose(f);
-            perror("ftell() failed");
-            continue;
-        }
-        fseek(f, 0, SEEK_SET);
-        buf = malloc(size + 1);
-        if (fread(buf, 1, size, f) != (size_t)size) {
-            fclose(f);
-            perror("fread() failed");
-            continue;
-        }
-        fclose(f);
-        buf[size] = 0;
-
-        exit_code = LLVMFuzzerTestOneInput((void *)buf, size);
-        free(buf);
-    }
-
-    return exit_code;
-}
-*/

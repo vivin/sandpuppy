@@ -81,6 +81,7 @@ sub fuzz {
             use_asan            => $binary_context =~ /-asan/ ? 1 : 0,
             hang_timeout        => 0,
             non_deterministic   => 0,
+            exit_when_done      => $options->{exit_when_done},
             slow_target         => 0,
             seeds_directory     => "$RESOURCES/seeds/infantheap/non-crashing",
             dictionary_file     => 0,
