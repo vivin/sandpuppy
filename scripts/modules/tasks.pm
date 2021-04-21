@@ -37,7 +37,7 @@ my $subjects = {
         binary_name => "infantheap",
         tasks       => {
             build   => \&infantheap::build,
-            fuzz    => \&infantheap::fuzz,
+            fuzz    => create_fuzz_task(\&infantheap::get_fuzz_command),
         },
         fuzz_time   => 600
     },
@@ -45,7 +45,7 @@ my $subjects = {
         binary_name => "rarebug",
         tasks       => {
             build   => \&rarebug::build,
-            fuzz    => \&rarebug::fuzz
+            fuzz    => create_fuzz_task(\&rarebug::get_fuzz_command)
         },
         fuzz_time   => 600
     },
@@ -53,7 +53,7 @@ my $subjects = {
         binary_name => "maze",
         tasks       => {
             build   => \&maze::build,
-            fuzz    => \&maze::fuzz
+            fuzz    => create_fuzz_task(\&maze::get_fuzz_command)
         },
         fuzz_time   => 1200
     },
@@ -61,7 +61,7 @@ my $subjects = {
         binary_name => "readpng",
         tasks       => {
             build   => \&libpng::build,
-            fuzz    => \&libpng::fuzz
+            fuzz    => create_fuzz_task(\&libpng::get_fuzz_command)
         },
         fuzz_time   => 14400
     },
@@ -69,7 +69,7 @@ my $subjects = {
         binary_name => "readelf",
         tasks       => {
             build   => \&readelf::build,
-            fuzz    => \&readelf::fuzz
+            fuzz    => create_fuzz_task(\&readelf::get_fuzz_command)
         },
         fuzz_time   => 7200
     },
@@ -77,11 +77,54 @@ my $subjects = {
         binary_name => "readtpmc",
         tasks       => {
             build   => \&libtpms::build,
-            fuzz    => \&libtpms::fuzz
+            fuzz    => create_fuzz_task(\&libtpms::get_fuzz_command)
         },
-        fuzz_time   => 43200
+        fuzz_time   => 14400 #43200
     }
 };
+
+sub create_fuzz_task {
+    my $get_fuzz_command = $_[0];
+
+    return sub {
+        my $experiment_name = $_[0];
+        my $subject = $_[1];
+        my $version = $_[2];
+        my $waypoints = $_[3];
+        my $binary_context = $_[4];
+        my $execution_context = $_[5];
+        my $options = utils::merge($_[6], {
+            use_asan          => $binary_context =~ /-asan$|-asan-/ ? 1 : 0,
+            non_deterministic => $execution_context =~ /-non-det$|-non-det-/ ? 1 : 0,
+        });
+        my ($fuzz_command, $ENV_VARS) = $get_fuzz_command->(
+            $experiment_name,
+            $subject,
+            $version,
+            $waypoints,
+            $binary_context,
+            $execution_context,
+            $options
+        );
+
+        my $pid = fork;
+        return $pid if $pid;
+
+        foreach my $ENV_VAR (keys(%{$ENV_VARS})) {
+            $ENV{$ENV_VAR} = $ENV_VARS->{$ENV_VAR};
+        }
+
+        if ($options->{async}) {
+            # If async fuzzing is requested redirect STDOUT and STDERR to /dev/null.
+            open STDOUT, ">",  "/dev/null" or die "$0: open: $!";
+            open STDERR, ">&", \*STDOUT    or exit 1;
+        }
+
+        # Need to run in shell using exec otherwise it runs it as sh -c $fuzz_command and the pid we get is of sh. So
+        # when we try to kill it, it doesn't work.
+        exec "exec $fuzz_command";
+    }
+}
 
 sub initialize_workspace {
     my $experiment_name = $_[0];
@@ -146,6 +189,19 @@ sub build {
 }
 
 sub fuzz {
+    my $subject = $_[1];
+    my $options = $_[6];
+
+    my $tasks = $subjects->{$subject}->{tasks};
+    my $fuzzer_pid = $tasks->{fuzz}->(@_);
+    if ($options->{async}) {
+        return $fuzzer_pid;
+    }
+
+    waitpid $fuzzer_pid, 0;
+}
+
+sub vvdump_fuzz {
     my $experiment_name = $_[0];
     my $subject = $_[1];
     my $version = $_[2];
@@ -156,104 +212,127 @@ sub fuzz {
 
     my $tasks = $subjects->{$subject}->{tasks};
 
-    # If the waypoints include vvdump, it means that we are capturing variable-value traces. So we have to start up
-    # the trace processor to read in those traces.
-    if ($waypoints =~ /vvdump/) {
-        if ($options->{async}) {
-            $log->warning("Ignoring request for asynchronous fuzzing because waypoints include vvdump.");
+    if ($options->{async}) {
+        $log->warning("Ignoring request for asynchronous fuzzing because waypoints include vvdump.");
+        $options->{async} = 0;
+    }
+
+    $ENV{"__VVD_EXP_NAME"} = $experiment_name;
+    $ENV{"__VVD_SUBJECT"} = $version ? "$subject-$version" : $subject;
+    $ENV{"__VVD_BIN_CONTEXT"} = $binary_context;
+    $ENV{"__VVD_EXEC_CONTEXT"} = $execution_context;
+
+    pipe my $reader, my $writer;
+    $writer->autoflush(1);
+
+    # We are going to start the trace processor. We will start it as a child process and communicate its STDOUT to
+    # the parent script.
+    my $vvdproc_pid = fork;
+    if ($vvdproc_pid) {
+        # In the parent process. Here we will start the fuzzer in another child process. The fuzzer STDOUT will
+        # still be sent to the parent STDOUT (which we want). Note that after spawning the child fuzzer process
+        # we start reading from the trace processor's STDOUT. We do not print anything from it initially as we
+        # want to see the fuzzer output. However, if the fuzzer is stopped (Ctrl-C) it sends out a poison pill
+        # trace which the trace processor will read. When it does, it will output a message saying "Fuzzer has
+        # shut down". Once we detect this string in the trace processor's STDOUT, we will start printing the trace
+        # processor output. The trace processor output tells us how many traces from how many processes remain to
+        # be inserted into the db.
+
+        close $writer;
+        $SIG{INT} = 'IGNORE';
+
+        my $STARTUP_TIME = 10; # about the time it takes to start up vvdproc and the fuzzer
+        my $FUZZ_TIME = $subjects->{$subject}->{fuzz_time} + $STARTUP_TIME;
+        my $killed = 0;
+        my $start_time = time();
+
+        # If parallel fuzzing is requested during trace generation we are going to start a parent fuzzer and a child
+        # fuzzer.
+        my $parent_options = {};
+        if ($options->{parallel}) {
+            $parent_options = {
+                async               => 0,
+                fuzzer_id           => "$execution_context-parent",
+                sync_directory_name => $execution_context,
+                parallel_fuzz_mode  => "parent",
+                exit_when_done      => 1
+            };
         }
 
-        $ENV{"__VVD_EXP_NAME"} = $experiment_name;
-        $ENV{"__VVD_SUBJECT"} = $version ? "$subject-$version" : $subject;
-        $ENV{"__VVD_BIN_CONTEXT"} = $binary_context;
-        $ENV{"__VVD_EXEC_CONTEXT"} = $execution_context;
-
-        pipe my $reader, my $writer;
-        $writer->autoflush(1);
-
-        # We are going to start the trace processor. We will start it as a child process and communicate its STDOUT to
-        # the parent script.
-        my $vvdproc_pid = fork;
-        if ($vvdproc_pid) {
-            # In the parent process. Here we will start the fuzzer in another child process. The fuzzer STDOUT will
-            # still be sent to the parent STDOUT (which we want). Note that after spawning the child fuzzer process
-            # we start reading from the trace processor's STDOUT. We do not print anything from it initially as we
-            # want to see the fuzzer output. However, if the fuzzer is stopped (Ctrl-C) it sends out a poison pill
-            # trace which the trace processor will read. When it does, it will output a message saying "Fuzzer has
-            # shut down". Once we detect this string in the trace processor's STDOUT, we will start printing the trace
-            # processor output. The trace processor output tells us how many traces from how many processes remain to
-            # be inserted into the db.
-
-            close $writer;
-            $SIG{INT} = 'IGNORE';
-
-            my $STARTUP_TIME = 10; # about the time it takes to start up vvdproc and the fuzzer
-            my $FUZZ_TIME = $subjects->{$subject}->{fuzz_time} + $STARTUP_TIME;
-            my $killed = 0;
-            my $start_time = time();
-            my $fuzzer_pid = $tasks->{fuzz}->(
-                $experiment_name,
-                $subject,
-                $version,
-                $waypoints,
-                $binary_context,
-                $execution_context,
-                {}
-            );
-            my $start_printing = 0;
-            while (<$reader>) {
-                if (!$start_printing) {
-                    $start_printing = ($_ =~ /Fuzzer has shut down/);
-                }
-
-                if (!$killed and time() - $start_time >= $FUZZ_TIME) {
-                    kill 'INT', $fuzzer_pid;
-                    $killed = 1;
-                }
-
-                print $_ if $start_printing;
-            }
-
-            waitpid $vvdproc_pid, 0;
-
-            delete $ENV{"__VVD_EXP_NAME"};
-            delete $ENV{"__VVD_SUBJECT"};
-            delete $ENV{"__VVD_BIN_CONTEXT"};
-            delete $ENV{"__VVD_EXEC_CONTEXT"};
-            delete $ENV{"ASAN_OPTIONS"};
-        } else {
-            # Start the trace processor using open, and redirect its STDOUT to a file handle (using -|). Write the
-            # STDOUT content to $writer, which will send it back to the main script. Also make sure we ignore SIGINT
-            # because the processor knows to stop on its own (afl-fuzz sends a poison pill in the trace when it is
-            # stopped).
-            close $reader;
-            $SIG{INT} = 'IGNORE';
-
-            chdir "$TOOLS/vvdproc";
-            my $vvdproc = "unbuffer mvn package && unbuffer java -Xms1G -Xmx4G -jar target/vvdproc.jar 2>&1";
-            open my $vvdproc_output, "-|", $vvdproc;
-            while (<$vvdproc_output>) {
-                print $writer $_;
-            }
-
-            exit;
-        }
-    } else {
-        my $fuzzer_pid = $tasks->{fuzz}->(
+        my $parent_fuzzer_pid = $tasks->{fuzz}->(
             $experiment_name,
             $subject,
             $version,
             $waypoints,
             $binary_context,
             $execution_context,
-            $options
+            $parent_options
         );
 
-        if ($options->{async}) {
-            return $fuzzer_pid;
+        my $child_fuzzer_pid = -1;
+        if ($options->{parallel}) {
+            $child_fuzzer_pid = $tasks->{fuzz}->(
+                $experiment_name,
+                $subject,
+                $version,
+                $waypoints,
+                $binary_context,
+                $execution_context,
+                {
+                    async               => 1,
+                    fuzzer_id           => "$execution_context-child",
+                    sync_directory_name => $execution_context,
+                    parallel_fuzz_mode  => "child",
+                    exit_when_done      => 1
+                }
+            );
         }
 
-        waitpid $fuzzer_pid, 0;
+        my $start_printing = 0;
+        while (<$reader>) {
+            if (!$start_printing) {
+                $start_printing = ($_ =~ /Fuzzer has shut down/);
+                if ($start_printing && $child_fuzzer_pid > 0) {
+                    kill 'INT', $child_fuzzer_pid;
+                }
+            }
+
+            if (!$killed and time() - $start_time >= $FUZZ_TIME) {
+                kill 'INT', $parent_fuzzer_pid;
+                if ($child_fuzzer_pid > 0) {
+                    kill 'INT', $child_fuzzer_pid;
+                }
+
+                $killed = 1;
+            }
+
+            print $_ if $start_printing;
+        }
+
+        waitpid $vvdproc_pid, 0;
+
+        delete $ENV{"__VVD_EXP_NAME"};
+        delete $ENV{"__VVD_SUBJECT"};
+        delete $ENV{"__VVD_BIN_CONTEXT"};
+        delete $ENV{"__VVD_EXEC_CONTEXT"};
+        delete $ENV{"ASAN_OPTIONS"};
+    } else {
+        # Start the trace processor using open, and redirect its STDOUT to a file handle (using -|). Write the
+        # STDOUT content to $writer, which will send it back to the main script. Also make sure we ignore SIGINT
+        # because the processor knows to stop on its own (afl-fuzz sends a poison pill in the trace when it is
+        # stopped).
+        close $reader;
+        $SIG{INT} = 'IGNORE';
+
+        chdir "$TOOLS/vvdproc";
+        #my $vvdproc = "unbuffer mvn package && unbuffer java -agentpath:/home/vivin/jprofiler12/bin/linux-x64/libjprofilerti.so=port=8849 -Xms1G -Xmx4G -jar target/vvdproc.jar 2>&1";
+        my $vvdproc = "unbuffer mvn package && unbuffer java -Xms1G -Xmx4G -jar target/vvdproc.jar 2>&1";
+        open my $vvdproc_output, "-|", $vvdproc;
+        while (<$vvdproc_output>) {
+            print $writer $_;
+        }
+
+        exit;
     }
 }
 
@@ -267,7 +346,6 @@ sub sandpuppy_fuzz {
     my $OVERALL_FUZZ_TIME = 302400; # For 3.5 days
 
     # We reserve one core to run the parent fuzzer which we won't shut down until we are completely done.
-    # TODO: what does "done" mean? No targets have found any paths after X hours?
     my $AVAILABLE_CORES = $NUM_CORES - 1;
 
     # Generate variables files and build targets using the output from the analysis phase (which should be stored

@@ -13,10 +13,13 @@ import org.springframework.stereotype.Service;
 
 import javax.annotation.PostConstruct;
 import javax.annotation.PreDestroy;
+import java.io.BufferedReader;
 import java.io.FileNotFoundException;
+import java.io.FileReader;
 import java.io.IOException;
 import java.io.RandomAccessFile;
 import java.io.UncheckedIOException;
+import java.text.DecimalFormat;
 import java.time.Duration;
 import java.util.ArrayDeque;
 import java.util.HashMap;
@@ -29,7 +32,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 
 import static org.awaitility.Awaitility.await;
 
@@ -37,8 +40,10 @@ import static org.awaitility.Awaitility.await;
 @Service
 public class TraceProcessingService {
 
+    private static final int NUM_TRACE_COMPONENTS = 13;
     private static final int NUM_END_TRACE_COMPONENTS = 8;
     private static final String END_TRACE_MARKER = "__$VVDUMP_END$__";
+    private static final DecimalFormat df = new DecimalFormat("0.00");
 
     @Value("${vvdump.named-pipe-path}")
     private String namedPipePath;
@@ -71,10 +76,16 @@ public class TraceProcessingService {
     }
 
     private void readPipe() {
-        final var traceCount = new AtomicInteger();
+        final var totalTraceCount = new AtomicLong();
+        final var lastProcessedTraceCount = new AtomicLong();
+        final var processedTraceCount = new AtomicLong();
 
         try {
-            var pipe = new RandomAccessFile(namedPipePath, "rw");
+            // Need to open in read-write mode because the fuzzer is continually starting up processes and shutting
+            // them down, meaning that there are windows of time where there are no writers. If opened in read mode
+            // we will get an EOF when the writer goes away.
+            //var pipe = new RandomAccessFile(namedPipePath, "rw");
+            var pipe = new BufferedReader(new FileReader(namedPipePath), 8192 * 8);
             log.info("Listening...");
 
             long lastLoggedTime = System.currentTimeMillis();
@@ -82,7 +93,7 @@ public class TraceProcessingService {
             String line;
             while ((line = pipe.readLine()) != null && !END_TRACE_MARKER.equals(line)) {
                 var components = line.split(":");
-                if (components.length != NUM_END_TRACE_COMPONENTS) {
+                if (components.length == NUM_TRACE_COMPONENTS) {
                     var pid = Integer.parseInt(components[TraceItem.Components.PID.index]);
 
                     if (!pids.contains(pid)) {
@@ -91,7 +102,7 @@ public class TraceProcessingService {
                     }
 
                     processTraces.get(pid).add(line);
-                } else {
+                } else if (components.length == NUM_END_TRACE_COMPONENTS) {
                     // Only insert the traces if the process wasn't killed and if we have seen at least one trace from
                     // this process (that's the only way it would be inside the pids set).
 
@@ -101,22 +112,25 @@ public class TraceProcessingService {
                         pids.remove(pid);
                         var traceItems = processTraces.remove(pid);
                         var endTrace = line;
+                        var numTraceItems = traceItems.size();
 
-                        traceCount.addAndGet(traceItems.size());
+                        totalTraceCount.addAndGet(numTraceItems);
                         traceInsertionExecutor.submit(() -> {
                             String traceItem;
                             while ((traceItem = traceItems.poll()) != null) {
-                                var fullTraceItem = FullTraceItem.from(traceItem, endTrace);
-                                cassandraRepository.insertFullTraceItem(fullTraceItem);
-                                traceCount.decrementAndGet();
+                                cassandraRepository.insertFullTraceItem(FullTraceItem.from(traceItem, endTrace));
+                                processedTraceCount.incrementAndGet();
                             }
                         });
 
-                        if (System.currentTimeMillis() - lastLoggedTime > 5000) {
-                            log.info("{} trace items from {} processes remain to be saved...", traceCount.get(), getRemainingProcesses());
+                        long elapsed = System.currentTimeMillis() - lastLoggedTime;
+                        if (elapsed > 5000) {
+                            logProgress(totalTraceCount, lastProcessedTraceCount, processedTraceCount, elapsed);
                             lastLoggedTime = System.currentTimeMillis();
                         }
                     }
+                } else {
+                    log.warn("Malformed line: {}", line);
                 }
             }
         } catch (FileNotFoundException e) {
@@ -132,9 +146,45 @@ public class TraceProcessingService {
             .atMost(Duration.ofHours(3))
             .with().pollInterval(Duration.ofSeconds(5))
             .until(() -> {
-                log.info("{} trace items from {} processes remain to be saved...", traceCount.get(), getRemainingProcesses());
+                logProgress(totalTraceCount, lastProcessedTraceCount, processedTraceCount, 5000d);
                 return traceInsertionExecutor.isTerminated();
             });
+    }
+
+    private void logProgress(AtomicLong totalTraceCount, AtomicLong lastProcessedTraceCount, AtomicLong processedTraceCount, double elapsed) {
+        long total = totalTraceCount.longValue();
+        long processed = processedTraceCount.longValue();
+        long lastProcessed = lastProcessedTraceCount.longValue();
+
+        long remaining = total - processed;
+        long processedCount = processed - lastProcessed;
+        double processingRate = processedCount / (elapsed / 1000d);
+        double processingTimePerTrace = elapsed / processedCount;
+        long remainingTimeInSeconds = Math.round(remaining / processingRate);
+        lastProcessedTraceCount.set(processed);
+
+        log.info(
+            "{} trace items from {} processes remaining ({} trace/s; {} ms/trace; {}% done; time remaining: {})",
+            remaining,
+            getRemainingProcesses(),
+            df.format(processingRate),
+            df.format(processingTimePerTrace),
+            df.format(((double) processed / (double) total) * 100),
+            getDescriptiveTimeDelta(remainingTimeInSeconds)
+        );
+    }
+
+    private String getDescriptiveTimeDelta(long delta) {
+        long hours = delta / 3600;
+        long minutes = (delta / 60) % 60;
+        long seconds = delta % 60;
+
+        return String.format(
+            "%s:%s:%s",
+            hours < 10 ? "0" + hours : hours,
+            minutes < 10 ? "0" + minutes : minutes,
+            seconds < 10 ? "0" + seconds : seconds
+        );
     }
 
     private long getRemainingProcesses() {

@@ -105,17 +105,17 @@ sub build {
 
     system ("$build_command ./readpng.c -lm -lz $libpng_lib_file -o $binary_dir/$binary_name");
     if ($? != 0) {
-        die "Building readpng failed";
-
         delete $ENV{"AFL_USE_ASAN"};
         delete $ENV{"WAYPOINTS"};
+
+        die "Building readpng failed";
     }
 
     delete $ENV{"AFL_USE_ASAN"};
     delete $ENV{"WAYPOINTS"};
 }
 
-sub fuzz {
+sub get_fuzz_command {
     my $experiment_name = $_[0];
     my $subject = $_[1];
     my $version = $_[2];
@@ -124,47 +124,20 @@ sub fuzz {
     my $exec_context = $_[5];
     my $options = $_[6];
 
-    my ($fuzz_command, $ENV_VARS) = utils::build_fuzz_command(
+    return utils::build_fuzz_command(
         $experiment_name,
         $subject,
         $version,
         $waypoints,
         $binary_context,
         $exec_context,
-        {
-            binary_name         => "readpng",
-            resume              => $options->{resume},
-            use_asan            => $binary_context =~ /-asan/ ? 1 : 0,
-            hang_timeout        => $waypoints =~ /vvdump/ ? 300 : 0,
-            non_deterministic   => 0,
-            exit_when_done      => $options->{exit_when_done},
-            slow_target         => 0,
-            seeds_directory     => "$RESOURCES/seeds/libpng/images",
-            dictionary_file     => "$RESOURCES/seeds/libpng/dictionary/png.dict",
-            binary_arguments    => 0,
-            sync_directory_name => $options->{sync_directory_name},
-            parallel_fuzz_mode  => $options->{parallel_fuzz_mode},
-            fuzzer_id           => $options->{fuzzer_id}
-        }
+        utils::merge($options, {
+            binary_name     => "readpng",
+            hang_timeout    => $waypoints =~ /vvdump/ ? 300 : 0,
+            seeds_directory => "$RESOURCES/seeds/libpng/images",
+            dictionary_file => "$RESOURCES/seeds/libpng/dictionary/png.dict"
+        })
     );
-
-    my $pid = fork;
-    return $pid if $pid;
-
-    foreach my $ENV_VAR (keys(%{$ENV_VARS})) {
-        $ENV{$ENV_VAR} = $ENV_VARS->{$ENV_VAR};
-    }
-
-    if ($options->{async} || $options->{sync_directory_name}) {
-        # During parallel fuzzing we will monitor these instances on our own, so redirect STDOUT and STDERR to /dev/null
-        # Do the same for async fuzzing
-        open STDOUT, ">",  "/dev/null" or die "$0: open: $!";
-        open STDERR, ">&", \*STDOUT    or exit 1;
-    }
-
-    # Need to run in shell using exec otherwise it runs it as sh -c $fuzz_command and the pid we get is of sh. So when
-    # we try to kill it, it doesn't work.
-    exec "exec $fuzz_command";
 }
 
 1;

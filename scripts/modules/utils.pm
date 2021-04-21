@@ -100,6 +100,7 @@ sub build_fuzz_command {
     my $exec_context = $_[5];
     my $options = $_[6];
     my $binary_name = $options->{binary_name};
+    my $async = $options->{async};
     my $resume = $options->{resume};
     my $exit_when_done = $options->{exit_when_done};
     my $preload = $options->{preload};
@@ -107,6 +108,7 @@ sub build_fuzz_command {
     my $asan_memory_limit = $options->{asan_memory_limit};
     my $hang_timeout = $options->{hang_timeout};
     my $non_deterministic = $options->{non_deterministic};
+    my $no_arithmetic = $options->{no_arithmetic};
     my $slow_target = $options->{slow_target};
     my $seeds_directory = $options->{seeds_directory};
     my $dictionary_file = $options->{dictionary_file};
@@ -116,6 +118,14 @@ sub build_fuzz_command {
     my $parallel_fuzz_mode = $options->{parallel_fuzz_mode};
 
     my %ENV_VARS = ();
+    if ($async) {
+        $ENV_VARS{AFL_NO_UI} = 1;
+    }
+
+    if ($no_arithmetic) {
+        $ENV_VARS{AFL_NO_ARITH} = 1;
+    }
+
     if ($slow_target) {
         $ENV_VARS{AFL_FAST_CAL} = 1;
     }
@@ -171,7 +181,6 @@ sub build_fuzz_command {
 
     if ($fuzzer_id) {
         $ENV_VARS{AFL_IMPORT_FIRST} = 1;
-        $ENV_VARS{AFL_NO_UI} = 1;
         $fuzz_command .= (($parallel_fuzz_mode eq "parent" ? " -M " : " -S ") . "\"$fuzzer_id\"");
     }
 
@@ -184,7 +193,8 @@ sub build_fuzz_command {
         $fuzz_command .= " -t $hang_timeout";
     }
 
-    if ($non_deterministic) {
+    # Only honor request for non-deterministic fuzzing if we are not doing parallel fuzzing.
+    if ($non_deterministic && !$fuzzer_id) {
         $fuzz_command .= " -d";
     }
 
@@ -234,6 +244,17 @@ sub chunk {
     }
 
     return \@chunks;
+}
+
+sub merge {
+    my %source = %{$_[0]};
+    my %destination = %{$_[1]};
+
+    foreach my $key (keys(%source)) {
+        $destination{$key} = $source{$key};
+    }
+
+    return \%destination;
 }
 
 sub get_random_fuzzer_id {

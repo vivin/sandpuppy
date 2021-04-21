@@ -8589,8 +8589,10 @@ int main(int argc, char** argv) {
       }
 
       if (forksrv_pid > 0) kill(forksrv_pid, SIGKILL);
+
+      write_vvdump_named_pipe_end_message();
   }
-  /* Now that we've killed the forkserver, we wait for it to be able to get rusage stats. */
+    /* Now that we've killed the forkserver, we wait for it to be able to get rusage stats. */
   if (waitpid(forksrv_pid, NULL, 0) <= 0) {
     WARNF("error waitpid\n");
   }
