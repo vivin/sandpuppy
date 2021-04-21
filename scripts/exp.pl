@@ -5,13 +5,43 @@ use strict;
 use warnings FATAL => 'all';
 use Log::Simple::Color;
 use POSIX;
+use Fcntl;
 use tasks;
 
-if (!-e "/tmp/vvdump") {
-    POSIX::mkfifo("/tmp/vvdump", 0700) or die "Could not create /tmp/vvdump";
+my $log = Log::Simple::Color->new;
+
+my $NAMED_PIPE = "/tmp/vvdump";
+if (!-e $NAMED_PIPE) {
+    $log->info("Creating named pipe at $NAMED_PIPE");
+    POSIX::mkfifo($NAMED_PIPE, 0700) or die "Could not create $NAMED_PIPE";
 }
 
-my $log = Log::Simple::Color->new;
+# Increase maximum named-pipe size and set the size of our pipe. It appears the maximum possible size is 32 mb; at least
+# on my system.
+my $NAMED_PIPE_SIZE = 1048576 * 32;
+my $pid = fork;
+if (!$pid) {
+    open my $f, ">", $NAMED_PIPE;
+    while(1) { }
+    exit;
+} else {
+    # Need sudo to increase the maximum pipe size. Make sure there is an entry like the following in the sudoers file:
+    # myuser  ALL=(ALL:ALL) NOPASSWD:/sbin/sysctl fs.pipe-max-size=*
+    system("sudo sysctl fs.pipe-max-size=$NAMED_PIPE_SIZE");
+    open FD, $NAMED_PIPE  or die "Cannot open $NAMED_PIPE";
+    my $old_size = fcntl(\*FD, Fcntl::F_GETPIPE_SZ, 0);
+    $log->info("Old pipe size: $old_size");
+
+    fcntl(\*FD, Fcntl::F_SETPIPE_SZ, int($NAMED_PIPE_SIZE));
+    my $new_size = fcntl(\*FD, Fcntl::F_GETPIPE_SZ, 0);
+    if ($new_size < $NAMED_PIPE_SIZE) {
+        $log->error("Failed setting pipe size to $NAMED_PIPE_SIZE");
+    } else {
+        $log->info("New pipe size: $new_size");
+    }
+
+    kill 'INT', $pid;
+}
 
 my $supported_tasks = {
     build  => 1,
@@ -21,7 +51,7 @@ my $supported_tasks = {
 
 if (scalar @ARGV < 5) {
     die "Syntax:\n $0 <experiment> build <subject>[:<version>] with waypoints <waypoints> as <binary-context>" .
-        "\n $0 <experiment> fuzz <subject>[:<version>] with waypoints <waypoints> using <binary-context> as <exec-context> [in parallel]" .
+        "\n $0 <experiment> fuzz <subject>[:<version>] with waypoints <waypoints> using <binary-context> as <exec-context>" .
         "\n $0 <experiment> spfuzz <subject>[:<version>] [with asan]\n";
 }
 
@@ -45,7 +75,6 @@ my $waypoints;
 my $binary_context;
 my $execution_context;
 my $use_asan = 0;
-my $parallel = 0;
 if ($task eq "build" or $task eq "fuzz") {
     if ($ARGV[3] ne "with" && $ARGV[4] ne "waypoints") {
         die "Expected \"with waypoints\":\n $0 $experiment_name $task $original_subject with waypoints <waypoints> ...";
@@ -84,14 +113,6 @@ if ($task eq "build" or $task eq "fuzz") {
         }
 
         $execution_context = $ARGV[9];
-
-        if ($ARGV[10] && $ARGV[10] ne "in") {
-            die "Expected \"in\":\n $0 $experiment_name $task $original_subject with waypoints $waypoints using $binary_context as $execution_context in parallel";
-        } elsif ($ARGV[10] && $ARGV[11] && $ARGV[11] ne "parallel") {
-            die "Expected \"parallel\":\n $0 $experiment_name $task $original_subject with waypoints $waypoints using $binary_context as $execution_context in parallel";
-        } elsif ($ARGV[11]) {
-            $parallel = 1;
-        }
     }
 } else {
     if ($ARGV[3] && $ARGV[3] ne "with") {
@@ -121,12 +142,8 @@ if ($task eq "build") {
     }
 
     if ($task eq "fuzz") {
-        if ($waypoints !~ /vvdump/ && $parallel) {
-            $log->warning("Parallel fuzzing only supported during trace generation (vvdump waypoint must be included)");
-        }
-
         if ($waypoints =~ /vvdump/) {
-            tasks::vvdump_fuzz($experiment_name, $subject, $version, $waypoints, $binary_context, $execution_context, { parallel => $parallel });
+            tasks::vvdump_fuzz($experiment_name, $subject, $version, $waypoints, $binary_context, $execution_context, {});
         } else {
             tasks::fuzz($experiment_name, $subject, $version, $waypoints, $binary_context, $execution_context, {});
         }

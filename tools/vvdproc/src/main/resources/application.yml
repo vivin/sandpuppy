@@ -2,27 +2,19 @@ server:
   port: 8081
 
 spring:
-  jpa:
-    hibernate:
-      ddl-auto: "none"
-    properties:
-      jdbc:
-        lob:
-          non_contextual_creation: "true"
-  datasource:
-    initialization-mode: "always"
-    platform: "postgres"
-    url: "jdbc:postgresql://localhost:5432/phd"
-    username: "phd"
-    password: "phd"
+  main:
+    web-application-type: none
   data:
     cassandra:
       session-name: "Data Cluster"
+      username: phd
+      password: phd
       keyspace-name: phd
       port: 9042
       contact-points: localhost
       local-datacenter: datacenter1
-
+      request:
+        timeout: 15s
 
 vvdump:
   named-pipe-path: "/tmp/vvdump"

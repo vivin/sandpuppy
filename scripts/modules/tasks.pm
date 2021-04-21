@@ -39,7 +39,7 @@ my $subjects = {
             build   => \&infantheap::build,
             fuzz    => create_fuzz_task(\&infantheap::get_fuzz_command),
         },
-        fuzz_time   => 600
+        fuzz_time   => 300
     },
     rarebug    => {
         binary_name => "rarebug",
@@ -47,7 +47,7 @@ my $subjects = {
             build   => \&rarebug::build,
             fuzz    => create_fuzz_task(\&rarebug::get_fuzz_command)
         },
-        fuzz_time   => 600
+        fuzz_time   => 300
     },
     maze       => {
         binary_name => "maze",
@@ -55,7 +55,7 @@ my $subjects = {
             build   => \&maze::build,
             fuzz    => create_fuzz_task(\&maze::get_fuzz_command)
         },
-        fuzz_time   => 1200
+        fuzz_time   => 600
     },
     libpng     => {
         binary_name => "readpng",
@@ -63,7 +63,7 @@ my $subjects = {
             build   => \&libpng::build,
             fuzz    => create_fuzz_task(\&libpng::get_fuzz_command)
         },
-        fuzz_time   => 14400
+        fuzz_time   => 7200
     },
     readelf    => {
         binary_name => "readelf",
@@ -71,7 +71,7 @@ my $subjects = {
             build   => \&readelf::build,
             fuzz    => create_fuzz_task(\&readelf::get_fuzz_command)
         },
-        fuzz_time   => 7200
+        fuzz_time   => 3600
     },
     libtpms    => {
         binary_name => "readtpmc",
@@ -79,7 +79,7 @@ my $subjects = {
             build   => \&libtpms::build,
             fuzz    => create_fuzz_task(\&libtpms::get_fuzz_command)
         },
-        fuzz_time   => 14400 #43200
+        fuzz_time   => 7200 #14400 #43200
     }
 };
 
@@ -248,61 +248,24 @@ sub vvdump_fuzz {
 
         # If parallel fuzzing is requested during trace generation we are going to start a parent fuzzer and a child
         # fuzzer.
-        my $parent_options = {};
-        if ($options->{parallel}) {
-            $parent_options = {
-                async               => 0,
-                fuzzer_id           => "$execution_context-parent",
-                sync_directory_name => $execution_context,
-                parallel_fuzz_mode  => "parent",
-                exit_when_done      => 1
-            };
-        }
-
-        my $parent_fuzzer_pid = $tasks->{fuzz}->(
+        my $fuzzer_pid = $tasks->{fuzz}->(
             $experiment_name,
             $subject,
             $version,
             $waypoints,
             $binary_context,
             $execution_context,
-            $parent_options
+            { exit_when_done => 1 }
         );
-
-        my $child_fuzzer_pid = -1;
-        if ($options->{parallel}) {
-            $child_fuzzer_pid = $tasks->{fuzz}->(
-                $experiment_name,
-                $subject,
-                $version,
-                $waypoints,
-                $binary_context,
-                $execution_context,
-                {
-                    async               => 1,
-                    fuzzer_id           => "$execution_context-child",
-                    sync_directory_name => $execution_context,
-                    parallel_fuzz_mode  => "child",
-                    exit_when_done      => 1
-                }
-            );
-        }
 
         my $start_printing = 0;
         while (<$reader>) {
             if (!$start_printing) {
                 $start_printing = ($_ =~ /Fuzzer has shut down/);
-                if ($start_printing && $child_fuzzer_pid > 0) {
-                    kill 'INT', $child_fuzzer_pid;
-                }
             }
 
             if (!$killed and time() - $start_time >= $FUZZ_TIME) {
-                kill 'INT', $parent_fuzzer_pid;
-                if ($child_fuzzer_pid > 0) {
-                    kill 'INT', $child_fuzzer_pid;
-                }
-
+                kill 'INT', $fuzzer_pid;
                 $killed = 1;
             }
 
@@ -326,7 +289,7 @@ sub vvdump_fuzz {
 
         chdir "$TOOLS/vvdproc";
         #my $vvdproc = "unbuffer mvn package && unbuffer java -agentpath:/home/vivin/jprofiler12/bin/linux-x64/libjprofilerti.so=port=8849 -Xms1G -Xmx4G -jar target/vvdproc.jar 2>&1";
-        my $vvdproc = "unbuffer mvn package && unbuffer java -Xms1G -Xmx4G -jar target/vvdproc.jar 2>&1";
+        my $vvdproc = "unbuffer mvn package && unbuffer java -Xms1G -Xmx8G -jar target/vvdproc.jar 2>&1";
         open my $vvdproc_output, "-|", $vvdproc;
         while (<$vvdproc_output>) {
             print $writer $_;

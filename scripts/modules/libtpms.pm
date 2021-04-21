@@ -149,8 +149,8 @@ sub get_fuzz_command {
             binary_name       => "readtpmc",
           # preload           => $binary_context =~ /-asan/ ? utils::get_clang_asan_dso() : 0,
             asan_memory_limit => 20971597,
-            hang_timeout      => $waypoints =~ /vvdump/ ? "60000+" : 0,
-            no_arithmetic     => $waypoints =~ /vvdump/ ? 1 : 0,
+            hang_timeout      => $waypoints =~ /vvdump/ ? "175+" : 0,
+         #  no_arithmetic     => $waypoints =~ /vvdump/ ? 1 : 0,
          #  slow_target       => 1,
             seeds_directory   => "$RESOURCES/seeds/libtpms",
             binary_arguments  => "\@\@"

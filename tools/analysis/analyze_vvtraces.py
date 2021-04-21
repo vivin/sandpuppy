@@ -6,6 +6,7 @@ import yaml
 
 from datetime import datetime
 from itertools import combinations
+from cassandra.auth import PlainTextAuthProvider
 from cassandra.cluster import Cluster
 
 from db import cassandra_trace_db
@@ -44,7 +45,8 @@ def features_string(var):
 def main(experiment: str, subject: str, binary: str, execution: str):
     start_time = datetime.now()
 
-    cluster = Cluster(protocol_version=4)
+    auth_provider = PlainTextAuthProvider(username='phd', password='phd')
+    cluster = Cluster(protocol_version=4, auth_provider=auth_provider)
     session = cluster.connect('phd')
 
     print("Starting analysis of variable value traces\n")
