@@ -49,6 +49,7 @@ sub build {
     if (-f "$libtpms_src_dir/Makefile") {
         $log->info("Makefile exists; cleaning.");
         system ("make clean");
+        system ("find . -type f -name 'config.cache' | xargs rm");
     }
 
     my $FUZZ_FACTORY = "$TOOLS/FuzzFactory";
@@ -78,27 +79,29 @@ sub build {
     my $binary_base = "$workspace/binaries";
     my $binary_dir =  "$binary_base/$binary_context";
     my $binary_name = "readtpmc";
-    my @library_names = (
-        "libtpms.so",
-        "libtpms.so.0",
-        "libtpms.so.0.9.0",
-        "libtpms.a",
-        "libtpms_tpm2.a",
-        "libtpms_tpm12.a"
-    );
-    my @artifact_names = ($binary_name, @library_names);
     utils::create_binary_dir({
         binary_dir     => $binary_dir,
-        artifact_names => \@artifact_names,
+        artifact_names => [
+            $binary_name,
+            "libtpms.so",
+            "libtpms.so.0",
+            "libtpms.so.0.9.0",
+            "libtpms.a",
+            "libtpms.la",
+            "libtpms_tpm2.a",
+            "libtpms_tpm2.la",
+            "libtpms_tpm12.a",
+            "libtpms_tpm12.la"
+        ],
         backup         => $options->{backup}
     });
 
     # Copy the shared libraries into the binary dir because the binary will need to use it. We can't just provide the
     # directory in the source to rpath because then all readtpmc binaries will use the same shared libraries, which is
     # not what we want when we build and fuzz multiple targets.
-    foreach my $library_name (@library_names) {
-        system ("cp $libtpms_src_dir/src/.libs/$library_name $binary_dir");
-    }
+    system ("cp $libtpms_src_dir/src/.libs/*.so* $binary_dir");
+    system ("cp $libtpms_src_dir/src/.libs/*.a $binary_dir");
+    system ("cp $libtpms_src_dir/src/*.la $binary_dir");
 
     chdir $libtpms_base_dir;
 
@@ -149,9 +152,9 @@ sub get_fuzz_command {
             binary_name       => "readtpmc",
           # preload           => $binary_context =~ /-asan/ ? utils::get_clang_asan_dso() : 0,
             asan_memory_limit => 20971597,
-            hang_timeout      => $waypoints =~ /vvdump/ ? "175+" : 0,
-         #  no_arithmetic     => $waypoints =~ /vvdump/ ? 1 : 0,
-         #  slow_target       => 1,
+            hang_timeout      => $waypoints =~ /vvdump/ ? "5000+" : 0,
+            no_arithmetic     => $waypoints =~ /vvdump/ ? 1 : 0,
+          # slow_target       => 1,
             seeds_directory   => "$RESOURCES/seeds/libtpms",
             binary_arguments  => "\@\@"
         })

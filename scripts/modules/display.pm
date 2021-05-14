@@ -361,7 +361,7 @@ sub get_formatted_series_average_with_graph {
     my $colored_average = $value_colorizer ? $value_colorizer->($series_average) : sprintf("%.2f", $series_average);
     my $sparkline = get_sparkline_for_aggregate_series(\@series, $series_name);
 
-    my $graph_right_pad = POSIX::floor($field_value_length / 2) - POSIX::floor(scalar @series / 2);
+    my $graph_right_pad = POSIX::floor($field_value_length / 2) - POSIX::floor(scalar @series / 2) + (1 - (scalar @series % 2));
     my $graph_left_pad = $graph_right_pad - length(sprintf("%.2f", $series_average));
     return $colored_average . (" " x $graph_left_pad) . $sparkline . (" " x $graph_right_pad);
 }
@@ -386,10 +386,11 @@ sub get_formatted_waypoint_targets_stats {
     my $batch_waypoints_stats = $_[2];
     my $waypoint = $_[3];
 
-    my $last_new_path_found = $batch_waypoints_stats->{$waypoint} ? $batch_waypoints_stats->{$waypoint}->{last_new_path_found} : -1;
+    my $last_new_path_found = $overall_waypoints_stats->{$waypoint} ? $overall_waypoints_stats->{$waypoint}->{last_new_path_found} : -1;
     my $total_paths = $overall_waypoints_stats->{$waypoint} ? $overall_waypoints_stats->{$waypoint}->{total_paths} : "n/a";
     my $paths_imported = $overall_waypoints_stats->{$waypoint} ? $overall_waypoints_stats->{$waypoint}->{paths_imported} : "n/a";
-    my $paths_found = $overall_waypoints_stats->{$waypoint} ? $overall_waypoints_stats->{$waypoint}->{paths_found} : "n/a";
+    my $overall_paths_found = $overall_waypoints_stats->{$waypoint} ? $overall_waypoints_stats->{$waypoint}->{paths_found} : "n/a";
+    my $batch_paths_found = $batch_waypoints_stats->{$waypoint} ? $batch_waypoints_stats->{$waypoint}->{paths_found_in_batch} : "n/a";
     my $unique_hangs = $overall_waypoints_stats->{$waypoint} ? $overall_waypoints_stats->{$waypoint}->{unique_hangs} : "n/a";
     my $unique_crashes = $overall_waypoints_stats->{$waypoint} ? $overall_waypoints_stats->{$waypoint}->{unique_crashes} : "n/a";
     my $max_depth = $overall_waypoints_stats->{$waypoint} ? $overall_waypoints_stats->{$waypoint}->{max_depth} : "n/a";
@@ -397,11 +398,16 @@ sub get_formatted_waypoint_targets_stats {
     my $num_targets_in_batch = $batch_waypoints_stats->{$waypoint} ? $batch_waypoints_stats->{$waypoint}->{count} : "n/a";
     my $num_finished_targets = $overall_waypoints_stats->{$waypoint} ? $overall_waypoints_stats->{$waypoint}->{finished} : "n/a";
 
+    my $overall_paths_found_color = $overall_paths_found ne "n/a" && $overall_paths_found > 0 ? 'bold white' : 'bold red';
+    my $batch_paths_found_color = $batch_paths_found ne "n/a" && $batch_paths_found > 0 ? 'bold white' : 'bold red';
+    my $paths_found = colored([$overall_paths_found_color], $overall_paths_found) .
+        colored(['bold white'], " (") . colored([$batch_paths_found_color], $batch_paths_found) . colored(['bold white'], ")");
+
     return (
         get_formatted_last_new_path($current_time, $last_new_path_found),
         get_formatted_paths_metric($FIELD_VALUE_LENGTH, $total_paths),
         get_formatted_paths_metric($FIELD_VALUE_LENGTH, $paths_imported),
-        get_formatted_paths_metric($FIELD_VALUE_LENGTH, $paths_found),
+        $paths_found . (" " x ($FIELD_VALUE_LENGTH - length("$overall_paths_found ($batch_paths_found)"))),
         get_formatted_unique_hangs($FIELD_VALUE_LENGTH, $unique_hangs),
         get_formatted_unique_crashes($FIELD_VALUE_LENGTH, $unique_crashes),
         colored([$max_depth eq "n/a" ? 'bold red': 'bold white'], left_align($FIELD_VALUE_LENGTH, $max_depth)),

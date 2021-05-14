@@ -3,45 +3,9 @@
 use lib glob "~/Projects/phd/scripts/modules";
 use strict;
 use warnings FATAL => 'all';
-use Log::Simple::Color;
 use POSIX;
 use Fcntl;
 use tasks;
-
-my $log = Log::Simple::Color->new;
-
-my $NAMED_PIPE = "/tmp/vvdump";
-if (!-e $NAMED_PIPE) {
-    $log->info("Creating named pipe at $NAMED_PIPE");
-    POSIX::mkfifo($NAMED_PIPE, 0700) or die "Could not create $NAMED_PIPE";
-}
-
-# Increase maximum named-pipe size and set the size of our pipe. It appears the maximum possible size is 32 mb; at least
-# on my system.
-my $NAMED_PIPE_SIZE = 1048576 * 32;
-my $pid = fork;
-if (!$pid) {
-    open my $f, ">", $NAMED_PIPE;
-    while(1) { }
-    exit;
-} else {
-    # Need sudo to increase the maximum pipe size. Make sure there is an entry like the following in the sudoers file:
-    # myuser  ALL=(ALL:ALL) NOPASSWD:/sbin/sysctl fs.pipe-max-size=*
-    system("sudo sysctl fs.pipe-max-size=$NAMED_PIPE_SIZE");
-    open FD, $NAMED_PIPE  or die "Cannot open $NAMED_PIPE";
-    my $old_size = fcntl(\*FD, Fcntl::F_GETPIPE_SZ, 0);
-    $log->info("Old pipe size: $old_size");
-
-    fcntl(\*FD, Fcntl::F_SETPIPE_SZ, int($NAMED_PIPE_SIZE));
-    my $new_size = fcntl(\*FD, Fcntl::F_GETPIPE_SZ, 0);
-    if ($new_size < $NAMED_PIPE_SIZE) {
-        $log->error("Failed setting pipe size to $NAMED_PIPE_SIZE");
-    } else {
-        $log->info("New pipe size: $new_size");
-    }
-
-    kill 'INT', $pid;
-}
 
 my $supported_tasks = {
     build  => 1,

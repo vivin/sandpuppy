@@ -13,7 +13,7 @@ function run_cql_statement() {
     statement=$1
 
     echo -n $statement
-    cqlsh -k "phd" -e "${statement}" >/tmp/cqlshout 2>&1
+    cqlsh -u cassandra -p cassandra -k "phd" -e "${statement}" >/tmp/cqlshout 2>&1
     if [ $? -eq 0 ]; then
         echo " - OK"
     else

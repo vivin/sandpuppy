@@ -49,6 +49,7 @@ sub build {
     if (-f "$binutils_src_dir/Makefile") {
         $log->info("Makefile exists; cleaning.");
         system ("make clean");
+        system ("find . -type f -name 'config.cache' | xargs rm");
     }
 
     my $FUZZ_FACTORY = "$TOOLS/FuzzFactory";
@@ -115,6 +116,7 @@ sub get_fuzz_command {
         $exec_context,
         utils::merge($options, {
             binary_name      => "readelf",
+            asan_memory_limit => 20971597,
             hang_timeout     => $waypoints =~ /vvdump/ ? 600 : 0,
             seeds_directory  => "$RESOURCES/seeds/readelf",
             binary_arguments => "-a \@\@"

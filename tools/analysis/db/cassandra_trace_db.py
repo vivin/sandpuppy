@@ -70,7 +70,7 @@ def get_subject_file_function_variables_of_type(session, subject, filename, func
             'function': function,
             'type': row[0],
             'name': row[1],
-            'fqn': "{filename}::{function}::{variable_type} {variable_name}:{declared_line}".format(
+            'fqn': "{filename}::{function}::{variable_type}:{variable_name}:{declared_line}".format(
                 filename=re.sub("^.*/", "", filename),
                 function=function,
                 variable_type=variable_type,

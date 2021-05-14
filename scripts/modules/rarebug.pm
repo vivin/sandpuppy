@@ -77,7 +77,8 @@ sub get_fuzz_command {
         $exec_context,
         utils::merge($options, {
             binary_name     => "rarebug",
-            hang_timeout    => $waypoints =~ /vvdump/ ? 100 : 0,
+            hang_timeout    => $waypoints =~ /vvdump/ ? 0 : 0,
+            no_splicing     => 1,
             seeds_directory => "$RESOURCES/seeds/rarebug"
         })
     );

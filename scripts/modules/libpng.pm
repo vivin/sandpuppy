@@ -53,6 +53,7 @@ sub build {
     if (-f "$libpng_src_dir/Makefile") {
         $log->info("Makefile exists; cleaning.");
         system ("make clean");
+        system ("find . -type f -name 'config.cache' | xargs rm");
     }
 
     my $FUZZ_FACTORY = "$TOOLS/FuzzFactory";
@@ -75,6 +76,10 @@ sub build {
         die "Make failed";
     }
 
+    if ($waypoints eq "vvdump") {
+        delete $ENV{"WAYPOINTS"};
+    }
+
     my $workspace = utils::get_workspace($experiment_name, $subject, $version);
 
     my $binary_base = "$workspace/binaries";
@@ -87,7 +92,7 @@ sub build {
     });
 
     my $libpng_lib_version = $version;
-    $libpng_lib_version =~ s/\.[0-9]$//;
+    $libpng_lib_version =~ s/\.[0-9]+$//;
     $libpng_lib_version =~ s/\.//;
 
     my $libpng_lib_file = "$libpng_src_dir/.libs/libpng$libpng_lib_version.a";
@@ -133,6 +138,7 @@ sub get_fuzz_command {
         $exec_context,
         utils::merge($options, {
             binary_name     => "readpng",
+            asan_memory_limit => 20971597,
             hang_timeout    => $waypoints =~ /vvdump/ ? 300 : 0,
             seeds_directory => "$RESOURCES/seeds/libpng/images",
             dictionary_file => "$RESOURCES/seeds/libpng/dictionary/png.dict"

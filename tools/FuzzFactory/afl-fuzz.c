@@ -142,7 +142,8 @@ EXP_ST u8  skip_deterministic,        /* Skip deterministic stages?       */
            dsf_enabled,               /* Domain-specific fuzzing          */
            save_everything,           /* save all inputs with something in perf_map */
            deferred_mode,             /* Deferred forkserver mode?        */
-           fast_cal;                  /* Try to calibrate faster?         */
+           fast_cal,                  /* Try to calibrate faster?         */
+           no_splicing;                  /* Disable havoc stage              */
 
 static s32 out_fd,                    /* Persistent fd for out_file       */
            dev_urandom_fd = -1,       /* Persistent fd for /dev/urandom   */
@@ -6962,7 +6963,7 @@ havoc_stage:
 
 retry_splicing:
 
-  if (use_splicing && splice_cycle++ < SPLICE_CYCLES &&
+  if (!no_splicing && use_splicing && splice_cycle++ < SPLICE_CYCLES &&
       queued_paths > 1 && queue_cur->len > 1) {
 
     struct queue_entry* target;
@@ -8434,6 +8435,7 @@ int main(int argc, char** argv) {
   if (getenv("AFL_NO_FORKSRV"))    no_forkserver    = 1;
   if (getenv("AFL_NO_CPU_RED"))    no_cpu_meter_red = 1;
   if (getenv("AFL_NO_ARITH"))      no_arith         = 1;
+  if (getenv("AFL_NO_SPLICING"))   no_splicing      = 1;
   if (getenv("AFL_SHUFFLE_QUEUE")) shuffle_queue    = 1;
   if (getenv("AFL_FAST_CAL"))      fast_cal         = 1;
 

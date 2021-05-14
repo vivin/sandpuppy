@@ -1,8 +1,12 @@
 import sys
 import os
+import gc
 import warnings
 import concurrent.futures
 import yaml
+import bz2
+import pickle
+import _pickle as c_pickle
 
 from datetime import datetime
 from itertools import combinations
@@ -13,44 +17,50 @@ from db import cassandra_trace_db
 from ml import feature_extractor, classifiers
 from graphs import graph
 
-warnings.filterwarnings('error')
+#warnings.filterwarnings('error')
 
 BASE_PATH = "/home/vivin/Projects/phd"
 BASE_WORKSPACE_PATH = f"{BASE_PATH}/workspace"
 
 
 def features_string(var):
-    var_features = var['features']
+    features = var['features']
 
-    features_str = " (varying deltas)" if var_features['varying_deltas'] else ""
-    features_str += "\n          num_unique_values=" + str(var_features['num_unique_values'])
-    features_str += "\n          lsp=" + str(var_features['loop_sequence_proportion'])
-    features_str += "\n          lspf=" + str(var_features['loop_sequence_proportion_filtered'])
-    features_str += "\n          average_delta=" + str(var_features['average_delta'])
-    features_str += "\n          average_trace_length=" + str(var_features['times_modified_mean'])
-    features_str += "\n          avscr=" + str(var_features['average_value_set_cardinality_ratio'])
-    features_str += "\n          tmisc=" + str(var_features['times_modified_to_input_size_correlation'])
-    features_str += "\n          mvisc=" + str(var_features['max_value_to_input_size_correlation'])
-    features_str += "\n          acsl=" + str(var_features['average_counter_segment_length'])
-    features_str += "\n          acslf=" + str(var_features['average_counter_segment_length_filtered'])
-    features_str += "\n          sd_roughness=" + str(var_features['second_difference_roughness'])
-    features_str += "\n          sd_roughness_filtered=" + str(var_features['second_difference_roughness_filtered'])
-    features_str += "\n          l1_ac_full=" + str(var_features['lag_one_autocorr_full'])
-    features_str += "\n          l1_ac_filtered=" + str(var_features['lag_one_autocorr_filtered'])
+    features_str = " (varying deltas)" if features['varying_deltas'] else ""
+    features_str += "\n          num_traces=" + str(features['num_traces'])
+    features_str += "\n          num_unique_values=" + str(features['num_unique_values'])
+    features_str += "\n          lsp=" + str(features['loop_sequence_proportion'])
+    features_str += "\n          lspf=" + str(features['loop_sequence_proportion_filtered'])
+    features_str += "\n          range=" + str(features['most_max_value'] - features['most_min_value'])
+    features_str += "\n          average_delta=" + str(features['average_delta'])
+    if features['average_delta'] != 0:
+        ratio = abs(features['range'] / features['average_delta'])
+    else:
+        ratio = "inf"
+    features_str += "\n          radr=" + str(ratio)
+    features_str += "\n          total_counter_segments=" + str(features['total_counter_segments'])
+    features_str += "\n          total_counter_segments_filtered=" + str(features['total_counter_segments_filtered'])
+    features_str += "\n          average_trace_length=" + str(features['times_modified_mean'])
+    features_str += "\n          avscr=" + str(features['average_value_set_cardinality_ratio'])
+    features_str += "\n          tmisc=" + str(features['times_modified_to_input_size_correlation'])
+    features_str += "\n          mvisc=" + str(features['max_value_to_input_size_correlation'])
+    features_str += "\n          acsl=" + str(features['average_counter_segment_length'])
+    features_str += "\n          acslf=" + str(features['average_counter_segment_length_filtered'])
+    features_str += "\n          sd_roughness=" + str(features['second_difference_roughness'])
+    features_str += "\n          sd_roughness_filtered=" + str(features['second_difference_roughness_filtered'])
+    features_str += "\n          l1_ac_full=" + str(features['lag_one_autocorr_full'])
+    features_str += "\n          l1_ac_filtered=" + str(features['lag_one_autocorr_filtered'])
+    if features['lag_one_autocorr_filtered'] != 0:
+        ratio = features['lag_one_autocorr_full'] / features['lag_one_autocorr_filtered']
+    else:
+        ratio = "inf" if features['lag_one_autocorr_full'] > 0 else "-inf"
+    features_str += "\n          l1_ac_r=" + str(ratio)
     features_str += "\n"
 
     return features_str
 
 
-def main(experiment: str, subject: str, binary: str, execution: str):
-    start_time = datetime.now()
-
-    auth_provider = PlainTextAuthProvider(username='phd', password='phd')
-    cluster = Cluster(protocol_version=4, auth_provider=auth_provider)
-    session = cluster.connect('phd')
-
-    print("Starting analysis of variable value traces\n")
-
+def main(experiment: str, subject: str, binary: str, execution: str, action: str):
     print("Experiment: {experiment}".format(experiment=experiment))
     print("Subject:    {subject}".format(subject=subject))
     print("Binary:     {binary}".format(binary=binary))
@@ -65,13 +75,173 @@ def main(experiment: str, subject: str, binary: str, execution: str):
     if not os.path.isdir(graphs_path):
         os.makedirs(graphs_path)
 
+    analysis_data_path = f"{results_path}/analysis_data"
+    if not os.path.isdir(analysis_data_path):
+        os.makedirs(analysis_data_path)
+
+    if action == "graph_from_saved":
+        print("Plotting graphs using saved classified variables...")
+        print("")
+        classified_variables = load_classified_variables(analysis_data_path)
+        plot_variable_classes(
+            graphs_path,
+            classified_variables,
+            ["static_counter", "dynamic_counter", "input_size_counter", "enum", "enum_value_from_input"]
+        )
+    else:
+        start_time = datetime.now()
+
+        variables_by_filename_and_function = classify_variables(experiment, subject, binary, execution, action)
+        print_classification_results(variables_by_filename_and_function)
+        print("")
+
+        # We don't need to instrument every single classified variable. Some aren't interesting and there can also
+        # be duplicates. So we will only target the interesting ones for instrumentation.
+        interesting_variables = identify_interesting_variables(variables_by_filename_and_function)
+        with open(f"{base_results_path}/sandpuppy_interesting_variables.yml", "w") as f:
+            yaml.dump(interesting_variables, f, default_flow_style=False, indent=2)
+
+        # Let's plot some graphs for these classified variables
+        classified_variables_to_graph = []
+        for filename in sorted(variables_by_filename_and_function.keys()):
+            for function in sorted(variables_by_filename_and_function[filename].keys()):
+                function_variables = variables_by_filename_and_function[filename][function]
+                classified_variables_to_graph += [
+                    {'class': v['class'], 'fqn': v['fqn'], 'features': v['features']}
+                    for v in function_variables['variables'] if v['class'] != 'zero_traces'
+                ]
+
+        save_classified_variables(analysis_data_path, classified_variables_to_graph)
+
+        print("")
+
+        plot_variable_classes(
+            graphs_path,
+            classified_variables_to_graph,
+            ["static_counter", "dynamic_counter", "input_size_counter", "enum", "enum_value_from_input"]
+        )
+
+        duration = datetime.now() - start_time
+        seconds = duration.total_seconds()
+        hours = int(seconds // 3600)
+        minutes = int((seconds % 3600) // 60)
+        seconds = int(seconds % 60)
+
+        print(f"Finished in {hours} hours, {minutes} minutes, and {seconds} seconds")
+
+
+def classify_variables(experiment: str, subject: str, binary: str, execution: str, action: str):
+    base_results_path = f"{BASE_WORKSPACE_PATH}/{experiment}/{subject}/results"
+    results_path = f"{base_results_path}/{execution}"
+    analysis_data_path = f"{results_path}/analysis_data"
+
+    auth_provider = PlainTextAuthProvider(username='phd', password='phd')
+    cluster = Cluster(protocol_version=4, auth_provider=auth_provider)
+    session = cluster.connect('phd')
+
     print("Identifying files, functions, and variables...")
+    retrieved_variables, variables_by_filename_and_function = retrieve_variables(session, subject)
 
-    all_classified_variables = []
-    filenames = cassandra_trace_db.get_subject_filenames(session, subject)
+    num_retrieved_variables = len(retrieved_variables)
+    if action == "classify_from_saved":
+        print(f"Loading saved traces for {num_retrieved_variables} variables and classifying...")
+    else:
+        print(f"Retrieving traces for {num_retrieved_variables} variables and classifying...")
 
+    with concurrent.futures.ThreadPoolExecutor(max_workers=60) as thread_pool_executor,\
+         concurrent.futures.ProcessPoolExecutor(max_workers=12) as process_pool_executor:
+
+        # Retrieve/load saved traces traces for all variables in parallel
+        if action == "classify_from_saved":
+            traces_info_future_to_variable = {
+                thread_pool_executor.submit(
+                    load_variable_traces_info,
+                    path=analysis_data_path,
+                    variable=variable
+                ): variable for variable in retrieved_variables
+            }
+        else:
+            traces_info_future_to_variable = {
+                thread_pool_executor.submit(
+                    cassandra_trace_db.retrieve_variable_value_traces_information,
+                    variable=variable,
+                    session=session,
+                    experiment=experiment,
+                    subject=subject,
+                    binary=binary,
+                    execution=execution,
+                    exit_status='success',
+                    filename=variable['filename'],
+                    function=variable['function']
+                ): variable for variable in retrieved_variables
+            }
+
+        thread_pool_executor.shutdown(wait=False)
+
+        # As each traces-query completes, populate the corresponding variable with the retrieved traces and classify
+        # in parallel
+        total_traces = 0
+        counts = {'processed': 0}
+        for traces_info_future in concurrent.futures.as_completed(traces_info_future_to_variable):
+            variable = traces_info_future_to_variable[traces_info_future]
+            variable['traces_info'] = traces_info_future.result()
+
+            if action != "classify_from_saved":
+                save_variable_traces_info(analysis_data_path, variable)
+
+            # Delete the entry in the map and delete the future
+            del traces_info_future_to_variable[traces_info_future]
+            del traces_info_future
+
+            def callback(future, variable=variable):
+                counts['processed'] += 1
+                if counts['processed'] % 10 != 0 and counts['processed'] % 5 != 0:
+                    print(".", end='', flush=True)
+                elif counts['processed'] % 10 == 0:
+                    print(counts['processed'], end='', flush=True)
+                elif counts['processed'] % 5 == 0:
+                    print("o", end='', flush=True)
+                    gc.collect()
+
+                features, variable_class = future.result()
+                variable['features'] = features
+                variable['class'] = variable_class
+
+                _filename = variable['filename']
+                _function = variable['function']
+                variables_by_filename_and_function[_filename][_function][variable_class].append(variable)
+
+                # Delete the future, list of traces and variable values because we no longer need it. This should free
+                # up memory
+                del future
+                del variable['traces_info']['traces']
+                del variable['traces_info']['variable_values']
+                del variable['traces_info']['modified_line_values']
+
+            process_pool_executor.submit(classify_variable, variable)\
+                .add_done_callback(callback)
+
+        process_pool_executor.shutdown(wait=True)
+
+    print("\n")
+
+    # Now identify related variables for each function in each filename
+    for filename in sorted(variables_by_filename_and_function.keys()):
+        for function in sorted(variables_by_filename_and_function[filename].keys()):
+            variables_by_filename_and_function[filename][function]['related'] = identify_related_variables(
+                filename,
+                function,
+                variables_by_filename_and_function
+            )
+
+    return variables_by_filename_and_function
+
+
+def retrieve_variables(session, subject):
     variables_by_filename_and_function = {}
     retrieved_variables = []
+
+    filenames = cassandra_trace_db.get_subject_filenames(session, subject)
     for filename in sorted(filenames):
         variables_by_filename_and_function[filename] = {}
 
@@ -96,81 +266,10 @@ def main(experiment: str, subject: str, binary: str, execution: str):
 
             retrieved_variables += variables
 
-    num_retrieved_variables = len(retrieved_variables)
-    print(f"Retrieving traces for {num_retrieved_variables} variables and classifying...")
-    with concurrent.futures.ThreadPoolExecutor(max_workers=60) as thread_pool_executor,\
-         concurrent.futures.ProcessPoolExecutor(max_workers=12) as process_pool_executor:
+    return retrieved_variables, variables_by_filename_and_function
 
-        # Retrieve traces for all variables in parallel
-        traces_info_future_to_variable = {
-            thread_pool_executor.submit(
-                cassandra_trace_db.retrieve_variable_value_traces_information,
-                variable=variable,
-                session=session,
-                experiment=experiment,
-                subject=subject,
-                binary=binary,
-                execution=execution,
-                exit_status='success',
-                filename=variable['filename'],
-                function=variable['function']
-            ): variable for variable in retrieved_variables
-        }
 
-        thread_pool_executor.shutdown(wait=False)
-
-        # As each traces-query completes, populate the corresponding variable with the retrieved traces and classify
-        # in parallel
-        counts = {'processed': 0}
-        for traces_info_future in concurrent.futures.as_completed(traces_info_future_to_variable):
-            variable = traces_info_future_to_variable[traces_info_future]
-            variable['traces_info'] = traces_info_future.result()
-
-            # Delete the entry in the map and delete the future
-            del traces_info_future_to_variable[traces_info_future]
-            del traces_info_future
-
-            def callback(future, variable=variable):
-                counts['processed'] += 1
-                print("." if counts['processed'] % 10 != 0 else counts['processed'], end='', flush=True)
-
-                features, variable_class = future.result()
-                variable['features'] = features
-                variable['class'] = variable_class
-
-                _filename = variable['filename']
-                _function = variable['function']
-                variables_by_filename_and_function[_filename][_function][variable_class].append(variable)
-
-                # Delete the list of traces and variable values because we no longer need it. This should also free
-                # up memory
-                del variable['traces_info']['traces']
-                del variable['traces_info']['variable_values']
-
-            classify_future = process_pool_executor.submit(classify_variable, variable)
-            classify_future.add_done_callback(callback)
-
-        process_pool_executor.shutdown(wait=True)
-
-    print("\n")
-
-    # Now identify related variables for each function in each filename
-    for filename in sorted(variables_by_filename_and_function.keys()):
-        for function in sorted(variables_by_filename_and_function[filename].keys()):
-            variables_by_filename_and_function[filename][function]['related'] = identify_related_variables(
-                filename,
-                function,
-                variables_by_filename_and_function
-            )
-
-    print("")
-
-    interesting_variables = {
-        'max': [],
-        'perm': [],
-        'hash': []
-    }
-
+def print_classification_results(variables_by_filename_and_function):
     labels_to_description = {
         'constant': "Constants",
         'correlated_with_input_size': "Variables correlated with input size",
@@ -181,6 +280,34 @@ def main(experiment: str, subject: str, binary: str, execution: str):
         'enum': "Enums",
         'enum_value_from_input': "Enums deriving value from input",
         'related': "Related variables"
+    }
+
+    print("")
+    for filename in sorted(variables_by_filename_and_function.keys()):
+        for function in sorted(variables_by_filename_and_function[filename].keys()):
+            function_variables = variables_by_filename_and_function[filename][function]
+
+            for label in ['constant', 'correlated_with_input_size', 'boolean', 'static_counter', 'dynamic_counter',
+                          'input_size_counter', 'enum', 'enum_value_from_input', 'related']:
+                if len(function_variables[label]) > 0:
+
+                    print("")
+                    print("  {description}:".format(description=labels_to_description[label]))
+
+                    if label != "related":
+                        function_variables[label].sort(key=lambda var: var['fqn'])
+                        for variable in function_variables[label]:
+                            print("    {fqn}{f}".format(fqn=variable['fqn'], f=features_string(variable)))
+                    else:
+                        for related in function_variables[label]:
+                            print("    {related}".format(related=sorted([variable['fqn'] for variable in related])))
+
+
+def identify_interesting_variables(variables_by_filename_and_function):
+    interesting_variables = {
+        'max': [],
+        'perm': [],
+        'hash': []
     }
 
     # For instrumentation passes where we are maximizing the values of certain variables, or maximizing permutations of
@@ -198,15 +325,6 @@ def main(experiment: str, subject: str, binary: str, execution: str):
             for label in ['constant', 'correlated_with_input_size', 'boolean', 'static_counter', 'dynamic_counter',
                           'input_size_counter', 'enum', 'enum_value_from_input', 'related']:
                 if len(function_variables[label]) > 0:
-                    print("")
-                    print("  {description}:".format(description=labels_to_description[label]))
-
-                    if label != "related":
-                        for variable in function_variables[label]:
-                            print("    {fqn}{f}".format(fqn=variable['fqn'], f=features_string(variable)))
-                    else:
-                        for related in function_variables[label]:
-                            print("    {related}".format(related=sorted([variable['fqn'] for variable in related])))
 
                     if label in ['correlated_with_input_size', 'dynamic_counter', 'input_size_counter']:
                         interesting_variables['max'] += [
@@ -246,27 +364,48 @@ def main(experiment: str, subject: str, binary: str, execution: str):
                                         for variable in pair
                                     ])
 
-            all_classified_variables += [
-                {'class': v['class'], 'fqn': v['fqn'], 'features': v['features']}
-                for v in function_variables['variables'] if v['class'] != 'zero_traces'
-            ]
+    return interesting_variables
 
-    with open(f"{base_results_path}/sandpuppy_interesting_variables.yml", "w") as f:
-        yaml.dump(interesting_variables, f, default_flow_style=False, indent=2)
 
-    graph.graph_classes(
-        graphs_path,
-        all_classified_variables,
-        ["static_counter", "dynamic_counter", "input_size_counter", "enum", "enum_value_from_input"]
-    )
+def load_classified_variables(path):
+    classified_variables_file = f"{path}/classified_variables.pbz2"
+    if not os.path.isfile(classified_variables_file):
+        raise Exception(f"Could not find classified variables file at {classified_variables_file}")
 
-    duration = datetime.now() - start_time
-    seconds = duration.total_seconds()
-    hours = int(seconds // 3600)
-    minutes = int((seconds % 3600) // 60)
-    seconds = int(seconds % 60)
+    variables = bz2.BZ2File(classified_variables_file, "rb")
+    variables = c_pickle.load(variables)
+    return variables
 
-    print(f"Finished in {hours} hours, {minutes} minutes, and {seconds} seconds")
+
+def save_classified_variables(path, variables):
+    classified_variables_file = f"{path}/classified_variables.pbz2"
+    with bz2.BZ2File(classified_variables_file, "w") as f:
+        c_pickle.dump(variables, f)
+
+    print(f"Saved classified variables to {classified_variables_file}")
+
+
+def load_variable_traces_info(path, variable):
+    fqn = variable['fqn']
+    variable_traces_info_file = f"{path}/{fqn}.traces_info.pbz2"
+    if not os.path.isfile(variable_traces_info_file):
+        raise Exception(f"Could not find variable traces info file at {variable_traces_info_file}")
+
+    traces_info = bz2.BZ2File(variable_traces_info_file, "rb")
+    traces_info = c_pickle.load(traces_info)
+    return traces_info
+
+
+def save_variable_traces_info(path, variable):
+    fqn = variable['fqn']
+    traces_info = variable['traces_info']
+    variable_traces_info_file = f"{path}/{fqn}.traces_info.pbz2"
+    with bz2.BZ2File(variable_traces_info_file, "w") as f:
+        c_pickle.dump(traces_info, f)
+
+
+def plot_variable_classes(path, variables, classes):
+    graph.graph_classes(path, variables, classes)
 
 
 def classify_variable(variable):
@@ -291,8 +430,8 @@ def classify_variable(variable):
         # situations where the entire set of enum values is probably being iterated over. In the latter case the
         # enum value directly or indirectly derives from some input value.
         if features['varying_deltas'] \
-            and features['loop_sequence_proportion'] < 0.9 \
-            and features['lag_one_autocorr_filtered'] < 1 \
+            and (features['average_counter_segment_length_filtered'] < 3
+                 or (features['loop_sequence_proportion'] < 0.9 and features['lag_one_autocorr_filtered'] < 1)) \
                 and classifiers.is_enum(features):
 
             if classifiers.is_enum_deriving_values_from_input(features):
@@ -429,7 +568,14 @@ def identify_related_variables(filename, function, variables_by_filename_and_fun
 
 
 if __name__ == "__main__":
-    if len(sys.argv) < 4:
-        print("Syntax: {script} <experiment> <subject> <binary> <execution>".format(script=sys.argv[0]))
+    if len(sys.argv) < 5:
+        print("Syntax: {script} <experiment> <subject> <binary> <execution> [(classify|graph)_from_saved]".format(
+            script=sys.argv[0]
+        ))
     else:
-        main(sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4])
+        if len(sys.argv) < 6:
+            action = None
+        else:
+            action = sys.argv[5]
+
+        main(sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4], action)

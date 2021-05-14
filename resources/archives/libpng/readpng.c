@@ -31,6 +31,7 @@
 #  include "../../png.h"
 #endif
 
+__attribute__((no_sanitize("address")))
 static int
 read_png(FILE *fp)
 {
@@ -106,6 +107,7 @@ read_png(FILE *fp)
    return 1;
 }
 
+__attribute__((no_sanitize("address")))
 int
 main(void)
 {

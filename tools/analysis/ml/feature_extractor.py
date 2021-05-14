@@ -7,6 +7,7 @@ def extract_features(variable):
         'num_modified_lines': len(variable['traces_info']['modified_lines']),
         'num_unique_values': len(set(variable['traces_info']['variable_values'])),
         'values_set': set(variable['traces_info']['variable_values']),
+        'range': 0,
         'times_modified_variance': 0,
         'times_modified_min': 0,
         'times_modified_max': 0,
@@ -19,10 +20,13 @@ def extract_features(variable):
         'max_values_variance': 0,
         'max_value_to_input_size_correlation': 0,
         'average_delta': 0,
+        'delta_variance': -1,
         'varying_deltas': False,
         'average_value_set_cardinality_ratio': 0,
         'loop_sequence_proportion': 0,
         'loop_sequence_proportion_filtered': 0,
+        'total_counter_segments': 0,
+        'total_counter_segments_filtered': 0,
         'average_counter_segment_length': 0,
         'average_counter_segment_length_filtered': 0,
         'jaggedness_full': None,
@@ -72,6 +76,8 @@ def extract_features(variable):
     if len(max_values) > 0:
         features['most_max_value'] = max(max_values)
         features['max_values_variance'] = numpy.var(max_values)
+
+    features['range'] = (features['most_max_value'] - features['most_min_value'])
 
     input_sizes_variance = features['input_sizes_variance']
     max_values_variance = features['max_values_variance']
@@ -188,9 +194,11 @@ def extract_features(variable):
     features['average_value_set_cardinality_ratio'] = proportion_sum / features['num_traces']
 
     if len(combined_trace) > 0:
+        features['total_counter_segments'] = len(combined_trace_counter_segments)
         features['average_counter_segment_length'] = numpy.mean(
             [len(s) for s in combined_trace_counter_segments if len(s) > 1]
         )
+
         segments_gt2 = [s for s in combined_trace_counter_segments if len(s) > 2]
         if len(segments_gt2) > 0:
             features['lag_one_autocorr_full'] = numpy.mean([
@@ -203,6 +211,7 @@ def extract_features(variable):
     combined_deltas = []
     if len(combined_filtered_trace) > 0:
         filtered_segments_gt1 = [s for s in combined_filtered_trace_counter_segments if len(s) > 1]
+        features['total_counter_segments_filtered'] = len(filtered_segments_gt1)
         features['average_counter_segment_length_filtered'] = numpy.mean([len(s) for s in filtered_segments_gt1])
 
         filtered_segments_gt2 = [s for s in combined_filtered_trace_counter_segments if len(s) > 2]
@@ -229,6 +238,7 @@ def extract_features(variable):
 
     if len(combined_deltas) > 1:
         features['average_delta'] = numpy.mean(combined_deltas)
+        features['delta_variance'] = numpy.var(combined_deltas)
         if len(set(combined_deltas)) > 1:
             features['varying_deltas'] = True
 

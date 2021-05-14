@@ -3,9 +3,10 @@ package net.vivin.vvdump.service;
 import lombok.extern.slf4j.Slf4j;
 import net.vivin.vvdump.cassandra.repository.CassandraRepository;
 import net.vivin.vvdump.model.EndTraceMessage;
-import net.vivin.vvdump.model.FullTraceItem;
+import net.vivin.vvdump.model.ProcessTrace;
+import net.vivin.vvdump.model.ProcessTraceTask;
 import net.vivin.vvdump.model.TraceItem;
-import org.apache.commons.math3.stat.descriptive.SynchronizedDescriptiveStatistics;
+import org.apache.commons.math3.stat.descriptive.DescriptiveStatistics;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.ApplicationContext;
@@ -13,21 +14,19 @@ import org.springframework.context.ConfigurableApplicationContext;
 import org.springframework.stereotype.Service;
 
 import javax.annotation.PostConstruct;
-import javax.annotation.PreDestroy;
 import java.io.BufferedReader;
 import java.io.FileNotFoundException;
 import java.io.FileReader;
 import java.io.IOException;
-import java.io.RandomAccessFile;
 import java.io.UncheckedIOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.text.DecimalFormat;
 import java.time.Duration;
 import java.util.ArrayDeque;
-import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
-import java.util.PriorityQueue;
 import java.util.Queue;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
@@ -42,8 +41,8 @@ import static org.awaitility.Awaitility.await;
 @Service
 public class TraceProcessingService {
 
-    private static final int NUM_THREADS = 128;
-    private static final int INSERTION_TIME_THRESHOLD = 15;
+    private static final int PROCESS_TRACE_EXECUTOR_NUM_THREADS = 12;
+    private static final int TRACE_ITEM_EXECUTOR_NUM_THREADS = 256;
     private static final int NUM_TRACE_COMPONENTS = 13;
     private static final int NUM_END_TRACE_COMPONENTS = 8;
     private static final String END_TRACE_MARKER = "__$VVDUMP_END$__";
@@ -53,44 +52,59 @@ public class TraceProcessingService {
     private String namedPipePath;
 
     private final ApplicationContext applicationContext;
-    private final CassandraRepository cassandraRepository;
+    private final CassandraRepository cassandra;
     private final ExecutorService pipeReaderExecutor;
-    private final ExecutorService traceInsertionExecutor;
+    private final ExecutorService processTraceExecutor;
+    private final ExecutorService traceItemInsertionExecutor;
+
+    private final Path dataDirectory;
 
     private final Set<Integer> pids = new HashSet<>();
     private final Map<Integer, Queue<String>> processTraces = new HashMap<>();
-    private final Queue<ProcessTrace> orderedProcessTraceQueue = new PriorityQueue<>(Comparator.comparing(ProcessTrace::size));
 
-    private final LongAdder totalProcesses = new LongAdder();
-    private final LongAdder totalTraceItems = new LongAdder();
-    private final LongAdder processedTraceItemsCount = new LongAdder();
-    private final LongAdder processingTraceItemsCount = new LongAdder();
-    private final LongAdder throttledThreads = new LongAdder();
-
-    private final SynchronizedDescriptiveStatistics traceInsertionTimes = new SynchronizedDescriptiveStatistics();
+    private final Metrics metrics = new Metrics();
 
     @Autowired
-    public TraceProcessingService(ApplicationContext applicationContext, CassandraRepository cassandraRepository) {
+    public TraceProcessingService(ApplicationContext applicationContext, CassandraRepository cassandra) throws IOException {
         this.applicationContext = applicationContext;
-        this.cassandraRepository = cassandraRepository;
+        this.cassandra = cassandra;
         this.pipeReaderExecutor = Executors.newSingleThreadExecutor();
-        this.traceInsertionExecutor = Executors.newFixedThreadPool(NUM_THREADS);
+        this.processTraceExecutor = Executors.newFixedThreadPool(PROCESS_TRACE_EXECUTOR_NUM_THREADS);
+        this.traceItemInsertionExecutor = Executors.newFixedThreadPool(TRACE_ITEM_EXECUTOR_NUM_THREADS);
+        this.dataDirectory = Files.createTempDirectory("vvdump-data");
     }
 
     @PostConstruct
     public void init() {
-        log.info("Starting trace processor with {} processing threads...", NUM_THREADS);
-        traceInsertionTimes.setWindowSize(1500);
+        log.info("Starting trace processor with {} processing threads...", TRACE_ITEM_EXECUTOR_NUM_THREADS);
         CompletableFuture.runAsync(this::readPipe, pipeReaderExecutor)
             .whenCompleteAsync((v, e) -> {
                 if (e != null) {
                     log.error("Processor shut down unexpectedly", e);
                 }
+
+                log.info("Shutting down pipe reader executor...");
+                pipeReaderExecutor.shutdown();
+
+                var attempts = 5;
+                while (!pipeReaderExecutor.isTerminated() && attempts > 0) {
+                    try {
+                        pipeReaderExecutor.awaitTermination(3, TimeUnit.SECONDS);
+                    } catch (InterruptedException interruptedException) {
+                        Thread.currentThread().interrupt();
+                    }
+                    attempts--;
+                    log.info("Waiting on pipe reader executor to terminate...");
+                }
+
+                pipeReaderExecutor.shutdownNow();
                 ((ConfigurableApplicationContext) applicationContext).close();
             });
     }
 
     private void readPipe() {
+        long start = -1;
+
         try {
             // Need to open in read-write mode because the fuzzer is continually starting up processes and shutting
             // them down, meaning that there are windows of time where there are no writers. If opened in read mode
@@ -98,94 +112,52 @@ public class TraceProcessingService {
             //var pipe = new RandomAccessFile(namedPipePath, "rw");
             var pipe = new BufferedReader(new FileReader(namedPipePath), 8192 * 8);
             long lastLoggedTime = System.currentTimeMillis();
-            long insertionTimeThreshold = INSERTION_TIME_THRESHOLD;
 
             String line;
             while ((line = pipe.readLine()) != null && !END_TRACE_MARKER.equals(line)) {
+                if (start == -1) {
+                    start = System.currentTimeMillis();
+                }
+
                 var components = line.split(":");
                 if (components.length == NUM_TRACE_COMPONENTS) {
                     var pid = Integer.parseInt(components[TraceItem.Components.PID.index]);
-
                     if (!pids.contains(pid)) {
                         processTraces.put(pid, new ArrayDeque<>());
                         pids.add(pid);
-                        totalProcesses.increment();
                     }
 
                     processTraces.get(pid).add(line);
-                    totalTraceItems.increment();
                 } else if (components.length == NUM_END_TRACE_COMPONENTS) {
                     // Only insert the traces if the process wasn't killed and if we have seen at least one trace from
                     // this process (that's the only way it would be inside the pids set).
 
                     var exitStatus = components[EndTraceMessage.Components.EXIT_STATUS.index];
                     var pid = Integer.parseInt(components[EndTraceMessage.Components.PID.index]);
-                    if (!"killed".equals(exitStatus) && pids.contains(pid)) {
+
+                    // Uncomment and then get rid of the else block (or leave it in; doesn't matter) if you want to
+                    // insert ALL traces, even crashes and hangs etc.
+                    // if (!"killed".equals(exitStatus) && pids.contains(pid)) {
+                    if ("success".equals(exitStatus) && pids.contains(pid)) {
                         pids.remove(pid);
-                        orderedProcessTraceQueue.add(new ProcessTrace(processTraces.remove(pid), line));
+                        processTraceExecutor.submit(new ProcessTraceTask(
+                            new ProcessTrace(processTraces.remove(pid), line),
+                            dataDirectory,
+                            traceItemInsertionExecutor,
+                            cassandra,
+                            metrics
+                        ));
+                    } else {
+                        pids.remove(pid);
+                        processTraces.remove(pid);
                     }
                 } else {
                     log.warn("Malformed line: {}", line);
                 }
 
-                double meanInsertionTime = traceInsertionTimes.getValues().length == 0 ? 0 : traceInsertionTimes.getMean();
-                if (meanInsertionTime < insertionTimeThreshold && !orderedProcessTraceQueue.isEmpty()) {
-                    var processTrace = orderedProcessTraceQueue.poll();
-                    var traceItems = processTrace.traceItems;
-                    var endTraceItem = processTrace.endTraceItem;
-
-                    processingTraceItemsCount.add(traceItems.size());
-                    traceInsertionExecutor.submit(() -> {
-                        try {
-                            int waits = 0;
-                            String traceItem;
-                            while ((traceItem = traceItems.poll()) != null) {
-                                long start = System.currentTimeMillis();
-                                cassandraRepository.insertFullTraceItem(FullTraceItem.from(traceItem, endTraceItem));
-                                long elapsed = System.currentTimeMillis() - start;
-
-                                traceInsertionTimes.addValue(elapsed);
-
-                                processingTraceItemsCount.decrement();
-                                processedTraceItemsCount.increment();
-
-                                if (elapsed >= INSERTION_TIME_THRESHOLD) {
-                                    long ratio = Math.round((double) elapsed / INSERTION_TIME_THRESHOLD);
-                                    long backoff = Math.min(60000, Math.round(Math.pow(ratio, waits++)) * 100);
-
-                                    // No idea htf this ends up being negative but whatever
-                                    if (backoff < 0) {
-                                        backoff = Math.min(60000, backoff * -1);
-                                    }
-
-                                    throttledThreads.increment();
-                                    Thread.sleep(backoff);
-                                    throttledThreads.decrement();
-                                } else {
-                                    waits = Math.max(0, --waits);
-                                }
-                            }
-                            totalProcesses.decrement();
-                        } catch (Exception e) {
-                            log.error("Error while inserting: {}", e.getMessage(), e);
-                        }
-                    });
-
-                    insertionTimeThreshold = INSERTION_TIME_THRESHOLD;
-                } else if (!orderedProcessTraceQueue.isEmpty() && insertionTimeThreshold == INSERTION_TIME_THRESHOLD) {
-                    log.info(
-                        "Average insertion time of {} ms is greater than threshold of {} ms; no tasks will be submitted until average insertion time is lesser than {} ms",
-                        df.format(meanInsertionTime),
-                        insertionTimeThreshold,
-                        insertionTimeThreshold - 5
-                    );
-
-                    insertionTimeThreshold -= 5;
-                }
-
                 long elapsed = System.currentTimeMillis() - lastLoggedTime;
                 if (elapsed > 1000) {
-                    logStatistics(false);
+                    logStatistics(false, elapsed);
                     lastLoggedTime = System.currentTimeMillis();
                 }
             }
@@ -197,51 +169,84 @@ public class TraceProcessingService {
         }
 
         log.info("Fuzzer has shut down. No more incoming traces.");
-        traceInsertionExecutor.shutdown();
+
+        log.info("Shutting down process-trace executor and waiting for termination...");
+        shutdownExecutorAndMonitor(processTraceExecutor);
+        log.info("Process-trace executor has shutdown.");
+
+        log.info("Shutting down trace-item insertion executor and waiting for termination...");
+        shutdownExecutorAndMonitor(traceItemInsertionExecutor);
+        log.info("Trace-item insertion execution has shutdown.");
+
+        long totalTime = System.currentTimeMillis() - start;
+        double totalTraceItems = Long.valueOf(metrics.getTotalTraceItems()).doubleValue();
+        log.info(
+            "Processed {} traces in {} ({} traces/s; {} ms/trace)",
+            metrics.getTotalTraceItems(),
+            getDescriptiveTimeDelta(totalTime / 1000),
+            df.format(totalTraceItems / (totalTime / 1000d)),
+            df.format(totalTime / totalTraceItems)
+        );
+    }
+
+    private void shutdownExecutorAndMonitor(ExecutorService executor) {
+        executor.shutdown();
+        Map<String, Long> lastLoggedTimeMap = new HashMap<>();
+        lastLoggedTimeMap.put("lastLoggedTime", System.currentTimeMillis());
         await()
             .atMost(Duration.ofHours(3))
             .with().pollInterval(Duration.ofSeconds(1))
             .until(() -> {
-                logStatistics(true);
-                return traceInsertionExecutor.isTerminated();
+                logStatistics(true, System.currentTimeMillis() - lastLoggedTimeMap.get("lastLoggedTime"));
+                lastLoggedTimeMap.put("lastLoggedTime", System.currentTimeMillis());
+                return executor.isTerminated();
             });
     }
 
-    private void logStatistics(boolean showProgress) {
-        long total = totalTraceItems.longValue();
-        long processed = processedTraceItemsCount.longValue();
-        double averageInsertionTimePerTrace = traceInsertionTimes.getMean();
+    private void logStatistics(boolean showProgress, long elapsed) {
+        long start = System.currentTimeMillis();
+        long lastProcessedTraceItems = metrics.getLastProcessedTraceItems();
+        long processedTraceItems = metrics.getProcessedTraceItems();
+        elapsed += (System.currentTimeMillis() - start);
 
-        long threads = NUM_THREADS - throttledThreads.longValue();
-        double averageTraceInsertionRate = (1d / averageInsertionTimePerTrace) * 1000d * threads;
-        long remaining = total - processed;
-        long remainingTimeInSeconds = Math.round(remaining / averageTraceInsertionRate);
+        long totalTraceItems = metrics.getTotalTraceItems();
+        long remainingTraceItems = totalTraceItems - processedTraceItems;
+
+        long processingTraceItems = metrics.getProcessingTraceItems();
+
+        long totalProcessTraces = metrics.getTotalProcessTraces();
+        long processedProcessTraces = metrics.getProcessedProcessTraces();
+        long remainingProcessTraces = totalProcessTraces - processedProcessTraces;
+
+        metrics.recordTraceProcessingTime(Long.valueOf(elapsed).doubleValue() / Long.valueOf(processedTraceItems - lastProcessedTraceItems).doubleValue());
+        double averageProcessingTimePerTrace = metrics.getTraceProcessingTimes().getMean();
+        long estimatedTimeRemaining = Math.round((averageProcessingTimePerTrace * Long.valueOf(remainingTraceItems).doubleValue()) / 1000);
 
         if (showProgress) {
             log.info(
-                "trace items: {} processed, {} remaining, {} in executor; processes: {}; insertion time: {} ms/trace; insertion rate: {} traces/s{}; process traces queue size: {}; percent done: {}%; time remaining: {}",
-                processed,
-                remaining,
-                processingTraceItemsCount.longValue(),
-                totalProcesses.longValue(),
-                df.format(averageInsertionTimePerTrace),
-                df.format(averageTraceInsertionRate),
-                threads < NUM_THREADS ? " (throttled)" : "",
-                orderedProcessTraceQueue.size(),
-                df.format(((double) processed / (double) total) * 100),
-                getDescriptiveTimeDelta(Math.round(remainingTimeInSeconds))
+                "trace items: (total: {}, processed: {}, {} remaining, {} processing); process traces: (total: {}, processed: {}, remaining: {}); processing time: {} ms/trace; percent done: {}%; estimated time remaining: {}",
+                totalTraceItems,
+                processedTraceItems,
+                remainingTraceItems,
+                processingTraceItems,
+                totalProcessTraces,
+                processedProcessTraces,
+                remainingProcessTraces,
+                df.format(averageProcessingTimePerTrace),
+                df.format(((double) processedTraceItems / (double) totalTraceItems) * 100),
+                getDescriptiveTimeDelta(estimatedTimeRemaining)
             );
         } else {
             log.info(
-                "trace items: {} processed, {} remaining, {} in executor; processes: {}; insertion time: {} ms/trace; insertion rate: {} traces/s{}; process traces queue size: {}",
-                processed,
-                remaining,
-                processingTraceItemsCount.longValue(),
-                totalProcesses.longValue(),
-                df.format(averageInsertionTimePerTrace),
-                df.format(averageTraceInsertionRate),
-                threads < NUM_THREADS ? " (throttled)" : "",
-                orderedProcessTraceQueue.size()
+                "trace items: (total: {}, processed: {}, {} remaining, {} processing); process traces: (total: {}, processed: {}, remaining: {}); processing time: {} ms/trace",
+                totalTraceItems,
+                processedTraceItems,
+                remainingTraceItems,
+                processingTraceItems,
+                totalProcessTraces,
+                processedProcessTraces,
+                remainingProcessTraces,
+                df.format(averageProcessingTimePerTrace)
             );
         }
     }
@@ -259,32 +264,76 @@ public class TraceProcessingService {
         );
     }
 
-    @PreDestroy
-    public void destroy() throws InterruptedException {
-        log.info("Shutting down pipe reader executor...");
-        pipeReaderExecutor.shutdown();
+    public static class Metrics {
+        private final LongAdder totalTraceItems = new LongAdder();
+        private final LongAdder processingTraceItems = new LongAdder();
+        private long lastProcessedTraceItems = 0;
+        private final LongAdder processedTraceItems = new LongAdder();
 
-        var attempts = 5;
-        while (!pipeReaderExecutor.isTerminated() && attempts > 0) {
-            pipeReaderExecutor.awaitTermination(3, TimeUnit.SECONDS);
-            attempts--;
-            log.info("Waiting on pipe reader executor to terminate...");
+        private final LongAdder totalProcessTraces = new LongAdder();
+        private final LongAdder processedProcessTraces = new LongAdder();
+
+        private final DescriptiveStatistics traceProcessingTimes = new DescriptiveStatistics();
+
+        public Metrics() {
+            traceProcessingTimes.setWindowSize(60);
         }
 
-        pipeReaderExecutor.shutdownNow();
-    }
-
-    private static class ProcessTrace {
-        final Queue<String> traceItems;
-        final String endTraceItem;
-
-        ProcessTrace(Queue<String> traceItems, String endTraceItem) {
-            this.traceItems = traceItems;
-            this.endTraceItem = endTraceItem;
+        public long getTotalTraceItems() {
+            return totalTraceItems.longValue();
         }
 
-        int size() {
-            return traceItems.size();
+        public long getProcessingTraceItems() {
+            return processingTraceItems.longValue();
+        }
+
+        public long getLastProcessedTraceItems() {
+            return lastProcessedTraceItems;
+        }
+
+        public long getProcessedTraceItems() {
+            lastProcessedTraceItems = processedTraceItems.longValue();
+            return lastProcessedTraceItems;
+        }
+
+        public long getTotalProcessTraces() {
+            return totalProcessTraces.longValue();
+        }
+
+        public long getProcessedProcessTraces() {
+            return processedProcessTraces.longValue();
+        }
+
+        public DescriptiveStatistics getTraceProcessingTimes() {
+            return traceProcessingTimes;
+        }
+
+        public void addToTotalTraceItems(long value) {
+            totalTraceItems.add(value);
+        }
+
+        public void addToProcessingTraceItems(long value) {
+            processingTraceItems.add(value);
+        }
+
+        public void decrementProcessingTraceItems() {
+            processingTraceItems.decrement();
+        }
+
+        public void incrementTotalProcessTraces() {
+            totalProcessTraces.increment();
+        }
+
+        public void incrementProcessedTraceItems() {
+            processedTraceItems.increment();
+        }
+
+        public void incrementProcessedProcessTraces() {
+            processedProcessTraces.increment();
+        }
+
+        public void recordTraceProcessingTime(double time) {
+            traceProcessingTimes.addValue(time);
         }
     }
 }

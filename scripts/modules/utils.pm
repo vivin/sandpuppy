@@ -109,6 +109,7 @@ sub build_fuzz_command {
     my $hang_timeout = $options->{hang_timeout};
     my $non_deterministic = $options->{non_deterministic};
     my $no_arithmetic = $options->{no_arithmetic};
+    my $no_splicing = $options->{no_splicing};
     my $slow_target = $options->{slow_target};
     my $seeds_directory = $options->{seeds_directory};
     my $dictionary_file = $options->{dictionary_file};
@@ -124,6 +125,10 @@ sub build_fuzz_command {
 
     if ($no_arithmetic) {
         $ENV_VARS{AFL_NO_ARITH} = 1;
+    }
+
+    if ($no_splicing) {
+        $ENV_VARS{AFL_NO_SPLICING} = 1;
     }
 
     if ($slow_target) {

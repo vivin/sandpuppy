@@ -33,7 +33,6 @@ int process_message(const char* message_type_str, const char* message) {
 
     char *endptr;
     errno = 0;
-
     long value = strtol(message_type_str, &endptr, 10);
     if (errno == ERANGE || *endptr != '\0' || message_type_str == endptr) {
         return -1;
@@ -109,7 +108,11 @@ int main(int argc, char* argv[]) {
     int num_messages = 0;
 
     while (exit_code == 0 && getline(&line, &bufsize, stdin)) {
-        unsigned int size = strlen(line) - 1; // Ignore newline in size
+        unsigned int size = strlen(line);
+        if (line[size - 1] == '\n') {
+            size--; // Ignore newline in size
+        }
+
         total_size += size;
 
         if (size == 0) {
@@ -119,7 +122,7 @@ int main(int argc, char* argv[]) {
         char *ptr = strchr(line, delimiter);
         if (ptr) {
             unsigned int index = ptr - line;
-            if (index == size || index == size - 1) {
+            if (index <= 0 || index == size || index == size - 1) {
                 printf ("Bad message format: empty message\n\n");
                 exit_code = CUSTOM_CRASH;
             } else {

@@ -39,7 +39,7 @@ my $subjects = {
             build   => \&infantheap::build,
             fuzz    => create_fuzz_task(\&infantheap::get_fuzz_command),
         },
-        fuzz_time   => 300
+        fuzz_time   => 360
     },
     rarebug    => {
         binary_name => "rarebug",
@@ -47,7 +47,7 @@ my $subjects = {
             build   => \&rarebug::build,
             fuzz    => create_fuzz_task(\&rarebug::get_fuzz_command)
         },
-        fuzz_time   => 300
+        fuzz_time   => 360
     },
     maze       => {
         binary_name => "maze",
@@ -55,7 +55,7 @@ my $subjects = {
             build   => \&maze::build,
             fuzz    => create_fuzz_task(\&maze::get_fuzz_command)
         },
-        fuzz_time   => 600
+        fuzz_time   => 360
     },
     libpng     => {
         binary_name => "readpng",
@@ -63,7 +63,7 @@ my $subjects = {
             build   => \&libpng::build,
             fuzz    => create_fuzz_task(\&libpng::get_fuzz_command)
         },
-        fuzz_time   => 7200
+        fuzz_time   => 360
     },
     readelf    => {
         binary_name => "readelf",
@@ -71,7 +71,7 @@ my $subjects = {
             build   => \&readelf::build,
             fuzz    => create_fuzz_task(\&readelf::get_fuzz_command)
         },
-        fuzz_time   => 3600
+        fuzz_time   => 360
     },
     libtpms    => {
         binary_name => "readtpmc",
@@ -79,7 +79,7 @@ my $subjects = {
             build   => \&libtpms::build,
             fuzz    => create_fuzz_task(\&libtpms::get_fuzz_command)
         },
-        fuzz_time   => 7200 #14400 #43200
+        fuzz_time   => 1200
     }
 };
 
@@ -116,7 +116,7 @@ sub create_fuzz_task {
 
         if ($options->{async}) {
             # If async fuzzing is requested redirect STDOUT and STDERR to /dev/null.
-            open STDOUT, ">",  "/dev/null" or die "$0: open: $!";
+            open STDOUT, ">>",  "/tmp/errs" or die "$0: open: $!";
             open STDERR, ">&", \*STDOUT    or exit 1;
         }
 
@@ -201,6 +201,42 @@ sub fuzz {
     waitpid $fuzzer_pid, 0;
 }
 
+sub setup_named_pipe {
+    my $NAMED_PIPE = "/tmp/vvdump";
+    if (!-e $NAMED_PIPE) {
+        $log->info("Creating named pipe at $NAMED_PIPE");
+        POSIX::mkfifo($NAMED_PIPE, 0700) or die "Could not create $NAMED_PIPE";
+    }
+
+    # Increase maximum named-pipe size and set the size of our pipe. It appears the maximum possible size is 32 mb; at least
+    # on my system.
+    my $NAMED_PIPE_SIZE = 1048576 * 32;
+    my $pid = fork;
+    if (!$pid) {
+        open my $f, ">", $NAMED_PIPE;
+        while(1) { }
+        exit;
+    } else {
+        # Need sudo to increase the maximum pipe size. Make sure there is an entry like the following in the sudoers
+        # file:
+        # myuser  ALL=(ALL:ALL) NOPASSWD:/sbin/sysctl fs.pipe-max-size=*
+        system("sudo sysctl fs.pipe-max-size=$NAMED_PIPE_SIZE");
+        open FD, $NAMED_PIPE  or die "Cannot open $NAMED_PIPE";
+        my $old_size = fcntl(\*FD, Fcntl::F_GETPIPE_SZ, 0);
+        $log->info("Old pipe size: $old_size");
+
+        fcntl(\*FD, Fcntl::F_SETPIPE_SZ, int($NAMED_PIPE_SIZE));
+        my $new_size = fcntl(\*FD, Fcntl::F_GETPIPE_SZ, 0);
+        if ($new_size < $NAMED_PIPE_SIZE) {
+            $log->error("Failed setting pipe size to $NAMED_PIPE_SIZE");
+        } else {
+            $log->info("New pipe size: $new_size");
+        }
+
+        kill 'INT', $pid;
+    }
+}
+
 sub vvdump_fuzz {
     my $experiment_name = $_[0];
     my $subject = $_[1];
@@ -209,6 +245,8 @@ sub vvdump_fuzz {
     my $binary_context = $_[4];
     my $execution_context = $_[5];
     my $options = $_[6];
+
+    setup_named_pipe();
 
     my $tasks = $subjects->{$subject}->{tasks};
 
@@ -289,7 +327,7 @@ sub vvdump_fuzz {
 
         chdir "$TOOLS/vvdproc";
         #my $vvdproc = "unbuffer mvn package && unbuffer java -agentpath:/home/vivin/jprofiler12/bin/linux-x64/libjprofilerti.so=port=8849 -Xms1G -Xmx4G -jar target/vvdproc.jar 2>&1";
-        my $vvdproc = "unbuffer mvn package && unbuffer java -Xms1G -Xmx8G -jar target/vvdproc.jar 2>&1";
+        my $vvdproc = "unbuffer mvn package && unbuffer java -Xms8G -Xmx16G -jar target/vvdproc.jar 2>&1";
         open my $vvdproc_output, "-|", $vvdproc;
         while (<$vvdproc_output>) {
             print $writer $_;
@@ -459,16 +497,17 @@ sub sandpuppy_fuzz {
                 # zero.
                 if ($target->{current_stats}->{paths_found} == 0) {
                     $target->{cycles_without_finds} += $target->{current_stats}->{cycles_done};
-                } else {
+
+                    my $cycles_without_finds = $target->{cycles_without_finds};
+                    if ($cycles_without_finds > 100 && $target->{current_stats}->{pending_total} == 0) {
+                        $target->{unproductive_fuzzing_sessions}++;
+                    }
+                } elsif ($target->{current_stats}->{paths_found} > 0) {
                     $target->{cycles_without_finds} = 0;
                 }
 
-                my $cycles_without_finds = $target->{cycles_without_finds};
-                my $pending_total = $target->{current_stats}->{pending_total};
-                if ($cycles_without_finds > 100 && $pending_total == 0) {
-                    $target->{finished} = ++$target->{unproductive_fuzzing_sessions} > 1;
-                } else {
-                    $target->{unproductive_fuzzing_sessions} = 0;
+                if ($target->{unproductive_fuzzing_sessions} > 1) {
+                    $target->{finished} = 1;
                 }
             }
 
@@ -705,10 +744,12 @@ sub can_resume {
         my $target_hangs = "$target_dir/hangs";
         my $target_crashes = "$target_dir/crashes";
 
+        system "echo 'check if we can find $target_dir and $target_queue and $target_hangs and $target_crashes' >> /tmp/notfound";
         $not_found = (! -d $target_dir) || (! -d $target_queue) || (! -d $target_hangs) || (! -d $target_crashes);
         $i++;
     }
 
+    system "echo 'not found is: $not_found' >> /tmp/notfound";
     # We can resume if everything was found.
     return !$not_found;
 }
@@ -770,13 +811,18 @@ sub get_current_parallel_fuzzer_stats {
         paths_total         => 0,
         paths_found         => 0,
         paths_imported      => 0,
+        pending_total       => $target->{current_stats} ? $target->{current_stats}->{pending_total} : 0,
         unique_hangs        => 0,
         unique_crashes      => 0,
-        max_depth           => 0,
-        cycles_done         => 0,
+        max_depth           => $target->{current_stats} ? $target->{current_stats}->{max_depth} : 0,
+        cycles_done         => $target->{current_stats} ? $target->{current_stats}->{cycles_done} : 0,
         cur_path            => 0,
         last_new_path_found => -1
     );
+    if ($target->{current_stats} && defined $target->{current_stats}->{last_new_path_found}) {
+        $stats{last_new_path_found} = $target->{current_stats}->{last_new_path_found};
+    }
+
     my $workspace = utils::get_workspace($target->{experiment_name}, $target->{subject}, $target->{version});
     my $results_base = "$workspace/results";
     my $results_dir = "$results_base/$SANDPUPPY_SYNC_DIRECTORY/$target->{id}";
@@ -787,7 +833,7 @@ sub get_current_parallel_fuzzer_stats {
     # the last modified time of the file is after we started this particular batch, because otherwise we end up getting
     # data from the previous session.
     if ((! -e $plot_data_file) || (-z $plot_data_file) || stat($plot_data_file)->mtime < $batch_start_time) {
-        return $target->{current_stats} ? $target->{current_stats} : \%stats;
+        return \%stats;
     }
 
     # If there are at least two lines in the file, then we have data. This is because the first line is for the header.
@@ -796,29 +842,16 @@ sub get_current_parallel_fuzzer_stats {
         chomp(my $line = `tail -1 $plot_data_file`);
         my @components = split /,\s+/, $line;
 
-        %stats = map { ($stats_columns[$_] => $components[$_]) } (0..(scalar @stats_columns - 1));
-
-        # When we resume fuzzing a previously-fuzzed target, a new plot_data is created. The very first data point is
-        # right after the fuzzer starts, and will have total paths set to whatever the number of initial seeds is. The
-        # imported paths from previous sessions don't show up until the next data point. So if the target already has
-        # stats, we will return those if there is only one data point in the plot_data file.
-        if ($target->{current_stats} && $num_lines == 2) {
-            return $target->{current_stats};
-        }
+        %stats = map {($stats_columns[$_] => $components[$_])} (0 .. (scalar @stats_columns - 1));
+        $stats{last_new_path_found} = $target->{current_stats} ? $target->{current_stats}->{last_new_path_found} : -1;
 
         if ((!$target->{current_stats} && $stats{paths_found} > 0) ||
             ($target->{current_stats} && $stats{paths_found} > $target->{current_stats}->{paths_found})) {
             $stats{last_new_path_found} = time();
-        } elsif ($target->{current_stats}) {
-            $stats{last_new_path_found} = $target->{current_stats}->{last_new_path_found};
         }
-
-        return \%stats;
-    } elsif ($target->{current_stats}) {
-        return $target->{current_stats};
-    } else {
-        return \%stats;
     }
+
+    return \%stats;
 }
 
 sub aggregate_stats {
@@ -834,8 +867,11 @@ sub aggregate_stats {
     my $total_paths = 0;
     my $paths_imported = 0;
     my $paths_found = 0;
+    my $paths_found_in_batch = 0;
     my $unique_hangs = 0;
+    my $unique_hangs_in_batch = 0;
     my $unique_crashes = 0;
+    my $unique_crashes_in_batch = 0;
     my $max_depth = 0;
     my $path_progress = [];
     my $cycles_done = [];
@@ -846,15 +882,18 @@ sub aggregate_stats {
 
         if (!$stats{waypoints}->{$target->{waypoints}}) {
             $stats{waypoints}->{$target->{waypoints}} = {
-                count               => 0,
-                finished            => 0,
-                total_paths         => 0,
-                paths_imported      => 0,
-                paths_found         => 0,
-                unique_hangs        => 0,
-                unique_crashes      => 0,
-                max_depth           => 0,
-                last_new_path_found => -1
+                count                   => 0,
+                finished                => 0,
+                total_paths             => 0,
+                paths_imported          => 0,
+                paths_found             => 0,
+                paths_found_in_batch    => 0,
+                unique_hangs            => 0,
+                unique_hangs_in_batch   => 0,
+                unique_crashes          => 0,
+                unique_crashes_in_batch => 0,
+                max_depth               => 0,
+                last_new_path_found     => -1
             }
         }
 
@@ -891,8 +930,11 @@ sub aggregate_stats {
         $total_paths += $target_total_paths;
         $paths_imported += $target_paths_imported;
         $paths_found += $target_paths_found;
+        $paths_found_in_batch += $current_paths_found;
         $unique_hangs += $target_unique_hangs;
+        $unique_hangs_in_batch += $current_unique_hangs;
         $unique_crashes += $target_unique_crashes;
+        $unique_crashes_in_batch += $current_unique_crashes;
         $max_depth = $max_depth < $current_max_depth ? $current_max_depth : $max_depth;
         push @{$path_progress},
             { waypoints => $target->{waypoints}, path_progress => $target_total_paths == 0 ? 0 : ($current_cur_path / $target_total_paths) * 100 };
@@ -908,8 +950,11 @@ sub aggregate_stats {
         $stats{waypoints}->{$target->{waypoints}}->{total_paths} += $target_total_paths;
         $stats{waypoints}->{$target->{waypoints}}->{paths_imported} += $target_paths_imported;
         $stats{waypoints}->{$target->{waypoints}}->{paths_found} += $target_paths_found;
+        $stats{waypoints}->{$target->{waypoints}}->{paths_found_in_batch} += $current_paths_found;
         $stats{waypoints}->{$target->{waypoints}}->{unique_hangs} += $target_unique_hangs;
+        $stats{waypoints}->{$target->{waypoints}}->{unique_hangs_in_batch} += $current_unique_hangs;
         $stats{waypoints}->{$target->{waypoints}}->{unique_crashes} += $target_unique_crashes;
+        $stats{waypoints}->{$target->{waypoints}}->{unique_crashes_in_batch} += $current_unique_crashes;
 
 #        print Dumper($target);
 #        print Dumper(\%stats);
