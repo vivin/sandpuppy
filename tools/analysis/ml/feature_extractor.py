@@ -20,18 +20,21 @@ def extract_features(variable):
         'max_values_variance': 0,
         'max_value_to_input_size_correlation': 0,
         'average_delta': 0,
-        'delta_variance': -1,
+        'delta_stddev': -1,
         'varying_deltas': False,
         'average_value_set_cardinality_ratio': 0,
         'loop_sequence_proportion': 0,
         'loop_sequence_proportion_filtered': 0,
+        'directional_consistency': 0,
+        'total_counter_segments_filtered_to_num_traces_ratio': 0,
+        'total_counter_segments_to_num_traces_ratio': 0,
         'total_counter_segments': 0,
         'total_counter_segments_filtered': 0,
         'average_counter_segment_length': 0,
         'average_counter_segment_length_filtered': 0,
         'jaggedness_full': None,
         'jaggedness_filtered': None,
-        'lag_one_autocorr_full': 0,
+        'lag_one_autocorr': 0,
         'lag_one_autocorr_filtered': 0,
         'second_difference_roughness': -1,
         'second_difference_roughness_filtered': -1,
@@ -195,13 +198,15 @@ def extract_features(variable):
 
     if len(combined_trace) > 0:
         features['total_counter_segments'] = len(combined_trace_counter_segments)
-        features['average_counter_segment_length'] = numpy.mean(
-            [len(s) for s in combined_trace_counter_segments if len(s) > 1]
-        )
+        features['total_counter_segments_to_num_traces_ratio'] = \
+            features['total_counter_segments'] / features['num_traces']
+
+        segments_gt1 = [s for s in combined_trace_counter_segments if len(s) > 1]
+        features['average_counter_segment_length'] = numpy.mean([len(s) for s in segments_gt1])
 
         segments_gt2 = [s for s in combined_trace_counter_segments if len(s) > 2]
         if len(segments_gt2) > 0:
-            features['lag_one_autocorr_full'] = numpy.mean([
+            features['lag_one_autocorr'] = numpy.mean([
                 lag_one_autocorrelate(s) for s in segments_gt2
             ])
             features['second_difference_roughness'] = numpy.mean([
@@ -212,7 +217,40 @@ def extract_features(variable):
     if len(combined_filtered_trace) > 0:
         filtered_segments_gt1 = [s for s in combined_filtered_trace_counter_segments if len(s) > 1]
         features['total_counter_segments_filtered'] = len(filtered_segments_gt1)
+        features['total_counter_segments_filtered_to_num_traces_ratio'] = \
+            features['total_counter_segments_filtered'] / features['num_traces']
+
         features['average_counter_segment_length_filtered'] = numpy.mean([len(s) for s in filtered_segments_gt1])
+
+        # This is perhaps analogous to jaggedness metrics in a way. Out of all filtered counter segments of length
+        # greater than one, we count the number of segments that progress upward or downward. We then calculate
+        # abs(up - down)/(up + down). For counters, this value should generally be close to 1, whereas for enums, which
+        # jump around all over the place, the value should be much lower.
+        #
+        # It's valid to ask why we use the filtered traces here that do not contain runs, instead of unfiltered traces.
+        # We could do the same thing we are doing now, with the exception that we would have to examine the entire
+        # segment to see if it contains a run (but we could bail out early). So why don't we do that? The problem is
+        # that this may end up actually counting negatively against certain valid counters. For example, a loop could
+        # have the start and end values set dynamically, and so it is possible to see runs of values when start and
+        # end are set such that the loop never executes. If these same values are set repeatedly, we would see a run
+        # of "start" values for the counter in the trace. By filtering these out, we lessen the impact. But how does
+        # this impact enums? Enums are likely to have runs, so would this affect the quality of this feature when it
+        # comes to enums? Not necessarily. Enums are likely to contain segments that move up and down in far more equal
+        # proportions than a counter, where one or the other dominates.
+        direction_counts = {
+            'up': 0,
+            'down': 0
+        }
+        for segment in filtered_segments_gt1:
+            diff = segment[1] - segment[0]
+
+            if diff > 0:
+                direction_counts['up'] += 1
+            else:
+                direction_counts['down'] += 1
+
+        features['directional_consistency'] = \
+            abs(direction_counts['up'] - direction_counts['down']) / len(filtered_segments_gt1)
 
         filtered_segments_gt2 = [s for s in combined_filtered_trace_counter_segments if len(s) > 2]
         if len(filtered_segments_gt2) > 0:
@@ -223,22 +261,23 @@ def extract_features(variable):
                 roughness(s) for s in filtered_segments_gt2
             ])
             features['loop_sequence_proportion_filtered'] = sum([
-                len(s) for s in filtered_segments_gt1
+                len(s) for s in filtered_segments_gt2
             ]) / len(combined_filtered_trace)
 
             # Here we don't use counter segments identified in the combined trace because those can include runs of
             # similar values, and so aren't part of a loop.
             if len(combined_trace) > 0:
                 features['loop_sequence_proportion'] = sum(
-                    [len(s) for s in filtered_segments_gt1]
+                    [len(s) for s in filtered_segments_gt2]
                 ) / len(combined_trace)
 
         for s in filtered_segments_gt1:
             combined_deltas += numpy.diff(s).tolist()
 
     if len(combined_deltas) > 1:
-        features['average_delta'] = numpy.mean(combined_deltas)
-        features['delta_variance'] = numpy.var(combined_deltas)
+        abs_combined_deltas = [abs(delta) for delta in combined_deltas]
+        features['average_delta'] = numpy.mean(abs_combined_deltas)
+        features['delta_stddev'] = numpy.std(abs_combined_deltas)
         if len(set(combined_deltas)) > 1:
             features['varying_deltas'] = True
 
@@ -249,8 +288,6 @@ def extract_features(variable):
 
         if abs_mean > 0:
             features['jaggedness_full'] = stddev / abs_mean
-
-        features['lag_one_autocorr_full'] = lag_one_autocorrelate(combined_trace)
 
     combined_filtered_trace_deltas_smoothed = smooth(numpy.diff(combined_filtered_trace))
     if len(combined_filtered_trace_deltas_smoothed) > 0:

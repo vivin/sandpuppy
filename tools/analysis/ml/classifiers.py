@@ -41,10 +41,10 @@ def is_counter(features):
     if features['times_modified_max'] < 3:
         return False
 
-    average_delta = features['average_delta']
-    loop_sequence_proportion = features['loop_sequence_proportion_filtered']
+    loop_sequence_proportion = features['loop_sequence_proportion']
+    directional_consistency = features['directional_consistency']
 
-    return abs(average_delta) <= 255 and loop_sequence_proportion > 0.5
+    return loop_sequence_proportion >= 0.7 and directional_consistency >= 0.8
 
 
 def classify_counter(features):
@@ -56,17 +56,15 @@ def classify_counter(features):
     max_values_variance = features['max_values_variance']
     average_value_set_cardinality_ratio = features['average_value_set_cardinality_ratio']
     max_value_to_input_size_correlation = features['max_value_to_input_size_correlation']
+    # I think you should add l1_ac here. maybe set 0.9 as threshold?
 
     # If the counter maximum values are all the same and the average value set cardinality ratio is 1 (meaning that in
     # every trace the variable takes on the full set of values across all traces) this is a static counter. If the
     # correlation between the maximum value per trace and the corresponding input size is lesser than 0.5, this is a
     # dynamic counter. Otherwise this is an input size counter.
-    #
-    # TODO: check if it counts up to the same set of values every time. this also makes it static. Maybe call it
-    # TODO: multiple_static.
     if max_values_variance == 0 and average_value_set_cardinality_ratio == 1:
         return "static"
-    elif max_value_to_input_size_correlation < 0.6:
+    elif max_value_to_input_size_correlation < 0.5:
         return "dynamic"
     else:
         return "input_size"
@@ -90,6 +88,10 @@ def is_enum(features):
     # deviation of the log10 of the values and ignore the variable if that value is greater than 1.
     if features['order_of_magnitudes_stddev'] > 1:
         return False
+
+    # An enum is likely to hop all over the place and not increment or decrement consistently.
+    #if features['directional_consistency'] == 1:
+    #    return False
 
     # How many places is this variable modified? We have two cases where a variable can be like an enum
     # variable:
@@ -117,18 +119,3 @@ def is_enum(features):
         return True
 
     return False
-
-
-def is_enum_deriving_values_from_input(features):
-    if not is_enum(features):
-        raise Exception("Cannot determine type of enum variable {fqn} because is_enum returns False.")
-
-    # We will look for Pearson coefficients greater than 0.5 to see if the number of times a variable is modified
-    # is correlated with input size. Note that one issue is that the input size isn't necessarily the same as the
-    # size of the input _actually processed_. The input size we end up reporting from AFL is the size of the input
-    # sent to the process and it may fail early due to invalid input. Ideally it would be nice if we were able to
-    # ascertain the amount of bytes actually read by the process from either stdin or a file. Not sure if that is
-    # possible, though.
-    times_modified_to_input_size_correlation = features['times_modified_to_input_size_correlation']
-    average_value_set_cardinality_ratio = features['average_value_set_cardinality_ratio']
-    return times_modified_to_input_size_correlation >= 0.5 and average_value_set_cardinality_ratio < 1

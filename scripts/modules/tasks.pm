@@ -79,7 +79,7 @@ my $subjects = {
             build   => \&libtpms::build,
             fuzz    => create_fuzz_task(\&libtpms::get_fuzz_command)
         },
-        fuzz_time   => 1200
+        fuzz_time   => 600
     }
 };
 

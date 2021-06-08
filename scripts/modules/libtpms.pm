@@ -154,6 +154,7 @@ sub get_fuzz_command {
             asan_memory_limit => 20971597,
             hang_timeout      => $waypoints =~ /vvdump/ ? "5000+" : 0,
             no_arithmetic     => $waypoints =~ /vvdump/ ? 1 : 0,
+            no_splicing       => 1,
           # slow_target       => 1,
             seeds_directory   => "$RESOURCES/seeds/libtpms",
             binary_arguments  => "\@\@"

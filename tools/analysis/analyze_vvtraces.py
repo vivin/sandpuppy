@@ -1,6 +1,7 @@
 import sys
 import os
 import gc
+import threading
 import warnings
 import concurrent.futures
 import yaml
@@ -8,6 +9,7 @@ import bz2
 import pickle
 import _pickle as c_pickle
 
+from time import sleep
 from datetime import datetime
 from itertools import combinations
 from cassandra.auth import PlainTextAuthProvider
@@ -31,13 +33,9 @@ def features_string(var):
     features_str += "\n          num_unique_values=" + str(features['num_unique_values'])
     features_str += "\n          lsp=" + str(features['loop_sequence_proportion'])
     features_str += "\n          lspf=" + str(features['loop_sequence_proportion_filtered'])
+    features_str += "\n          directional_consistency=" + str(features['directional_consistency'])
     features_str += "\n          range=" + str(features['most_max_value'] - features['most_min_value'])
     features_str += "\n          average_delta=" + str(features['average_delta'])
-    if features['average_delta'] != 0:
-        ratio = abs(features['range'] / features['average_delta'])
-    else:
-        ratio = "inf"
-    features_str += "\n          radr=" + str(ratio)
     features_str += "\n          total_counter_segments=" + str(features['total_counter_segments'])
     features_str += "\n          total_counter_segments_filtered=" + str(features['total_counter_segments_filtered'])
     features_str += "\n          average_trace_length=" + str(features['times_modified_mean'])
@@ -48,13 +46,8 @@ def features_string(var):
     features_str += "\n          acslf=" + str(features['average_counter_segment_length_filtered'])
     features_str += "\n          sd_roughness=" + str(features['second_difference_roughness'])
     features_str += "\n          sd_roughness_filtered=" + str(features['second_difference_roughness_filtered'])
-    features_str += "\n          l1_ac_full=" + str(features['lag_one_autocorr_full'])
+    features_str += "\n          l1_ac=" + str(features['lag_one_autocorr'])
     features_str += "\n          l1_ac_filtered=" + str(features['lag_one_autocorr_filtered'])
-    if features['lag_one_autocorr_filtered'] != 0:
-        ratio = features['lag_one_autocorr_full'] / features['lag_one_autocorr_filtered']
-    else:
-        ratio = "inf" if features['lag_one_autocorr_full'] > 0 else "-inf"
-    features_str += "\n          l1_ac_r=" + str(ratio)
     features_str += "\n"
 
     return features_str
@@ -86,7 +79,12 @@ def main(experiment: str, subject: str, binary: str, execution: str, action: str
         plot_variable_classes(
             graphs_path,
             classified_variables,
-            ["static_counter", "dynamic_counter", "input_size_counter", "enum", "enum_value_from_input"]
+            [
+                "static_counter",
+                "dynamic_counter",
+                "input_size_counter",
+                "enum_from_input"
+            ]
         )
     else:
         start_time = datetime.now()
@@ -118,7 +116,12 @@ def main(experiment: str, subject: str, binary: str, execution: str, action: str
         plot_variable_classes(
             graphs_path,
             classified_variables_to_graph,
-            ["static_counter", "dynamic_counter", "input_size_counter", "enum", "enum_value_from_input"]
+            [
+                "static_counter",
+                "dynamic_counter",
+                "input_size_counter",
+                "enum_from_input"
+            ]
         )
 
         duration = datetime.now() - start_time
@@ -148,20 +151,58 @@ def classify_variables(experiment: str, subject: str, binary: str, execution: st
     else:
         print(f"Retrieving traces for {num_retrieved_variables} variables and classifying...")
 
+    done = threading.Event()
     with concurrent.futures.ThreadPoolExecutor(max_workers=60) as thread_pool_executor,\
          concurrent.futures.ProcessPoolExecutor(max_workers=12) as process_pool_executor:
 
-        # Retrieve/load saved traces traces for all variables in parallel
-        if action == "classify_from_saved":
-            traces_info_future_to_variable = {
+        counts = {'processed': 0}
+        for variable in retrieved_variables:
+            def retrieve_traces_callback(future, variable=variable):
+                variable['traces_info'] = future.result()
+                del future
+
+                if action != "classify_from_saved":
+                    save_variable_traces_info(analysis_data_path, variable)
+
+                def classify_callback(future, variable=variable):
+                    features, variable_class = future.result()
+                    variable['features'] = features
+                    variable['class'] = variable_class
+
+                    _filename = variable['filename']
+                    _function = variable['function']
+                    variables_by_filename_and_function[_filename][_function][variable_class].append(variable)
+
+                    # Delete the future, list of traces and variable values because we no longer need it. This should
+                    # free up memory
+                    del future
+                    del variable['traces_info']['traces']
+                    del variable['traces_info']['variable_values']
+                    del variable['traces_info']['modified_line_values']
+
+                    counts['processed'] += 1
+                    if counts['processed'] % 10 != 0 and counts['processed'] % 5 != 0:
+                        print(".", end='', flush=True)
+                    elif counts['processed'] % 10 == 0:
+                        print(counts['processed'], end='', flush=True)
+                    elif counts['processed'] % 5 == 0:
+                        print("o", end='', flush=True)
+                        gc.collect()
+
+                    if counts['processed'] == num_retrieved_variables:
+                        done.set()
+
+                process_pool_executor.submit(classify_variable, variable) \
+                    .add_done_callback(classify_callback)
+
+            # Retrieve/load saved traces traces for all variables in parallel
+            if action == "classify_from_saved":
                 thread_pool_executor.submit(
                     load_variable_traces_info,
                     path=analysis_data_path,
                     variable=variable
-                ): variable for variable in retrieved_variables
-            }
-        else:
-            traces_info_future_to_variable = {
+                ).add_done_callback(retrieve_traces_callback)
+            else:
                 thread_pool_executor.submit(
                     cassandra_trace_db.retrieve_variable_value_traces_information,
                     variable=variable,
@@ -173,54 +214,11 @@ def classify_variables(experiment: str, subject: str, binary: str, execution: st
                     exit_status='success',
                     filename=variable['filename'],
                     function=variable['function']
-                ): variable for variable in retrieved_variables
-            }
+                ).add_done_callback(retrieve_traces_callback)
 
         thread_pool_executor.shutdown(wait=False)
 
-        # As each traces-query completes, populate the corresponding variable with the retrieved traces and classify
-        # in parallel
-        total_traces = 0
-        counts = {'processed': 0}
-        for traces_info_future in concurrent.futures.as_completed(traces_info_future_to_variable):
-            variable = traces_info_future_to_variable[traces_info_future]
-            variable['traces_info'] = traces_info_future.result()
-
-            if action != "classify_from_saved":
-                save_variable_traces_info(analysis_data_path, variable)
-
-            # Delete the entry in the map and delete the future
-            del traces_info_future_to_variable[traces_info_future]
-            del traces_info_future
-
-            def callback(future, variable=variable):
-                counts['processed'] += 1
-                if counts['processed'] % 10 != 0 and counts['processed'] % 5 != 0:
-                    print(".", end='', flush=True)
-                elif counts['processed'] % 10 == 0:
-                    print(counts['processed'], end='', flush=True)
-                elif counts['processed'] % 5 == 0:
-                    print("o", end='', flush=True)
-                    gc.collect()
-
-                features, variable_class = future.result()
-                variable['features'] = features
-                variable['class'] = variable_class
-
-                _filename = variable['filename']
-                _function = variable['function']
-                variables_by_filename_and_function[_filename][_function][variable_class].append(variable)
-
-                # Delete the future, list of traces and variable values because we no longer need it. This should free
-                # up memory
-                del future
-                del variable['traces_info']['traces']
-                del variable['traces_info']['variable_values']
-                del variable['traces_info']['modified_line_values']
-
-            process_pool_executor.submit(classify_variable, variable)\
-                .add_done_callback(callback)
-
+        done.wait()
         process_pool_executor.shutdown(wait=True)
 
     print("\n")
@@ -258,8 +256,7 @@ def retrieve_variables(session, subject):
                 'static_counter': [],
                 'dynamic_counter': [],
                 'input_size_counter': [],
-                'enum': [],
-                'enum_value_from_input': [],
+                'enum_from_input': [],
                 'unknown': [],
                 'related': []
             }
@@ -277,8 +274,7 @@ def print_classification_results(variables_by_filename_and_function):
         'static_counter': "Static Counters",
         'dynamic_counter': "Dynamic Counters",
         'input_size_counter': "Counters correlated with input size",
-        'enum': "Enums",
-        'enum_value_from_input': "Enums deriving value from input",
+        'enum_from_input': "Enums deriving value from input",
         'related': "Related variables"
     }
 
@@ -288,7 +284,7 @@ def print_classification_results(variables_by_filename_and_function):
             function_variables = variables_by_filename_and_function[filename][function]
 
             for label in ['constant', 'correlated_with_input_size', 'boolean', 'static_counter', 'dynamic_counter',
-                          'input_size_counter', 'enum', 'enum_value_from_input', 'related']:
+                          'input_size_counter', 'enum_from_input', 'related']:
                 if len(function_variables[label]) > 0:
 
                     print("")
@@ -323,7 +319,7 @@ def identify_interesting_variables(variables_by_filename_and_function):
             function_variables = variables_by_filename_and_function[filename][function]
 
             for label in ['constant', 'correlated_with_input_size', 'boolean', 'static_counter', 'dynamic_counter',
-                          'input_size_counter', 'enum', 'enum_value_from_input', 'related']:
+                          'input_size_counter', 'enum_from_input', 'related']:
                 if len(function_variables[label]) > 0:
 
                     if label in ['correlated_with_input_size', 'dynamic_counter', 'input_size_counter']:
@@ -340,7 +336,7 @@ def identify_interesting_variables(variables_by_filename_and_function):
                         for variable in function_variables[label]:
                             instrumented.add(features_string(variable))
 
-                    if label == "enum_value_from_input":
+                    if label == "enum_from_input":
                         interesting_variables['perm'] += [
                             f"{filename}:{function}:{variable['name']}:{variable['declared_line']}"
                             for variable in function_variables[label]
@@ -429,24 +425,17 @@ def classify_variable(variable):
         # the enum value does not derive from the input value, and the case where it does. The former involves
         # situations where the entire set of enum values is probably being iterated over. In the latter case the
         # enum value directly or indirectly derives from some input value.
-        if features['varying_deltas'] \
-            and (features['average_counter_segment_length_filtered'] < 3
-                 or (features['loop_sequence_proportion'] < 0.9 and features['lag_one_autocorr_filtered'] < 1)) \
-                and classifiers.is_enum(features):
+        #if features['varying_deltas'] \
+        #    and (features['loop_sequence_proportion'] < 0.8 and features['lag_one_autocorr_filtered'] < 1) \
+        #        and classifiers.is_enum(features):
 
-            if classifiers.is_enum_deriving_values_from_input(features):
-                return features, "enum_value_from_input"
-            else:
-                return features, "enum"
-        else:
-            counter_class = classifiers.classify_counter(features)
-            return features, counter_class + "_counter"
+        #    return features, "enum_from_input"
+        #else:
+        counter_class = classifiers.classify_counter(features)
+        return features, counter_class + "_counter"
 
     elif classifiers.is_enum(features):
-        if classifiers.is_enum_deriving_values_from_input(features):
-            return features, "enum_value_from_input"
-        else:
-            return features, "enum"
+        return features, "enum_from_input"
 
     elif classifiers.is_correlated_with_input_size(features):
         return features, "correlated_with_input_size"
