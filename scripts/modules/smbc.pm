@@ -1,4 +1,4 @@
-package rarebug;
+package smbc;
 
 use strict;
 use warnings FATAL => 'all';
@@ -24,18 +24,38 @@ sub build {
 
     my $binary_base = "$workspace/binaries";
     my $binary_dir =  "$binary_base/$binary_context";
-    my $binary_name = "rarebug";
+    my $binary_name = "smbc";
     utils::create_binary_dir({
         binary_dir     => $binary_dir,
         artifact_names => [$binary_name],
         backup         => $options->{backup}
     });
 
+    my $smbc_src_dir = "$SUBJECTS/smbc";
+    my $smbc_build_dir = "$smbc_src_dir/build";
+    if (! -d $smbc_build_dir) {
+        system ("mkdir $smbc_build_dir");
+    }
+
+    chdir $smbc_build_dir;
+    system("ls -la");
+    system ("rm -rf CMake* cmake_install.cmake codegen/ Makefile smbc");
+    system("ls -la");
+
     my $FUZZ_FACTORY = "$TOOLS/FuzzFactory";
-    my $build_command = "$FUZZ_FACTORY/afl-clang-fast -fno-inline-functions -fno-discard-value-names -fno-unroll-loops"
-        . ($options->{m32} ? " -m32" : "")
-        . utils::build_options_string($options->{clang_waypoint_options})
-        . " rarebug.c -o $binary_dir/$binary_name";
+    my $cc = "$FUZZ_FACTORY/afl-clang-fast";
+    my $cxx = "$FUZZ_FACTORY/afl-clang-fast++";
+    my $compiler_flags = "-fno-inline-functions -fno-discard-value-names -fno-unroll-loops";
+    if ($options->{m32}) {
+        $compiler_flags .= " -m32";
+    }
+
+    my $clang_waypoint_options = utils::build_options_string($options->{clang_waypoint_options});
+    print ("cmake .. -DCMAKE_C_COMPILER=$cc -DCMAKE_CXX_COMPILER=$cxx -DCMAKE_CXX_FLAGS='$compiler_flags$clang_waypoint_options -isystem /usr/include/SDL2'\n");
+    system ("cmake .. -DCMAKE_C_COMPILER=$cc -DCMAKE_CXX_COMPILER=$cxx -DCMAKE_CXX_FLAGS='$compiler_flags$clang_waypoint_options -isystem /usr/include/SDL2'");
+    if ($? != 0) {
+       die "Generating Makefiles using CMake failed";
+    }
 
     if ($binary_context =~ /-asan/) {
         $ENV{"AFL_USE_ASAN"} = 1;
@@ -45,16 +65,15 @@ sub build {
         $ENV{"WAYPOINTS"} = $waypoints;
     }
 
-    my $src_dir = "$SUBJECTS/rarebug";
-    chdir $src_dir;
-
-    system $build_command;
+    system ("make");
     if ($? != 0) {
         delete $ENV{"WAYPOINTS"};
         delete $ENV{"AFL_USE_ASAN"};
 
-        die "Build failed";
+        die "Make failed";
     }
+
+    system ("mv smbc $binary_dir/$binary_name");
 
     delete $ENV{"WAYPOINTS"};
     delete $ENV{"AFL_USE_ASAN"};
@@ -69,7 +88,7 @@ sub get_fuzz_command {
     my $exec_context = $_[5];
     my $options = $_[6];
 
-    return utils::build_fuzz_command(
+    utils::build_fuzz_command(
         $experiment_name,
         $subject,
         $version,
@@ -77,10 +96,11 @@ sub get_fuzz_command {
         $binary_context,
         $exec_context,
         utils::merge($options, {
-            binary_name     => "rarebug",
-            hang_timeout    => $waypoints =~ /vvdump/ ? 0 : 0,
+            binary_name      => "smbc",
+            binary_arguments => "0",
+            hang_timeout     => $waypoints =~ /vvdump/ ? "90000+" : 0,
             no_splicing     => $waypoints =~ /vvdump/ ? 1 : 0,
-            seeds_directory => "$RESOURCES/seeds/rarebug"
+            seeds_directory  => "$RESOURCES/seeds/smbc"
         })
     );
 }

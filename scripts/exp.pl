@@ -13,7 +13,7 @@ my $supported_tasks = {
     spfuzz => 1
 };
 
-if (scalar @ARGV < 5) {
+if (scalar @ARGV < 3) {
     die "Syntax:\n $0 <experiment> build <subject>[:<version>] with waypoints <waypoints> as <binary-context>" .
         "\n $0 <experiment> fuzz <subject>[:<version>] with waypoints <waypoints> using <binary-context> as <exec-context>" .
         "\n $0 <experiment> spfuzz <subject>[:<version>] [with asan]\n";
@@ -112,6 +112,14 @@ if ($task eq "build") {
             tasks::fuzz($experiment_name, $subject, $version, $waypoints, $binary_context, $execution_context, {});
         }
     } elsif ($task eq "spfuzz") {
-        tasks::sandpuppy_fuzz($experiment_name, $subject, $version, { use_asan => $use_asan });
+        tasks::sandpuppy_fuzz(
+            $experiment_name,
+            $subject,
+            $version,
+            {
+                use_asan       => $use_asan,
+                use_kubernetes => 1
+            }
+        );
     }
 }

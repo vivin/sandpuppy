@@ -1,0 +1,24 @@
+#!/usr/bin/perl
+
+use strict;
+use warnings FATAL => 'all';
+use YAML::XS;
+
+my $experiment = $ARGV[0];
+my $subject = $ARGV[1];
+
+my $results_dir = "/mnt/kube-nfs/vivin/$experiment/$subject/results";
+my $id_to_pod_name_and_target_file = "$results_dir/id_to_pod_name_and_target.yml";
+my $id_to_pod_name_and_target = YAML::XS::LoadFile($id_to_pod_name_and_target_file);
+
+foreach my $id (sort(keys(%{$id_to_pod_name_and_target}))) {
+    my $pod_name = $id_to_pod_name_and_target->{$id}->{pod_name};
+    my $target_name = $id_to_pod_name_and_target->{$id}->{target_name};
+
+    print "Pod: $pod_name\n";
+    print "Target: $target_name\n\n";
+
+    print `cat $results_dir/sandpuppy-sync/$id/fuzzer_stats`;
+    print "=" x 80;
+    print "\n\n";
+}

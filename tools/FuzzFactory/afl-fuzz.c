@@ -2194,6 +2194,17 @@ EXP_ST void init_forkserver(char** argv) {
 
     setsid();
 
+    /* uncomment if you want to log the stdout and stderr of the process to /tmp/fuzzlog
+
+    FILE* fptr = fopen("/tmp/fuzzlog", "a");
+    s32 fuzzlog = fileno(fptr);
+
+    dup2(fuzzlog, 1);
+    dup2(fuzzlog, 2);
+
+    fclose(fptr);
+
+     */
     dup2(dev_null_fd, 1);
     dup2(dev_null_fd, 2);
 
@@ -2635,11 +2646,9 @@ static u8 run_target(char** argv, u32 timeout) {
   /* Report outcome to caller. */
 
   if (WIFSIGNALED(status) && !stop_soon) {
-
     kill_signal = WTERMSIG(status);
 
     if (child_timed_out && kill_signal == SIGKILL) return FAULT_TMOUT;
-
     return FAULT_CRASH;
 
   }
@@ -2884,7 +2893,7 @@ static u8 calibrate_case(char** argv, struct queue_entry* q, u8* use_mem,
     /* stop_soon is set by the handler for Ctrl+C. When it's pressed,
        we want to bail out quickly. */
 
-    if (stop_soon || fault != crash_mode) goto abort_calibration;
+    if (stop_soon || (fault != crash_mode && fault != FAULT_FAILURE)) goto abort_calibration;
 
     if (!dumb_mode && !stage_cur && !count_bytes(trace_bits)) {
       fault = FAULT_NOINST;
@@ -3038,7 +3047,7 @@ static void perform_dry_run(char** argv) {
 
     if (stop_soon) return;
 
-    if (res == crash_mode || res == FAULT_NOBITS)
+    if (res == crash_mode || res == FAULT_FAILURE || res == FAULT_NOBITS)
       SAYF(cGRA "    len = %u, map size = %u, exec speed = %llu us\n" cRST, 
            q->len, q->bitmap_size, q->exec_us);
 
@@ -3466,7 +3475,7 @@ static u8 save_if_interesting(char** argv, void* mem, u32 len, u8 fault) {
 
   // If no faults happened; that is, if fault == crash_mode == 0. So this is the same as saying we're not in crash_mode
   // and it did not crash
-  if (fault == crash_mode) {
+  if (fault == crash_mode || fault == FAULT_FAILURE) {
 
     /* Keep only if there are new bits in the map, add to queue for
        future fuzzing, etc. DSF: also keep if there is a new max*/
@@ -5425,9 +5434,9 @@ static u8 fuzz_one(char** argv) {
 
 #endif /* ^IGNORE_FINDS */
 
-  DEBUG("===============Fuzzing test case #%u===============\n",current_entry);
+  //DEBUG("===============Fuzzing test case #%u===============\n", current_entry);
 
-  if (!queue_cur->favored) DEBUG("(Test case is not favored)\n");
+  //if (!queue_cur->favored) DEBUG("(Test case is not favored)\n");
   if (not_on_tty) {
     ACTF("Fuzzing test case #%u (%u total, %llu uniq crashes found)...",
          current_entry, queued_paths, unique_crashes);
@@ -5477,7 +5486,7 @@ static u8 fuzz_one(char** argv) {
 
     }
 
-    if (stop_soon || res != crash_mode) {
+    if (stop_soon || (res != crash_mode && res != FAULT_FAILURE)) {
       cur_skipped_paths++;
       goto abandon_entry;
     }

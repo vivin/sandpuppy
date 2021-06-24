@@ -1,0 +1,23 @@
+#!/bin/bash
+EXP=$1
+SUB=$2
+BIN=$3
+SYNC_DIR="/mnt/kube-nfs/vivin/$EXP/$SUB/results/sandpuppy-sync"
+BIN_DIR="/home/vivin/Projects/phd/workspace/$EXP/$SUB/binaries"
+if [ ! -d "$BIN_DIR/sandpuppy-main" ]; then
+    BINARY="$BIN_DIR/sandpuppy-main-asan/$BIN"
+else
+    BINARY="$BIN_DIR/sandpuppy-main/$BIN"
+fi
+
+for dir in `find $SYNC_DIR -mindepth 1 -maxdepth 1 -type d | sed -e 's,^.*/,,'`; do
+  RESULT_DIR=$SYNC_DIR/$dir
+  for crash in `find $RESULT_DIR/queue -type f -name "id:*"`; do
+    echo $crash
+    echo ""
+    ls -l $crash
+    $BINARY < $crash
+    echo "================================================================="
+    echo ""
+  done
+done

@@ -3,6 +3,54 @@ import re
 FETCH_SIZE = 2000
 
 
+def get_experiment_subjects(session, experiment):
+    statement = session.prepare("SELECT subject FROM experiment_subjects WHERE experiment = ?")
+    statement.fetch_size = FETCH_SIZE
+
+    rows = session.execute(statement, [experiment])
+
+    subjects = []
+    for row in rows:
+        subjects.append(row[0])
+
+    return subjects
+
+
+def get_experiment_subject_binaries(session, experiment, subject):
+    statement = session.prepare(
+        "SELECT binary FROM experiment_subject_binaries "
+        "WHERE experiment = ? "
+        "AND subject = ?"
+    )
+    statement.fetch_size = FETCH_SIZE
+
+    rows = session.execute(statement, [experiment, subject])
+
+    binaries = []
+    for row in rows:
+        binaries.append(row[0])
+
+    return binaries
+
+
+def get_experiment_subject_binary_executions(session, experiment, subject, binary):
+    statement = session.prepare(
+        "SELECT binary FROM experiment_subject_binary_executions "
+        "WHERE experiment = ? "
+        "AND subject = ? "
+        "AND binary = ?"
+    )
+    statement.fetch_size = FETCH_SIZE
+
+    rows = session.execute(statement, [experiment, subject, binary])
+
+    executions = []
+    for row in rows:
+        executions.append(row[0])
+
+    return executions
+
+
 def get_pids_with_exit_status(session, experiment, subject, binary, execution, exit_status):
     pids_statement = session.prepare(
         "SELECT pid FROM processes WHERE experiment = ? "
@@ -149,12 +197,144 @@ def retrieve_variable_value_traces_information(variable, session, experiment, su
 
     # Need to wrap with list(...) otherwise stupid multiprocessing doesn't work
     traces_info['traces'] = list(traces_by_pid.values())
-
-    # print("  Retrieved value traces for {file}::{function}::{type} {name}:{line}".format(
-    #     file=filename,
-    #     function=function,
-    #     type=variable['type'],
-    #     name=variable['name'],
-    #     line=variable['declared_line']
-    # ))
     return traces_info
+
+
+def delete_experiment_subject(session, experiment, subject):
+    delete = session.prepare(
+        "DELETE FROM experiment_subjects "
+        "WHERE experiment = ? "
+        "AND subject = ?"
+    )
+    session.execute(delete, [experiment, subject])
+
+
+def delete_experiment_subject_binary(session, experiment, subject, binary):
+    delete = session.prepare(
+        "DELETE FROM experiment_subject_binaries "
+        "WHERE experiment = ? "
+        "AND subject = ? "
+        "AND binary = ?"
+    )
+    session.execute(delete, [experiment, subject, binary])
+
+
+def delete_experiment_subject_binary_execution(session, experiment, subject, binary, execution):
+    delete = session.prepare(
+        "DELETE FROM experiment_subject_binary_executions "
+        "WHERE experiment = ? "
+        "AND subject = ? "
+        "AND binary = ? "
+        "AND execution = ?"
+    )
+    session.execute(delete, [experiment, subject, binary, execution])
+
+
+def delete_subject_filename(session, subject, filename):
+    delete = session.prepare(
+        "DELETE FROM subject_files WHERE subject = ? AND filename = ?"
+    )
+    session.execute(delete, [subject, filename])
+
+
+def delete_subject_file_function(session, subject, filename, function):
+    delete = session.prepare(
+        "DELETE FROM subject_file_functions WHERE subject = ? AND filename = ? AND function_name = ?"
+    )
+    session.execute(delete, [subject, filename, function])
+
+
+def delete_subject_file_function_variable(session, subject, filename, function, variable_type, variable_name,
+                                          declared_line):
+    delete1 = session.prepare(
+        "DELETE FROM subject_file_function_variables "
+        "WHERE subject = ? "
+        "AND filename = ? "
+        "AND function_name = ? "
+        "AND variable_type = ? "
+        "AND variable_name = ? "
+        "AND declared_line = ?"
+    )
+    delete2 = session.prepare(
+        "DELETE FROM subject_file_function_variables_by_declaration_order "
+        "WHERE subject = ? "
+        "AND filename = ? "
+        "AND function_name = ? "
+        "AND declared_line = ? "
+        "AND variable_type = ? "
+        "AND variable_name = ?"
+    )
+
+    session.execute(delete1, [subject, filename, function, variable_type, variable_name, declared_line])
+    session.execute(delete2, [subject, filename, function, declared_line, variable_type, variable_name])
+
+
+def delete_processes(session, experiment, subject, binary, execution):
+    statement = session.prepare(
+        "SELECT pid FROM processes "
+        "WHERE experiment = ? "
+        "AND subject = ? "
+        "AND binary = ? "
+        "AND execution = ?"
+    )
+    statement.fetch_size = FETCH_SIZE
+
+    delete = session.prepare(
+        "DELETE FROM processes "
+        "WHERE experiment = ? "
+        "AND subject = ? "
+        "AND binary = ? "
+        "AND execution = ? "
+        "AND pid = ?"
+    )
+
+    rows = session.execute(statement, [experiment, subject, binary, execution])
+    for row in rows:
+        pid = row[0]
+
+        session.execute(delete, [experiment, subject, binary, execution, pid])
+
+
+def delete_process_variable_value_traces(session, experiment, subject, binary, execution, exit_status, filename,
+                                         function, declared_line, variable_type, variable_name):
+    statement = session.prepare(
+        "SELECT pid, timestamp, id FROM process_variable_value_traces "
+        "WHERE experiment = ? "
+        "AND subject = ? "
+        "AND binary = ? "
+        "AND execution = ? "
+        "AND exit_status = ? "
+        "AND filename = ? "
+        "AND function_name = ? "
+        "AND declared_line = ? "
+        "AND variable_type = ? "
+        "AND variable_name = ? "
+    )
+    statement.fetch_size = FETCH_SIZE
+
+    delete = session.prepare(
+        "DELETE FROM process_variable_value_traces "
+        "WHERE experiment = ? "
+        "AND subject = ? "
+        "AND binary = ? "
+        "AND execution = ? "
+        "AND exit_status = ? "
+        "AND filename = ? "
+        "AND function_name = ? "
+        "AND declared_line = ? "
+        "AND variable_type = ? "
+        "AND variable_name = ? "
+        "AND pid = ? "
+        "AND timestamp = ? "
+        "AND id = ?"
+    )
+
+    rows = session.execute(statement, [experiment, subject, binary, execution, exit_status, filename, function,
+                                       declared_line, variable_type, variable_name])
+    for row in rows:
+        pid = row[0]
+        timestamp = row[1]
+        id = row[2]
+
+        session.execute(delete, [experiment, subject, binary, execution, exit_status, filename, function, declared_line,
+                                 variable_type, variable_name, pid, timestamp, id])

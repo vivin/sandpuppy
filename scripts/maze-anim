@@ -1,0 +1,11 @@
+#!/bin/bash
+
+INPUT_FILES_DIR=/mnt/kube-nfs/vivin/smartdsf/maze/results/sandpuppy-sync/$1/queue
+CMD="cat $INPUT_FILES_DIR/% | resources/maze-disp \"%\"; sleep 1"
+
+FILE_REGEX=$2
+if [ -z "$FILE_REGEX" ]; then
+    FILE_REGEX=".*id:.*"
+fi
+
+find $INPUT_FILES_DIR -maxdepth 1 -type f -regextype posix-extended -regex "$FILE_REGEX" | sort | sed -e 's,^.*queue/,,' | xargs -I % sh -c "$CMD"

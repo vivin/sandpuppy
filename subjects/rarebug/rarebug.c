@@ -45,7 +45,7 @@ int process_message(const char* message_type_str, const char* message) {
     int message_type = (int) value;
 
     current_sequence = (current_sequence << WIDTH) + message_type;
-    printf("magic is: %d the current sequence is: %d\n", MAGIC_SEQUENCE, current_sequence);
+    //printf("magic is: %d the current sequence is: %d\n", MAGIC_SEQUENCE, current_sequence);
     if (current_sequence == MAGIC_SEQUENCE) {
         printf("You got the magic sequence!\n");
         char *buffer = malloc(5);
@@ -95,7 +95,7 @@ int process_message(const char* message_type_str, const char* message) {
             mt_char = 'j';
     }
 
-    printf ("Message type: %d%c, Message: %s\n\n", message_type, mt_char, message);
+    //printf ("Message type: %d%c, Message: %s\n\n", message_type, mt_char, message);
     return 0;
 }
 
@@ -109,15 +109,16 @@ int main(int argc, char* argv[]) {
 
     while (exit_code == 0 && getline(&line, &bufsize, stdin)) {
         unsigned int size = strlen(line);
+
+        if (size == 0) {
+            break;
+        }
+
         if (line[size - 1] == '\n') {
             size--; // Ignore newline in size
         }
 
         total_size += size;
-
-        if (size == 0) {
-            break;
-        }
 
         char *ptr = strchr(line, delimiter);
         if (ptr) {
@@ -135,7 +136,7 @@ int main(int argc, char* argv[]) {
                 message[size - (index + 1)] = '\0';
 
                 if (process_message(message_type_str, message) == -1) {
-                    printf("Bad message size: %s\n\n", message_type_str);
+                    printf("Bad message\n\n");
                     exit_code = CUSTOM_CRASH;
                 } else {
                     num_messages++;
@@ -151,6 +152,5 @@ int main(int argc, char* argv[]) {
     }
 
     unsigned int the_full_size = total_size;
-
     return exit_code;
 }

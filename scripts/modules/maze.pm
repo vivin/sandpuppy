@@ -35,6 +35,7 @@ sub build {
 
     my $FUZZ_FACTORY = "$TOOLS/FuzzFactory";
     my $build_command = "$FUZZ_FACTORY/afl-clang-fast -fno-inline-functions -fno-discard-value-names -fno-unroll-loops"
+        . ($options->{m32} ? " -m32" : "")
         . utils::build_options_string($options->{clang_waypoint_options})
         . " maze.c -o $binary_dir/$binary_name";
 
@@ -80,6 +81,7 @@ sub get_fuzz_command {
         utils::merge($options, {
             binary_name     => "maze",
             hang_timeout    => $waypoints =~ /vvdump/ ? 9000 : 0,
+            no_splicing     => $waypoints =~ /vvdump/ ? 1 : 0,
             seeds_directory => "$RESOURCES/seeds/maze"
         })
     );

@@ -303,7 +303,8 @@ def identify_interesting_variables(variables_by_filename_and_function):
     interesting_variables = {
         'max': [],
         'perm': [],
-        'hash': []
+        'hash': [],
+        'max2': []
     }
 
     # For instrumentation passes where we are maximizing the values of certain variables, or maximizing permutations of
@@ -358,6 +359,17 @@ def identify_interesting_variables(variables_by_filename_and_function):
                                     interesting_variables['hash'].append([
                                         f"{filename}:{function}:{variable['name']}:{variable['declared_line']}"
                                         for variable in pair
+                                    ])
+
+                                    # Two entries per pair: maximize variable 1 with respect to variable 2 and
+                                    # variable 2 with respect to variable 1.
+                                    interesting_variables['max2'].append([
+                                        f"{filename}:{function}:{variable['name']}:{variable['declared_line']}"
+                                        for variable in pair
+                                    ])
+                                    interesting_variables['max2'].append([
+                                        f"{filename}:{function}:{variable['name']}:{variable['declared_line']}"
+                                        for variable in reversed(pair)
                                     ])
 
     return interesting_variables

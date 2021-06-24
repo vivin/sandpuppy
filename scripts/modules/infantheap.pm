@@ -33,6 +33,7 @@ sub build {
 
     my $FUZZ_FACTORY = "$TOOLS/FuzzFactory";
     my $build_command = "$FUZZ_FACTORY/afl-clang-fast -fno-inline-functions -fno-discard-value-names -fno-unroll-loops"
+        . ($options->{m32} ? " -m32" : "")
         . utils::build_options_string($options->{clang_waypoint_options})
         . " infantheap.c -o $binary_dir/$binary_name";
 
@@ -77,6 +78,7 @@ sub get_fuzz_command {
         $exec_context,
         utils::merge($options, {
             binary_name     => "infantheap",
+            no_splicing     => $waypoints =~ /vvdump/ ? 1 : 0,
             seeds_directory => "$RESOURCES/seeds/infantheap/non-crashing"
         })
     );

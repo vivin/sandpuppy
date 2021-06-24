@@ -157,29 +157,20 @@ static void edit_params(u32 argc, char** argv) {
     cc_params[cc_par_cnt++] = alloc_printf("%s/shared-opts.so", obj_path);
   }
 
-  /* Waypoints passes */ 
+  /* Waypoints passes */
   char* domains = getenv("WAYPOINTS");
   if (!domains) {
     domains = getenv("DOMAINS");
     if (!domains)
       domains = "";
   }
-  
+
   char* comma = ",";
   char* domain = strtok(domains, comma);
 
   int include_variables_file = 0;
-
   while (domain != NULL) {
-    printf("Found domain: %s\n", domain);
-    cc_params[cc_par_cnt++] = "-Xclang";
-    cc_params[cc_par_cnt++] = "-load";
-    cc_params[cc_par_cnt++] = "-Xclang";
-
-    cc_params[cc_par_cnt++] = alloc_printf("%s/waypoints-%s-pass.so", obj_path, domain);
-    cc_params[cc_par_cnt++] = alloc_printf("%s/waypoints-%s-rt.o", obj_path, domain);
-
-    if (strcmp(domain, "vvperm") == 0 || strcmp(domain, "vvhash") == 0 || strcmp(domain, "vvmax") == 0) {
+    if (strcmp(domain, "vvperm") == 0 || strcmp(domain, "vvhash") == 0 || strcmp(domain, "vvmax") == 0 || strcmp(domain, "vvmax2") == 0) {
         include_variables_file = 1;
     }
 
@@ -200,8 +191,12 @@ static void edit_params(u32 argc, char** argv) {
     if (!strncmp(cur, "-target_locations", 17))
       cc_params[cc_par_cnt++] = "-mllvm";
 
-    if (!strncmp(cur, "-variables_file", 15) && include_variables_file == 1) {
-        cc_params[cc_par_cnt++] = "-mllvm";
+    if (!strncmp(cur, "-variables_file", 15)) {
+        if (include_variables_file == 1) {
+            cc_params[cc_par_cnt++] = "-mllvm";
+        } else {
+            continue;
+        }
     }
 
     if (!strcmp(cur, "-m32")) bit_mode = 32;
@@ -225,6 +220,32 @@ static void edit_params(u32 argc, char** argv) {
 
     cc_params[cc_par_cnt++] = cur;
 
+  }
+
+  /* Waypoints passes */
+  domains = getenv("WAYPOINTS");
+  if (!domains) {
+      domains = getenv("DOMAINS");
+      if (!domains)
+          domains = "";
+  }
+
+  domain = strtok(domains, comma);
+  while (domain != NULL) {
+      printf("Found domain: %s\n", domain);
+      cc_params[cc_par_cnt++] = "-Xclang";
+      cc_params[cc_par_cnt++] = "-load";
+      cc_params[cc_par_cnt++] = "-Xclang";
+
+      if (bit_mode != 32) {
+          cc_params[cc_par_cnt++] = alloc_printf("%s/waypoints-%s-pass.so", obj_path, domain);
+          cc_params[cc_par_cnt++] = alloc_printf("%s/waypoints-%s-rt.o", obj_path, domain);
+      } else {
+          cc_params[cc_par_cnt++] = alloc_printf("%s/waypoints-%s-pass.so", obj_path, domain);
+          cc_params[cc_par_cnt++] = alloc_printf("%s/waypoints-%s-rt-32.o", obj_path, domain);
+      }
+
+      domain = strtok(NULL, comma);
   }
 
   if (getenv("AFL_HARDEN")) {

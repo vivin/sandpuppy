@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdbool.h>
+#include <stdint.h>
 
 const int MAZE_ROWS = 16;
 const int MAZE_COLUMNS = 32;
@@ -23,6 +24,18 @@ const char* maze[] = {
     "|                              |",
     "+------------------------------+"
 };
+
+uint64_t hash_int(uint64_t x) {
+    x = (x ^ (x >> 30)) * UINT64_C(0xbf58476d1ce4e5b9);
+    x = (x ^ (x >> 27)) * UINT64_C(0x94d049bb133111eb);
+    x = x ^ (x >> 31);
+    return x;
+}
+
+uint32_t hash_ints(uint32_t old, uint32_t val){
+    uint64_t input = (((uint64_t)(old))<<32) | ((uint64_t)(val));
+    return (uint32_t)(hash_int(input));
+}
 
 void print_maze(int player_row, int player_column) {
     for (int i = 0; i < MAZE_ROWS; i++) {
@@ -65,7 +78,7 @@ int main(int argc, char* argv[]) {
     bool done = false;
     while (!done && !error) {
         //print_maze(player_row, player_col);
-        printf("u, d, l, or r: ");
+        //printf("u, d, l, or r: ");
         if (fgets(buffer, BUFFER_SIZE, stdin) == NULL) {
             done = true;
             break;
@@ -111,12 +124,12 @@ int main(int argc, char* argv[]) {
                 player_row += delta_row;
                 player_col += delta_col;
 
+                printf("hash of %d and %d: %d\n", player_col, player_row, hash_ints(player_col, player_row));
+
                 if (found_target(&player_row, &player_col)) {
                     printf("You found the treasure in %d moves!\n", moves);
                     done = true;
                 }
-            } else {
-                printf("You smashed into a wall and died!\n");
             }
 
             printf("\n");

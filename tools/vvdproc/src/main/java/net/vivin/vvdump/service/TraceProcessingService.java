@@ -218,7 +218,11 @@ public class TraceProcessingService {
         long processedProcessTraces = metrics.getProcessedProcessTraces();
         long remainingProcessTraces = totalProcessTraces - processedProcessTraces;
 
-        metrics.recordTraceProcessingTime(Long.valueOf(elapsed).doubleValue() / Long.valueOf(processedTraceItems - lastProcessedTraceItems).doubleValue());
+        double numProcessed = Long.valueOf(processedTraceItems - lastProcessedTraceItems).doubleValue();
+        if (numProcessed > 0) {
+            metrics.recordTraceProcessingTime(Long.valueOf(elapsed).doubleValue() / numProcessed);
+        }
+
         double averageProcessingTimePerTrace = metrics.getTraceProcessingTimes().getMean();
         long estimatedTimeRemaining = Math.round((averageProcessingTimePerTrace * Long.valueOf(remainingTraceItems).doubleValue()) / 1000);
 

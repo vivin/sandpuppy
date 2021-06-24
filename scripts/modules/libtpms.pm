@@ -54,6 +54,9 @@ sub build {
 
     my $FUZZ_FACTORY = "$TOOLS/FuzzFactory";
     my $build_command = "$FUZZ_FACTORY/afl-clang-fast -fno-inline-functions -fno-discard-value-names -fno-unroll-loops";
+    if ($options->{m32}) {
+        $build_command .= " -m32";
+    }
 
     if ($binary_context =~ /-asan/) {
         $ENV{"AFL_USE_ASAN"} = 1;
@@ -99,9 +102,15 @@ sub build {
     # Copy the shared libraries into the binary dir because the binary will need to use it. We can't just provide the
     # directory in the source to rpath because then all readtpmc binaries will use the same shared libraries, which is
     # not what we want when we build and fuzz multiple targets.
+    # We will also copy the appropriate libb64 library (32 bit or 64 bit) to the binary directory.
     system ("cp $libtpms_src_dir/src/.libs/*.so* $binary_dir");
     system ("cp $libtpms_src_dir/src/.libs/*.a $binary_dir");
     system ("cp $libtpms_src_dir/src/*.la $binary_dir");
+    if ($options->{m32}) {
+        system ("cp $libtpms_resources/libb64-32bit.a $binary_dir/libb64.a");
+    } else {
+        system ("cp $libtpms_resources/libb64.a $binary_dir");
+    }
 
     chdir $libtpms_base_dir;
 
@@ -154,8 +163,8 @@ sub get_fuzz_command {
             asan_memory_limit => 20971597,
             hang_timeout      => $waypoints =~ /vvdump/ ? "5000+" : 0,
             no_arithmetic     => $waypoints =~ /vvdump/ ? 1 : 0,
-            no_splicing       => 1,
-          # slow_target       => 1,
+            no_splicing       => $waypoints =~ /vvdump/ ? 1 : 0,
+            slow_target       => $waypoints =~ /vvdump/ ? 1 : 0,
             seeds_directory   => "$RESOURCES/seeds/libtpms",
             binary_arguments  => "\@\@"
         })

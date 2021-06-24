@@ -117,6 +117,9 @@ endif
 ../waypoints-%-rt.o: waypoints-%-rt.c
 	$(CC) $(CFLAGS) -fPIC -c $< -o $@
 
+../waypoints-%-rt-32.o: waypoints-%-rt.c
+	$(CC) $(CFLAGS) -m32 -fPIC -c $< -o $@
+
 test_build: $(PROGS)
 	@echo "[*] Testing the CC wrapper and instrumentation output..."
 	#@if [ "$(DOMAINS)" = "trace" ]; \

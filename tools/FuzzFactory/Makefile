@@ -171,4 +171,4 @@ llvm-domains: $(DOMAINS)
 	make -C llvm_mode
 
 $(DOMAINS):
-	make -C llvm_mode ../waypoints-$@-rt.o ../waypoints-$@-pass.so
+	make -C llvm_mode ../waypoints-$@-rt.o ../waypoints-$@-rt-32.o ../waypoints-$@-pass.so

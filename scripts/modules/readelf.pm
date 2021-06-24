@@ -54,6 +54,9 @@ sub build {
 
     my $FUZZ_FACTORY = "$TOOLS/FuzzFactory";
     my $build_command = "$FUZZ_FACTORY/afl-clang-fast -fno-inline-functions -fno-discard-value-names -fno-unroll-loops";
+    if ($options->{m32}) {
+        $build_command .= " -m32";
+    }
 
     if ($binary_context =~ /-asan/) {
         $ENV{"AFL_USE_ASAN"} = 1;
@@ -118,6 +121,7 @@ sub get_fuzz_command {
             binary_name      => "readelf",
             asan_memory_limit => 20971597,
             hang_timeout     => $waypoints =~ /vvdump/ ? 600 : 0,
+            no_splicing     => $waypoints =~ /vvdump/ ? 1 : 0,
             seeds_directory  => "$RESOURCES/seeds/readelf",
             binary_arguments => "-a \@\@"
         })

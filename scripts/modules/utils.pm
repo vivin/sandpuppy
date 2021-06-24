@@ -14,7 +14,7 @@ my $TOOLS = "$BASEPATH/tools";
 my $RESOURCES = "$BASEPATH/resources";
 my $SUBJECTS = "$BASEPATH/subjects";
 
-my $ASAN_MEMORY_LIMIT = 20971586; # Depends on the system. For 64-bit ASAN allocates something ridiculous like 20 TB.
+my $ASAN_MEMORY_LIMIT = 1024; #20971586; # Depends on the system. For 64-bit ASAN allocates something ridiculous like 20 TB.
 
 sub get_clang_library_path {
     return "/usr/lib/llvm-10/lib/clang/10.0.0/lib/linux"
@@ -26,6 +26,14 @@ sub get_clang_asan_dso {
 
 sub get_clang_asan_static_lib {
     return get_clang_library_path() . "/libclang_rt.asan-x86_64.a";
+}
+
+sub get_experiment_subject_directory_structure {
+    my $experiment_name = $_[0];
+    my $subject = $_[1];
+    my $version = $_[2];
+
+    return "$experiment_name/$subject" . ($version ? "-$version" : "");
 }
 
 sub get_workspace {
@@ -172,7 +180,8 @@ sub build_fuzz_command {
     if ($resume) {
         $fuzz_command .= " -i-"
     } elsif ($seeds_directory) {
-        $fuzz_command .= " -i $seeds_directory";
+        my $subdir = ($waypoints eq "vvdump") ? "tracegen" : "fuzz";
+        $fuzz_command .= " -i $seeds_directory/$subdir";
 
         if ($dictionary_file) {
             $fuzz_command .= " -x $dictionary_file"
@@ -185,7 +194,7 @@ sub build_fuzz_command {
     $fuzz_command .= " -o $results_dir -T \"$banner\"";
 
     if ($fuzzer_id) {
-        $ENV_VARS{AFL_IMPORT_FIRST} = 1;
+        #$ENV_VARS{AFL_IMPORT_FIRST} = 1;  # disable importing first so that there is initial divergence in search paths
         $fuzz_command .= (($parallel_fuzz_mode eq "parent" ? " -M " : " -S ") . "\"$fuzzer_id\"");
     }
 
@@ -206,7 +215,7 @@ sub build_fuzz_command {
     $fuzz_command .= " $binary";
 
     # Extra arguments to binary. Can contain @@ to tell AFL to provide input as file name
-    if ($binary_arguments) {
+    if (defined $binary_arguments) {
         $fuzz_command .= " $binary_arguments";
     }
 
@@ -263,6 +272,6 @@ sub merge {
 }
 
 sub get_random_fuzzer_id {
-    chomp(my $id = `cat /dev/urandom | tr -dc 'a-zA-Z0-9' | fold -w 16 | head -n 1`);
-    return $id;
+    chomp(my $id = `cat /dev/urandom | tr -dc 'a-z0-9' | fold -w 16 | head -n 1`);
+    return join "-", ($id =~ m/.{4}/g);
 }
