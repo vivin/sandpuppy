@@ -38,13 +38,13 @@ class VariablesHashConfiguration {
         if (std::getline(variablesFile, line)) {
             std::vector<std::string> components = split(line, ':');
             if (components.size() == NUM_COMPONENTS) {
-                targetedFilename = components[Components::filename];
-                targetedFunctionName = components[Components::functionName];
+                targetedFilename = std::move(components[Components::filename]);
+                targetedFunctionName = std::move(components[Components::functionName]);
 
-                firstVariable = components[Components::variableName1];
+                firstVariable = std::move(components[Components::variableName1]);
                 firstDeclaredLine = std::stoi(components[Components::declaredLine1]);
 
-                secondVariable = components[Components::variableName2];
+                secondVariable = std::move(components[Components::variableName2]);
                 secondDeclaredLine = std::stoi(components[Components::declaredLine2]);
             } else if (!components.empty()) {
                 std::cerr << "Invalid number of components: " << components.size() << "\n";
