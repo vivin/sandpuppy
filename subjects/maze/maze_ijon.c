@@ -1,33 +1,27 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdbool.h>
-#include <unistd.h>
 
-const int MAZE_ROWS = 16;
-const int MAZE_COLUMNS = 32;
+const int MAZE_ROWS = 13;
+const int MAZE_COLUMNS = 17;
 
 const char* maze[] = {
-    "+-+---------+------------------+",
-    "| |         |                  |",
-    "| +------- -+ +-+ +------------+",
-    "|             | | |            |",
-    "| +-----------+ | | +----+ # # |",
-    "| |           | | | +----+ | | |",
-    "| +---------+ | | |        | | |",
-    "|           | | | +------+ | | |",
-    "| +---------+ | |       *| | | |",
-    "| +---------+ | +--------+ | | |",
-    "|           | |            | | |",
-    "| #---------+ +----------# | # |",
-    "|           | |            |   |",
-    "| #---------+ +----------# +---+",
-    "|                              |",
-    "+------------------------------+"
+    "+-+-------------+",
+    "| |             |",
+    "| | +------ ----+",
+    "|   |           |",
+    "+---+-- --------+",
+    "|               |",
+    "+ +-------------+",
+    "| |       |   |*|",
+    "| | ----+ | | | |",
+    "| |     |   |   |",
+    "| +---- +-------+",
+    "|               |",
+    "+---------------+"
 };
 
-void print_maze(char* filename, int player_row, int player_column) {
-    printf("\033[2J\033[0;0H\n");
-    printf("%s\n", filename);
+void print_maze(int player_row, int player_column) {
     for (int i = 0; i < MAZE_ROWS; i++) {
         for (int j = 0; j < MAZE_COLUMNS; j++) {
             if (i == player_row && j == player_column) {
@@ -52,28 +46,21 @@ bool found_target(const int* row, const int* column) {
 }
 
 int main(int argc, char* argv[]) {
-    if (argc < 2) {
-        printf("expected input filename");
-        return 1;
-    }
+    int player_row = 1;
+    int player_col = 1;
 
-    char* filename = argv[1];
-
-    int player_row = 14;
-    int player_col = 13;
-
-    int delta_row = 0;
-    int delta_col = 0;
+    int delta_row;
+    int delta_col;
 
     int moves = 0;
 
     int BUFFER_SIZE = 3;
     char buffer[BUFFER_SIZE];
 
+    char last_option = '0';
     char option;
     bool error = false;
     bool done = false;
-    print_maze(filename, player_row, player_col);
     while (!done && !error) {
         //print_maze(player_row, player_col);
         printf("u, d, l, or r: ");
@@ -92,21 +79,41 @@ int main(int argc, char* argv[]) {
 
         switch(option) {
             case 'u':
+                if (last_option == 'd') {
+                    printf("No backtracking allowed!\n");
+                    done = true;
+                    break;
+                }
                 delta_row = -1;
                 delta_col = 0;
                 break;
 
             case 'd':
+                if (last_option == 'u') {
+                    printf("No backtracking allowed!\n");
+                    done = true;
+                    break;
+                }
                 delta_row = 1;
                 delta_col = 0;
                 break;
 
             case 'l':
+                if (last_option == 'r') {
+                    printf("No backtracking allowed!\n");
+                    done = true;
+                    break;
+                }
                 delta_row = 0;
                 delta_col = -1;
                 break;
 
             case 'r':
+                if (last_option == 'l') {
+                    printf("No backtracking allowed!\n");
+                    done = true;
+                    break;
+                }
                 delta_row = 0;
                 delta_col = 1;
                 break;
@@ -116,7 +123,8 @@ int main(int argc, char* argv[]) {
                 break;
         }
 
-        if (!error) {
+        if (!error && !done) {
+            last_option = option;
             moves++;
             if (can_move_to(player_row + delta_row, player_col + delta_col)) {
                 player_row += delta_row;
@@ -127,12 +135,11 @@ int main(int argc, char* argv[]) {
                     done = true;
                 }
             } else {
-                printf("You smashed into the wall!\n");
+                printf("You smashed into a wall and died!\n");
                 done = true;
             }
 
-            print_maze(filename, player_row, player_col);
-            usleep(62500);
+            printf("\n");
         }
     }
 

@@ -140,7 +140,6 @@ sub get_fuzz_command {
         $binary_context,
         $exec_context,
         utils::merge($options, {
-            binary_name     => "readpng",
             asan_memory_limit => 20971597,
             hang_timeout    => $waypoints =~ /vvdump/ ? 300 : 0,
             no_splicing     => $waypoints =~ /vvdump/ ? 1 : 0,

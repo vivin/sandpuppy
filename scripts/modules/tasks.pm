@@ -42,7 +42,7 @@ my $subjects = {
             fuzz        => create_fuzz_task(\&infantheap::get_fuzz_command),
             pod_command => create_pod_command_task(\&infantheap::get_fuzz_command)
         },
-        fuzz_time   => 360
+        fuzz_time   => 600
     },
     rarebug    => {
         binary_name => "rarebug",
@@ -51,10 +51,31 @@ my $subjects = {
             fuzz    => create_fuzz_task(\&rarebug::get_fuzz_command),
             pod_command => create_pod_command_task(\&rarebug::get_fuzz_command)
         },
-        fuzz_time   => 360
+        fuzz_time   => 600
     },
     maze       => {
         binary_name => "maze",
+        source_name => "maze.c",
+        tasks       => {
+            build   => \&maze::build,
+            fuzz    => create_fuzz_task(\&maze::get_fuzz_command),
+            pod_command => create_pod_command_task(\&maze::get_fuzz_command)
+        },
+        fuzz_time   => 360
+    },
+    maze_ijon  => {
+        binary_name => "maze_ijon",
+        source_name => "maze_ijon.c",
+        tasks       => {
+            build   => \&maze::build,
+            fuzz    => create_fuzz_task(\&maze::get_fuzz_command),
+            pod_command => create_pod_command_task(\&maze::get_fuzz_command)
+        },
+        fuzz_time   => 360
+    },
+    maze_klee  => {
+        binary_name => "maze_klee",
+        source_name => "maze_klee.c",
         tasks       => {
             build   => \&maze::build,
             fuzz    => create_fuzz_task(\&maze::get_fuzz_command),
@@ -69,7 +90,7 @@ my $subjects = {
             fuzz    => create_fuzz_task(\&libpng::get_fuzz_command),
             pod_command => create_pod_command_task(\&libpng::get_fuzz_command)
         },
-        fuzz_time   => 360
+        fuzz_time   => 600
     },
     readelf    => {
         binary_name => "readelf",
@@ -78,7 +99,7 @@ my $subjects = {
             fuzz    => create_fuzz_task(\&readelf::get_fuzz_command),
             pod_command => create_pod_command_task(\&readelf::get_fuzz_command)
         },
-        fuzz_time   => 360
+        fuzz_time   => 600
     },
     libtpms    => {
         binary_name => "readtpmc",
@@ -96,7 +117,7 @@ my $subjects = {
             fuzz    => create_fuzz_task(\&smbc::get_fuzz_command),
             pod_command => create_pod_command_task(\&smbc::get_fuzz_command)
         },
-        fuzz_time   => 600
+        fuzz_time   => 360
     }
 };
 
@@ -111,6 +132,7 @@ sub create_pod_command_task {
         my $binary_context = $_[4];
         my $execution_context = $_[5];
         my $options = utils::merge($_[6], {
+            binary_name       => $subjects->{$subject}->{binary_name},
             use_asan          => $binary_context =~ /-asan$|-asan-/ ? 1 : 0,
             non_deterministic => $execution_context =~ /-non-det$|-non-det-/ ? 1 : 0,
             use_kubernetes    => 1
@@ -145,6 +167,7 @@ sub create_fuzz_task {
         my $binary_context = $_[4];
         my $execution_context = $_[5];
         my $options = utils::merge($_[6], {
+            binary_name       => $subjects->{$subject}->{binary_name},
             use_asan          => $binary_context =~ /-asan$|-asan-/ ? 1 : 0,
             non_deterministic => $execution_context =~ /-non-det$|-non-det-/ ? 1 : 0,
         });
@@ -233,6 +256,11 @@ sub build {
     }
 
     if (!$options->{use_existing} || $build_anyway) {
+        if (defined $subjects->{$subject}->{binary_name} && defined $subjects->{$subject}->{source_name}) {
+            $options->{binary_name} = $subjects->{$subject}->{binary_name};
+            $options->{source_name} = $subjects->{$subject}->{source_name};
+        }
+
         my $tasks = $subjects->{$subject}->{tasks};
         $tasks->{build}->($experiment_name, $subject, $version, $waypoints, $binary_context, $options);
 
@@ -386,7 +414,7 @@ sub vvdump_fuzz {
 
         chdir "$TOOLS/vvdproc";
         #my $vvdproc = "unbuffer mvn package && unbuffer java -agentpath:/home/vivin/jprofiler12/bin/linux-x64/libjprofilerti.so=port=8849 -Xms1G -Xmx4G -jar target/vvdproc.jar 2>&1";
-        my $vvdproc = "unbuffer mvn package && unbuffer java -Xms8G -Xmx16G -jar target/vvdproc.jar 2>&1";
+        my $vvdproc = "unbuffer mvn clean package && unbuffer java -Xms8G -Xmx16G -jar target/vvdproc.jar 2>&1";
         open my $vvdproc_output, "-|", $vvdproc;
         while (<$vvdproc_output>) {
             print $writer $_;
@@ -427,58 +455,106 @@ sub sandpuppy_fuzz_k8s {
     my $targets = $_[4];
     my $options = $_[5];
 
+    my $num_targets = scalar @{$targets} + 1; # Account for main target
+
     my $full_subject = $subject . ($version ? "-$version" : "");
-    $full_subject =~ s/\./_/g; # We use this for pod names and k8s doesn't like periods in the name
 
     my $id_to_pod_name_and_target = {};
     my $pod_name_to_create_command = {};
 
-    $log->info("Fuzzing using Kubernetes and kuboid requested.");
+    $log->info("Fuzzing using kubernetes requested.\n");
 
-    $log->info("Copying target binaries to NFS mount");
+    #$log->info("Copying target binaries to NFS mount");
+
     my $workspace = utils::get_workspace($experiment_name, $subject, $version);
     my $directory_structure = utils::get_experiment_subject_directory_structure($experiment_name, $subject, $version);
-    my $nfs_workspace = "/mnt/kube-nfs/vivin/$directory_structure";
-    my $container_shared_workspace = "/shared/vivin/$directory_structure";
+    my $nfs_workspace = "/mnt/vivin-nfs/vivin/$directory_structure";
+    my $container_shared_workspace = "/private-nfs/vivin/$directory_structure";
 
-    system("mkdir -p $nfs_workspace && cp -rv $workspace/binaries $nfs_workspace");
+    if (! -d $nfs_workspace) {
+        system("mkdir -p $nfs_workspace");
 
-    if (! -d "$nfs_workspace/results") {
-        system("mkdir $nfs_workspace/results");
+        if (! -d "$nfs_workspace/results") {
+            system("mkdir $nfs_workspace/results");
+        }
+
+        if (! -d "$nfs_workspace/binaries") {
+            system("mkdir $nfs_workspace/binaries");
+        }
     }
 
     #open my $TASKS, ">", "$workspace/tasks";
 
+    my $main_target_binary_dir = $main_target->{binary_context};
+    if (! -e -d "$nfs_workspace/binaries/$main_target_binary_dir") {
+        system("mkdir $nfs_workspace/binaries/$main_target_binary_dir");
+    }
+
+    my @main_target_files = `find "$workspace/binaries/$main_target_binary_dir" -type f | sed -e 's,^.*/,,'`;
+    foreach my $main_target_file (@main_target_files) {
+        chomp($main_target_file);
+
+        my $local_file_path = "$workspace/binaries/$main_target_binary_dir/$main_target_file";
+        my $nfs_file_path = "$nfs_workspace/binaries/$main_target_binary_dir/$main_target_file";
+
+        if (-e -f $nfs_file_path) {
+            my $ctime_local_file = stat($local_file_path)->ctime;
+            my $ctime_nfs_file = stat($nfs_file_path)->ctime;
+
+            if ($ctime_nfs_file >= $ctime_local_file) {
+                $log->info("[1/$num_targets] Not copying $main_target_binary_dir/$main_target_file because it already exists on NFS and is newer.");
+            } else {
+                $log->info("[1/$num_targets] Copying $main_target_binary_dir/$main_target_file to NFS as it is newer than the existing one..");
+                system("cp $local_file_path $nfs_file_path")
+            }
+        } else {
+            $log->info("[1/$num_targets] Copying $main_target_binary_dir/$main_target_file to NFS.");
+            system("cp $local_file_path $nfs_file_path")
+        }
+    }
+
     my $pod_name = "$experiment_name-$full_subject--$main_target->{id}" . ($options->{use_asan} ? "-asan" : "");
+    $pod_name =~ s/[\._]/-/g; # pod names have restrictions
+
     $id_to_pod_name_and_target->{$main_target->{id}} = {
         pod_name    => $pod_name,
         target_name => $main_target->{name}
     };
 
-    $log->info("Creating target script for main target...");
-    open my $TARGET_SCRIPT, ">", "$nfs_workspace/$main_target->{id}";
-    print $TARGET_SCRIPT "#!/bin/bash\n";
-    print $TARGET_SCRIPT "echo \"Experiment: $experiment_name\"\n";
-    print $TARGET_SCRIPT "echo \"Subject: " . $subject . ($version ? "-$version" : "") . "\"\n";
-    print $TARGET_SCRIPT "echo \"Target name: $main_target->{name}\"\n";
-    print $TARGET_SCRIPT "echo \"Pod name: $pod_name\"\n";
-    print $TARGET_SCRIPT "ln -sf /shared/vivin /home/vivin/Projects/phd/workspace\n";
-    print $TARGET_SCRIPT pod_command(
-        $experiment_name,
-        $subject,
-        $version,
-        $main_target->{waypoints},
-        $main_target->{binary_context},
-        $main_target->{execution_context},
-        {
-            async               => 1,
-            fuzzer_id           => $main_target->{id},
-            sync_directory_name => $SANDPUPPY_SYNC_DIRECTORY,
-            parallel_fuzz_mode  => "parent"
-        }
-    ) . "\n";
-    close $TARGET_SCRIPT;
-    system "chmod 755 $nfs_workspace/$main_target->{id}";
+    if (! -e -f "$nfs_workspace/$main_target->{id}") {
+        $log->info("[1/$num_targets] Creating target script for main target...");
+        my $shared_binary_dir = "$container_shared_workspace/binaries/$main_target_binary_dir";
+
+        open my $TARGET_SCRIPT, ">", "$nfs_workspace/$main_target->{id}";
+        print $TARGET_SCRIPT "#!/bin/bash\n";
+        print $TARGET_SCRIPT "echo \"Experiment: $experiment_name\"\n";
+        print $TARGET_SCRIPT "echo \"Subject: " . $subject . ($version ? "-$version" : "") . "\"\n";
+        print $TARGET_SCRIPT "echo \"Target name: $main_target->{name}\"\n";
+        print $TARGET_SCRIPT "echo \"Pod name: $pod_name\"\n";
+        print $TARGET_SCRIPT "ln -sf /private-nfs/vivin /home/vivin/Projects/phd/workspace\n";
+        print $TARGET_SCRIPT "mkdir /home/vivin/Projects/phd/bin\n";
+        print $TARGET_SCRIPT "cp -rv $shared_binary_dir /home/vivin/Projects/phd/bin\n";
+        print $TARGET_SCRIPT pod_command(
+            $experiment_name,
+            $subject,
+            $version,
+            $main_target->{waypoints},
+            $main_target->{binary_context},
+            $main_target->{execution_context},
+            {
+                async               => 1,
+                fuzzer_id           => $main_target->{id},
+                sync_directory_name => $SANDPUPPY_SYNC_DIRECTORY,
+                parallel_fuzz_mode  => "parent"
+            }
+        ) . "\n";
+        close $TARGET_SCRIPT;
+        system "chmod 755 $nfs_workspace/$main_target->{id}";
+    } else {
+        $log->info("[1/$num_targets] Target script already exists");
+    }
+
+    print "\n";
 
     my $pod_command = "$container_shared_workspace/$main_target->{id}";
     $pod_name_to_create_command->{$pod_name} = {
@@ -488,43 +564,81 @@ sub sandpuppy_fuzz_k8s {
 
     #print $TASKS "$container_shared_workspace/$main_target->{id}\n";
 
+    my $i = 2; # Account for main target
     foreach my $target (@{$targets}) {
-        $log->info("Creating target script for $target->{name}...");
+        my $target_binary_dir = $target->{binary_context};
+        if (! -e -d "$nfs_workspace/binaries/$target_binary_dir") {
+            system("mkdir $nfs_workspace/binaries/$target_binary_dir");
+        }
+
+        my @target_files = `find "$workspace/binaries/$target_binary_dir" -type f | sed -e 's,^.*/,,'`;
+        foreach my $target_file (@target_files) {
+            chomp($target_file);
+
+            my $local_file_path = "$workspace/binaries/$target_binary_dir/$target_file";
+            my $nfs_file_path = "$nfs_workspace/binaries/$target_binary_dir/$target_file";
+
+            if (-e -f $nfs_file_path) {
+                my $ctime_local_file = stat($local_file_path)->ctime;
+                my $ctime_nfs_file = stat($nfs_file_path)->ctime;
+
+                if ($ctime_nfs_file >= $ctime_local_file) {
+                    $log->info("[$i/$num_targets] Not copying $target_binary_dir/$target_file because it already exists on NFS and is newer.");
+                } else {
+                    $log->info("[$i/$num_targets] Copying $target_binary_dir/$target_file to NFS as it is newer than the existing one..");
+                    system("cp $local_file_path $nfs_file_path")
+                }
+            } else {
+                $log->info("[$i/$num_targets] Copying $target_binary_dir/$target_file to NFS.");
+                system("cp $local_file_path $nfs_file_path")
+            }
+        }
 
         my $asan_suffix = ($options->{use_asan} ? "-asan" : "");
         $pod_name = $target->{waypoints} eq "vvmax" ?
             "$experiment_name-$full_subject--$target->{id}$asan_suffix" :
             "$experiment_name-$full_subject--$target->{id}-$target->{waypoints}$asan_suffix";
+        $pod_name =~ s/[\._]/-/g; # pod names have restrictions
+
         $id_to_pod_name_and_target->{$target->{id}} = {
             pod_name    => $pod_name,
             target_name => $target->{name}
         };
 
-        open $TARGET_SCRIPT, ">", "$nfs_workspace/$target->{id}";
-        print $TARGET_SCRIPT "#!/bin/bash\n";
-        print $TARGET_SCRIPT "echo \"Experiment: $experiment_name\"\n";
-        print $TARGET_SCRIPT "echo \"Subject: " . $subject . ($version ? "-$version" : "") . "\"\n";
-        print $TARGET_SCRIPT "echo \"Target name: $target->{name}\"\n";
-        print $TARGET_SCRIPT "echo \"Pod name: $pod_name\"\n";
-        print $TARGET_SCRIPT "echo \"\"\n";
-        print $TARGET_SCRIPT "ln -sf /shared/vivin /home/vivin/Projects/phd/workspace\n";
-        print $TARGET_SCRIPT pod_command(
-            $experiment_name,
-            $subject,
-            $version,
-            $target->{waypoints},
-            $target->{binary_context},
-            $target->{execution_context},
-            {
-                async               => 1,
-                fuzzer_id           => $target->{id},
-                sync_directory_name => $SANDPUPPY_SYNC_DIRECTORY,
-                parallel_fuzz_mode  => "child",
-                exit_when_done      => 0
-            }
-        ) . "\n";
-        close $TARGET_SCRIPT;
-        system "chmod 755 $nfs_workspace/$target->{id}";
+        if (! -e -f "$nfs_workspace/$target->{id}") {
+            $log->info("[$i/$num_targets] Creating target script for $target->{name}...");
+            my $shared_binary_dir = "$container_shared_workspace/binaries/$target_binary_dir";
+
+            open my $TARGET_SCRIPT, ">", "$nfs_workspace/$target->{id}";
+            print $TARGET_SCRIPT "#!/bin/bash\n";
+            print $TARGET_SCRIPT "echo \"Experiment: $experiment_name\"\n";
+            print $TARGET_SCRIPT "echo \"Subject: " . $subject . ($version ? "-$version" : "") . "\"\n";
+            print $TARGET_SCRIPT "echo \"Target name: $target->{name}\"\n";
+            print $TARGET_SCRIPT "echo \"Pod name: $pod_name\"\n";
+            print $TARGET_SCRIPT "echo \"\"\n";
+            print $TARGET_SCRIPT "ln -sf /private-nfs/vivin /home/vivin/Projects/phd/workspace\n";
+            print $TARGET_SCRIPT "mkdir /home/vivin/Projects/phd/bin\n";
+            print $TARGET_SCRIPT "cp -rv $shared_binary_dir /home/vivin/Projects/phd/bin\n";
+            print $TARGET_SCRIPT pod_command(
+                $experiment_name,
+                $subject,
+                $version,
+                $target->{waypoints},
+                $target->{binary_context},
+                $target->{execution_context},
+                {
+                    async               => 1,
+                    fuzzer_id           => $target->{id},
+                    sync_directory_name => $SANDPUPPY_SYNC_DIRECTORY,
+                    parallel_fuzz_mode  => "child",
+                    exit_when_done      => 1
+                }
+            ) . "\n";
+            close $TARGET_SCRIPT;
+            system "chmod 755 $nfs_workspace/$target->{id}";
+        } else {
+            $log->info("[$i/$num_targets] Target script already exists");
+        }
 
         $pod_command = "$container_shared_workspace/$target->{id}";
         $pod_name_to_create_command->{$pod_name} = {
@@ -532,6 +646,8 @@ sub sandpuppy_fuzz_k8s {
             command => "kuboid/scripts/pod_create -n \"$pod_name\" -s /tmp/sandpuppy.existing -i vivin/sandpuppy $pod_command"
         };
 
+        print "\n";
+        $i++;
         #print $TASKS "$container_shared_workspace/$target->{id}\n";
     }
 
@@ -543,15 +659,20 @@ sub sandpuppy_fuzz_k8s {
     $log->info("Getting list of existing pods (so that we don't recreate)...");
     system ("kuboid/scripts/pod_names > /tmp/sandpuppy.existing");
 
-    foreach $pod_name (keys %{$pod_name_to_create_command}) {
+    $i = 1;
+    foreach $pod_name (sort keys %{$pod_name_to_create_command}) {
         my $target = $pod_name_to_create_command->{$pod_name}->{target};
         my $command = $pod_name_to_create_command->{$pod_name}->{command};
 
-        $log->info("Creating pod $pod_name for target $target");
+        $log->info("[$i/$num_targets] Creating pod $pod_name for target $target");
         system ($command);
         if ($? != 0) {
-            print "Creating pod failed: $!\n";
+            print "[$i/$num_targets] Creating pod failed: $!\n";
         }
+
+        print "\n";
+
+        $i++;
     }
 
     my $requested_pods = scalar @{$targets} + 1;
@@ -849,29 +970,40 @@ sub build_sandpuppy_targets {
     }
 
     if (scalar @{$interesting_variables->{perm}} > 0) {
-        foreach my $variable (@{$interesting_variables->{perm}}) {
-            my $name = "sandpuppy-vvperm-$variable";
-            $name =~ s/\//./g;
-            $name =~ s/-\././g;
-            my $id = $name_to_id->{$name} ? $name_to_id->{$name} : utils::get_random_fuzzer_id();
-            my $variables_file = "$results_dir/$name.txt";
-            push @{$grouped_targets->{perm}}, {
-                id                => $id,
-                name              => $name,
-                experiment_name   => $experiment_name,
-                subject           => $subject,
-                version           => $version,
-                waypoints         => "vvperm",
-                binary_context    => $name . ($options->{use_asan} ? "-asan" : ""),
-                execution_context => $name . ($options->{use_asan} ? "-asan" : ""),
-                variables_file    => $variables_file
-            };
+        foreach my $variable_entry (@{$interesting_variables->{perm}}) {
 
-            $name_to_id->{$name} = $id if !$name_to_id->{$name};
+            my $variable = $variable_entry->{variable};
+            my $max_value = $variable_entry->{max};
+            my $min_value = $variable_entry->{min};
+            foreach my $shift_width (4, 8) {
+                # If the value is within the 8 bit signed or unsigned range, there is really no point doing a value
+                # permutation pass with a shift width of 8.
+                next if $shift_width == 8 &&
+                    (($min_value >= 0 && $max_value <= 255) || ($min_value >= -128 && $max_value <= 127));
 
-            open my $VVPERM, ">", $variables_file;
-            print $VVPERM "$variable:4\n"; # 4 is amount to shift previous value when calculating permutation key
-            close $VVPERM;
+                my $name = "sandpuppy-vvperm-$variable:sw:$shift_width";
+                $name =~ s/\//./g;
+                $name =~ s/-\././g;
+                my $id = $name_to_id->{$name} ? $name_to_id->{$name} : utils::get_random_fuzzer_id();
+                my $variables_file = "$results_dir/$name.txt";
+                push @{$grouped_targets->{perm}}, {
+                    id                => $id,
+                    name              => $name,
+                    experiment_name   => $experiment_name,
+                    subject           => $subject,
+                    version           => $version,
+                    waypoints         => "vvperm",
+                    binary_context    => $name . ($options->{use_asan} ? "-asan" : ""),
+                    execution_context => $name . ($options->{use_asan} ? "-asan" : ""),
+                    variables_file    => $variables_file
+                };
+
+                $name_to_id->{$name} = $id if !$name_to_id->{$name};
+
+                open my $VVPERM, ">", $variables_file;
+                print $VVPERM "$variable:$shift_width\n";
+                close $VVPERM;
+            }
         }
     }
 
@@ -918,45 +1050,51 @@ sub build_sandpuppy_targets {
     }
 
     if (scalar @{$interesting_variables->{max2}} > 0) {
-        # NOTE: DO NOT sort the pair of variables here because the order matters when we maximize one variable with
-        # NOTE: respect to another
-        foreach my $pair (@{$interesting_variables->{max2}}) {
-            my $variable1 = $pair->[0];
-            my $variable2 = $pair->[1];
+        foreach my $variables_entry (@{$interesting_variables->{max2}}) {
 
-            my @components1 = split /:/, $variable1;
-            my @components2 = split /:/, $variable2;
+            my $first_variable = $variables_entry->{first_variable};
+            my $second_variable = $variables_entry->{second_variable};
+            my $second_min = $variables_entry->{second_min};
+            my $second_max = $variables_entry->{second_max};
+            foreach my $slot_size (4, 8, 16, 32, 64) {
+                # If both the maximum and minimum values of the second variable end up being in the same slot, let's
+                # skip this pair because it's no different than maximizing the first variable by itself.
+                next if (int $second_min / $slot_size) == (int $second_max / $slot_size);
 
-            my $filename = $components1[0];
-            my $function = $components1[1];
+                my @components1 = split /:/, $first_variable;
+                my @components2 = split /:/, $second_variable;
 
-            my $variable1Name = $components1[2];
-            my $variable1Line = $components1[3];
-            my $variable2Name = $components2[2];
-            my $variable2Line = $components2[3];
+                my $filename = $components1[0];
+                my $function = $components1[1];
 
-            my $name = "sandpuppy-vvmax2-$filename:$function:$variable1Name:$variable1Line,$variable2Name:$variable2Line";
-            $name =~ s/\//./g;
-            $name =~ s/-\././g;
-            my $id = $name_to_id->{$name} ? $name_to_id->{$name} : utils::get_random_fuzzer_id();
-            my $variables_file = "$results_dir/$name.txt";
-            push @{$grouped_targets->{max2}}, {
-                id                => $id,
-                name              => $name,
-                experiment_name   => $experiment_name,
-                subject           => $subject,
-                version           => $version,
-                waypoints         => "vvmax2",
-                binary_context    => $name . ($options->{use_asan} ? "-asan" : ""),
-                execution_context => $name . ($options->{use_asan} ? "-asan" : ""),
-                variables_file    => $variables_file
-            };
+                my $variable1Name = $components1[2];
+                my $variable1Line = $components1[3];
+                my $variable2Name = $components2[2];
+                my $variable2Line = $components2[3];
 
-            $name_to_id->{$name} = $id if !$name_to_id->{$name};
+                my $name = "sandpuppy-vvmax2-$filename:$function:$variable1Name:$variable1Line,$variable2Name:$variable2Line:ssz:$slot_size";
+                $name =~ s/\//./g;
+                $name =~ s/-\././g;
+                my $id = $name_to_id->{$name} ? $name_to_id->{$name} : utils::get_random_fuzzer_id();
+                my $variables_file = "$results_dir/$name.txt";
+                push @{$grouped_targets->{max2}}, {
+                    id                => $id,
+                    name              => $name,
+                    experiment_name   => $experiment_name,
+                    subject           => $subject,
+                    version           => $version,
+                    waypoints         => "vvmax2",
+                    binary_context    => $name . ($options->{use_asan} ? "-asan" : ""),
+                    execution_context => $name . ($options->{use_asan} ? "-asan" : ""),
+                    variables_file    => $variables_file
+                };
 
-            open my $VVHASH, ">", $variables_file;
-            print $VVHASH "$filename:$function:$variable1Name:$variable1Line:$variable2Name:$variable2Line\n";
-            close $VVHASH;
+                $name_to_id->{$name} = $id if !$name_to_id->{$name};
+
+                open my $VVHASH, ">", $variables_file;
+                print $VVHASH "$filename:$function:$variable1Name:$variable1Line:$variable2Name:$variable2Line:$slot_size\n";
+                close $VVHASH;
+            }
         }
     }
 
@@ -977,7 +1115,10 @@ sub build_sandpuppy_targets {
     unshift @targets, $grouped_targets->{max} if $grouped_targets->{max};
 
     # Build all the targets!
+    my $num_targets = scalar @targets;
+    my $i = 1;
     foreach my $target (@targets) {
+        $log->info("[$i/$num_targets] Building $target->{name}" . ($options->{use_asan} ? "-asan" : ""));
         build(
             $experiment_name,
             $subject,
@@ -993,6 +1134,7 @@ sub build_sandpuppy_targets {
                 }
             }
         );
+        $i++;
     }
 
     YAML::XS::DumpFile($name_to_id_file, $name_to_id);

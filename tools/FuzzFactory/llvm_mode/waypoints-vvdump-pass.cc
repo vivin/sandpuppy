@@ -109,28 +109,6 @@ class VariableValueDumpFeedback : public BaseVariableValueFeedback<VariableValue
         irb.CreateCall(dumpVariableValueFunction, dumpVariableValueArgs);
     }
 
-    static GlobalVariable* getOrCreateGlobalStringVariable(Module* module, const std::string& variableName, const std::string& variableValue) {
-        GlobalVariable* globalVariable = module->getGlobalVariable(variableName);
-        if (!globalVariable) {
-            Constant* variableValueConstant = ConstantDataArray::getString(
-                module->getContext(),
-                variableValue
-            );
-
-            globalVariable = (GlobalVariable*) module->getOrInsertGlobal(
-                variableName,
-                variableValueConstant->getType()
-            );
-            globalVariable->setConstant(true);
-            globalVariable->setLinkage(GlobalValue::PrivateLinkage);
-            globalVariable->setUnnamedAddr(GlobalValue::UnnamedAddr::Global);
-            globalVariable->setAlignment(Align(1));
-            globalVariable->setInitializer(variableValueConstant);
-        }
-
-        return globalVariable;
-    }
-
     static std::string getFormatSpecifierForValue(Value* value) {
         auto *type = value->getType();
         if (type->isIntegerTy()) {

@@ -50,6 +50,7 @@
 #include <sys/time.h>
 #include <time.h>
 #include <math.h>
+#include <errno.h>
 
 /* This is a somewhat ugly hack for the experimental 'trace-pc-guard' mode.
    Basically, we need to make sure that the forkserver is initialized after
@@ -60,6 +61,8 @@
 #else
 #  define CONST_PRIO 1 // Let domain-specific front-ends initialize before forkserver
 #endif /* ^USE_TRACE_PC */
+
+#define MAX_FORK_ATTEMPTS 250
 
 /* Globals needed by the injected instrumentation. The __afl_area_initial region
    is used for instrumentation output before __afl_map_shm() has a chance to run.
@@ -84,6 +87,19 @@ static u8 vvdump_env_vars_available;
 static u8 vvdump_debug_mode;
 static bool vvdump_error_printed = false;
 static int vvdump_fd;
+
+void DEBUG2 (char const *fmt, ...) {
+    static FILE *f = NULL;
+    if (f == NULL) {
+        f= fopen("/home/vivin/rtdebuglog", "a");
+    }
+    va_list ap;
+    va_start(ap, fmt);
+    vfprintf(f, fmt, ap);
+    va_end(ap);
+    fflush(f);
+}
+
 
 /* SHM setup. */
 
@@ -159,7 +175,16 @@ static void __afl_start_forkserver(void) {
 
       /* Once woken up, create a clone of our process. */
 
+      // On docker/k8s, for whatever reason, fork fails if fuzzing is happening pretty fast. I'm guessing that old
+      // processes haven't had a chance to be cleaned up and so it might be hitting some limit. I am not sure which
+      // one, because they all seem fine and unlikely to be exceeded by afl. However the fork eventually succeeds and
+      // so we just need to keep trying. This is obviously a very dirty hack.
       child_pid = fork();
+      while (child_pid < 0 && errno == EAGAIN) {
+          nanosleep((const struct timespec[]){{0, 50000000L}}, NULL);
+          child_pid = fork();
+      }
+
       if (child_pid < 0) _exit(1);
 
       /* In child process: close fds, resume execution. */
@@ -414,6 +439,20 @@ u32 __shift_add(u32 old_value, u32 shift_width, u32 new_value) {
 
 void __print_val(u32 value) {
     printf("the value: %d\n", value);
+}
+
+void __print_hash_val(const char* filename, const char* function, const char* var1Name, int var1Line, const char* var2Name, int var2Line, u32 hash) {
+    printf(
+        "In %s::%s, the hashed value of %s:%d and %s:%d is %d\n",
+        filename, function, var1Name, var1Line, var2Name, var2Line, hash
+    );
+}
+
+void __print_max2_vals(const char* filename, const char* function, const char* var1Name, int var1Line, int var1Val, int slotNumber, const char* var2Name, int var2Line, int var2Val) {
+    printf(
+        "In %s::%s, maximizing value %d of %s:%d with respect to value %d (slot %d) of %s:%d\n",
+        filename, function, var1Val, var1Name, var1Line, var2Val, slotNumber, var2Name, var2Line
+    );
 }
 
 uint64_t __hash_int(uint64_t x) {

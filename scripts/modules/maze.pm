@@ -26,18 +26,19 @@ sub build {
 
     my $binary_base = "$workspace/binaries";
     my $binary_dir =  "$binary_base/$binary_context";
-    my $binary_name = "maze";
+    my $binary_name = $options->{binary_name};
     utils::create_binary_dir({
         binary_dir     => $binary_dir,
         artifact_names => [$binary_name],
         backup         => $options->{backup}
     });
 
+    my $source_name = $options->{source_name};
     my $FUZZ_FACTORY = "$TOOLS/FuzzFactory";
     my $build_command = "$FUZZ_FACTORY/afl-clang-fast -fno-inline-functions -fno-discard-value-names -fno-unroll-loops"
         . ($options->{m32} ? " -m32" : "")
         . utils::build_options_string($options->{clang_waypoint_options})
-        . " maze.c -o $binary_dir/$binary_name";
+        . " $source_name -o $binary_dir/$binary_name";
 
     if ($binary_context =~ /-asan/) {
         $ENV{"AFL_USE_ASAN"} = 1;
@@ -79,7 +80,6 @@ sub get_fuzz_command {
         $binary_context,
         $exec_context,
         utils::merge($options, {
-            binary_name     => "maze",
             hang_timeout    => $waypoints =~ /vvdump/ ? 9000 : 0,
             no_splicing     => $waypoints =~ /vvdump/ ? 1 : 0,
             seeds_directory => "$RESOURCES/seeds/maze"

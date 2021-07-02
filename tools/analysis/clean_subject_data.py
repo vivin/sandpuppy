@@ -84,10 +84,10 @@ def main(experiment: str, subject: str, binary: str = None, execution: str = Non
 
             print("")
 
-        print(f"Deleting binary {_binary}...")
-        cassandra_trace_db.delete_experiment_subject_binary(session, experiment, subject, _binary)
-
-        print("")
+        if execution is None:
+            print(f"Deleting binary {_binary}...")
+            cassandra_trace_db.delete_experiment_subject_binary(session, experiment, subject, _binary)
+            print("")
 
     if binary is None:
         print(f"Deleting subject {subject}...")

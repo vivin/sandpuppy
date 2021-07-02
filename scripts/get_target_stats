@@ -7,7 +7,7 @@ use YAML::XS;
 my $experiment = $ARGV[0];
 my $subject = $ARGV[1];
 
-my $results_dir = "/mnt/kube-nfs/vivin/$experiment/$subject/results";
+my $results_dir = "/mnt/vivin-nfs/vivin/$experiment/$subject/results";
 my $id_to_pod_name_and_target_file = "$results_dir/id_to_pod_name_and_target.yml";
 my $id_to_pod_name_and_target = YAML::XS::LoadFile($id_to_pod_name_and_target_file);
 

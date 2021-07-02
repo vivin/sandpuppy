@@ -32,6 +32,7 @@ import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.LongAdder;
 
@@ -54,6 +55,7 @@ public class TraceProcessingService {
     private final ApplicationContext applicationContext;
     private final CassandraRepository cassandra;
     private final ExecutorService pipeReaderExecutor;
+    private final ScheduledExecutorService loggerExecutor;
     private final ExecutorService processTraceExecutor;
     private final ExecutorService traceItemInsertionExecutor;
 
@@ -64,14 +66,20 @@ public class TraceProcessingService {
 
     private final Metrics metrics = new Metrics();
 
+    private final Map<String, Long> lastProcessedTraceItems = new HashMap<>();
+    private long lastLoggedTime;
+    private boolean showProgress = false;
+
     @Autowired
     public TraceProcessingService(ApplicationContext applicationContext, CassandraRepository cassandra) throws IOException {
         this.applicationContext = applicationContext;
         this.cassandra = cassandra;
         this.pipeReaderExecutor = Executors.newSingleThreadExecutor();
+        this.loggerExecutor = Executors.newSingleThreadScheduledExecutor();
         this.processTraceExecutor = Executors.newFixedThreadPool(PROCESS_TRACE_EXECUTOR_NUM_THREADS);
         this.traceItemInsertionExecutor = Executors.newFixedThreadPool(TRACE_ITEM_EXECUTOR_NUM_THREADS);
         this.dataDirectory = Files.createTempDirectory("vvdump-data");
+        this.lastProcessedTraceItems.put("value", 0L);
     }
 
     @PostConstruct
@@ -105,13 +113,15 @@ public class TraceProcessingService {
     private void readPipe() {
         long start = -1;
 
+        this.lastLoggedTime = System.currentTimeMillis();
+        loggerExecutor.scheduleAtFixedRate(this::logStatistics, 0, 1, TimeUnit.SECONDS);
+
         try {
             // Need to open in read-write mode because the fuzzer is continually starting up processes and shutting
             // them down, meaning that there are windows of time where there are no writers. If opened in read mode
             // we will get an EOF when the writer goes away.
             //var pipe = new RandomAccessFile(namedPipePath, "rw");
             var pipe = new BufferedReader(new FileReader(namedPipePath), 8192 * 8);
-            long lastLoggedTime = System.currentTimeMillis();
 
             String line;
             while ((line = pipe.readLine()) != null && !END_TRACE_MARKER.equals(line)) {
@@ -154,12 +164,6 @@ public class TraceProcessingService {
                 } else {
                     log.warn("Malformed line: {}", line);
                 }
-
-                long elapsed = System.currentTimeMillis() - lastLoggedTime;
-                if (elapsed > 1000) {
-                    logStatistics(false, elapsed);
-                    lastLoggedTime = System.currentTimeMillis();
-                }
             }
         } catch (FileNotFoundException e) {
             throw new UncheckedIOException("Could not find named pipe", e);
@@ -169,6 +173,7 @@ public class TraceProcessingService {
         }
 
         log.info("Fuzzer has shut down. No more incoming traces.");
+        this.showProgress = true;
 
         log.info("Shutting down process-trace executor and waiting for termination...");
         shutdownExecutorAndMonitor(processTraceExecutor);
@@ -177,6 +182,8 @@ public class TraceProcessingService {
         log.info("Shutting down trace-item insertion executor and waiting for termination...");
         shutdownExecutorAndMonitor(traceItemInsertionExecutor);
         log.info("Trace-item insertion execution has shutdown.");
+
+        shutdownExecutorAndMonitor(loggerExecutor);
 
         long totalTime = System.currentTimeMillis() - start;
         double totalTraceItems = Long.valueOf(metrics.getTotalTraceItems()).doubleValue();
@@ -191,39 +198,39 @@ public class TraceProcessingService {
 
     private void shutdownExecutorAndMonitor(ExecutorService executor) {
         executor.shutdown();
-        Map<String, Long> lastLoggedTimeMap = new HashMap<>();
-        lastLoggedTimeMap.put("lastLoggedTime", System.currentTimeMillis());
         await()
             .atMost(Duration.ofHours(3))
             .with().pollInterval(Duration.ofSeconds(1))
-            .until(() -> {
-                logStatistics(true, System.currentTimeMillis() - lastLoggedTimeMap.get("lastLoggedTime"));
-                lastLoggedTimeMap.put("lastLoggedTime", System.currentTimeMillis());
-                return executor.isTerminated();
-            });
+            .until(executor::isTerminated);
     }
 
-    private void logStatistics(boolean showProgress, long elapsed) {
-        long start = System.currentTimeMillis();
-        long lastProcessedTraceItems = metrics.getLastProcessedTraceItems();
-        long processedTraceItems = metrics.getProcessedTraceItems();
-        elapsed += (System.currentTimeMillis() - start);
-
+    private void logStatistics() {
         long totalTraceItems = metrics.getTotalTraceItems();
-        long remainingTraceItems = totalTraceItems - processedTraceItems;
-
         long processingTraceItems = metrics.getProcessingTraceItems();
+
+        long lastProcessedTraceItems = this.lastProcessedTraceItems.get("value");
+        long processedTraceItems = metrics.getProcessedTraceItems();
+        this.lastProcessedTraceItems.put("value", processedTraceItems);
+
+        long remainingTraceItems = totalTraceItems - processedTraceItems;
+        this.lastLoggedTime = System.currentTimeMillis();
 
         long totalProcessTraces = metrics.getTotalProcessTraces();
         long processedProcessTraces = metrics.getProcessedProcessTraces();
         long remainingProcessTraces = totalProcessTraces - processedProcessTraces;
 
-        double numProcessed = Long.valueOf(processedTraceItems - lastProcessedTraceItems).doubleValue();
-        if (numProcessed > 0) {
-            metrics.recordTraceProcessingTime(Long.valueOf(elapsed).doubleValue() / numProcessed);
+        double newlyProcessedTraceItems = Long.valueOf(processedTraceItems - lastProcessedTraceItems).doubleValue();
+        if (newlyProcessedTraceItems > 0) {
+            metrics.recordTraceProcessingTime(
+                Long.valueOf(System.currentTimeMillis() - lastLoggedTime).doubleValue() / newlyProcessedTraceItems
+            );
         }
 
         double averageProcessingTimePerTrace = metrics.getTraceProcessingTimes().getMean();
+        if (Double.isNaN(averageProcessingTimePerTrace)) {
+            averageProcessingTimePerTrace = 0;
+        }
+
         long estimatedTimeRemaining = Math.round((averageProcessingTimePerTrace * Long.valueOf(remainingTraceItems).doubleValue()) / 1000);
 
         if (showProgress) {
@@ -271,7 +278,6 @@ public class TraceProcessingService {
     public static class Metrics {
         private final LongAdder totalTraceItems = new LongAdder();
         private final LongAdder processingTraceItems = new LongAdder();
-        private long lastProcessedTraceItems = 0;
         private final LongAdder processedTraceItems = new LongAdder();
 
         private final LongAdder totalProcessTraces = new LongAdder();
@@ -280,7 +286,7 @@ public class TraceProcessingService {
         private final DescriptiveStatistics traceProcessingTimes = new DescriptiveStatistics();
 
         public Metrics() {
-            traceProcessingTimes.setWindowSize(60);
+            traceProcessingTimes.setWindowSize(1000);
         }
 
         public long getTotalTraceItems() {
@@ -291,13 +297,8 @@ public class TraceProcessingService {
             return processingTraceItems.longValue();
         }
 
-        public long getLastProcessedTraceItems() {
-            return lastProcessedTraceItems;
-        }
-
         public long getProcessedTraceItems() {
-            lastProcessedTraceItems = processedTraceItems.longValue();
-            return lastProcessedTraceItems;
+            return processedTraceItems.longValue();
         }
 
         public long getTotalProcessTraces() {

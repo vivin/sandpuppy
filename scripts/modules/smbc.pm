@@ -65,7 +65,7 @@ sub build {
         $ENV{"WAYPOINTS"} = $waypoints;
     }
 
-    system ("make");
+    system ("make -j12");
     if ($? != 0) {
         delete $ENV{"WAYPOINTS"};
         delete $ENV{"AFL_USE_ASAN"};
@@ -96,10 +96,10 @@ sub get_fuzz_command {
         $binary_context,
         $exec_context,
         utils::merge($options, {
-            binary_name      => "smbc",
             binary_arguments => "0",
-            hang_timeout     => $waypoints =~ /vvdump/ ? "90000+" : 0,
-            no_splicing     => $waypoints =~ /vvdump/ ? 1 : 0,
+            hang_timeout     => "100000+", # $waypoints =~ /vvdump/ ? "100000+" : 0,
+            slow_target      => $waypoints =~ /vvdump/,
+            no_arithmetic    => $waypoints =~ /vvdump/,
             seeds_directory  => "$RESOURCES/seeds/smbc"
         })
     );

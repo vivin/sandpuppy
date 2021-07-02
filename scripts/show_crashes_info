@@ -2,7 +2,7 @@
 EXP=$1
 SUB=$2
 BIN=$3
-SYNC_DIR="/mnt/kube-nfs/vivin/$EXP/$SUB/results/sandpuppy-sync"
+SYNC_DIR="/mnt/vivin-nfs/vivin/$EXP/$SUB/results/sandpuppy-sync"
 BIN_DIR="/home/vivin/Projects/phd/workspace/$EXP/$SUB/binaries"
 if [ ! -d "$BIN_DIR/sandpuppy-main" ]; then
     BINARY="$BIN_DIR/sandpuppy-main-asan/$BIN"

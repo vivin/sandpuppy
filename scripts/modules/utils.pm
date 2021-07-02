@@ -113,6 +113,7 @@ sub build_fuzz_command {
     my $exit_when_done = $options->{exit_when_done};
     my $preload = $options->{preload};
     my $use_asan = $options->{use_asan};
+    my $use_kubernetes = $options->{use_kubernetes};
     my $asan_memory_limit = $options->{asan_memory_limit};
     my $hang_timeout = $options->{hang_timeout};
     my $non_deterministic = $options->{non_deterministic};
@@ -171,6 +172,12 @@ sub build_fuzz_command {
         die "Could not find binary for binary context $binary_context at $binary";
     }
 
+    # If we are using kubernetes then we copy the binary from the shared mount to a local bin directory in the
+    # container. So let us run that instead (performance is better).
+    if ($use_kubernetes) {
+        $binary = "/home/vivin/Projects/phd/bin/$binary_context/$binary_name";
+    }
+
     my $FUZZ_FACTORY = "$TOOLS/FuzzFactory";
     my $fuzz_command = "$FUZZ_FACTORY/afl-fuzz";
     if ($waypoints ne "none") {
@@ -212,7 +219,7 @@ sub build_fuzz_command {
         $fuzz_command .= " -d";
     }
 
-    $fuzz_command .= " $binary";
+    $fuzz_command .= " -- $binary";
 
     # Extra arguments to binary. Can contain @@ to tell AFL to provide input as file name
     if (defined $binary_arguments) {

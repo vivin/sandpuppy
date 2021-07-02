@@ -158,7 +158,6 @@ sub get_fuzz_command {
         $binary_context,
         $exec_context,
         utils::merge($options, {
-            binary_name       => "readtpmc",
           # preload           => $binary_context =~ /-asan/ ? utils::get_clang_asan_dso() : 0,
             asan_memory_limit => 20971597,
             hang_timeout      => $waypoints =~ /vvdump/ ? "5000+" : 0,

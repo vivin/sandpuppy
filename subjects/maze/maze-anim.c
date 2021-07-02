@@ -1,11 +1,13 @@
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <stdbool.h>
+#include <unistd.h>
 
-const int MAZE_ROWS = 16;
-const int MAZE_COLUMNS = 32;
+const int MAZE_ROWS_1 = 16;
+const int MAZE_COLUMNS_1 = 32;
 
-const char* maze[] = {
+const char* maze_1[] = {
     "+-+---------+------------------+",
     "| |         |                  |",
     "| +------- -+ +-+ +------------+",
@@ -24,7 +26,54 @@ const char* maze[] = {
     "+------------------------------+"
 };
 
+const int MAZE_ROWS_2 = 13;
+const int MAZE_COLUMNS_2 = 17;
+
+const char* maze_2[] = {
+    "+-+-------------+",
+    "| |             |",
+    "| | +------ ----+",
+    "|   |           |",
+    "+---+-- --------+",
+    "|               |",
+    "+ +-------------+",
+    "| |       |   |*|",
+    "| | ----+ | | | |",
+    "| |     |   |   |",
+    "| +---- +-------+",
+    "|               |",
+    "+---------------+"
+};
+
+const int MAZE_ROWS_3 = 7;
+const int MAZE_COLUMNS_3 = 11;
+
+const char* maze_3[] = {
+    "+-+---+---+",
+    "| |     |*|",
+    "| | --+ | |",
+    "| |   | | |",
+    "| +-- | | |",
+    "|     |   |",
+    "+-----+---+"
+};
+
+const char* target_name = NULL;
+const char* pod_name = NULL;
+const char* filename = NULL;
+
+int MAZE_ROWS = 0;
+int MAZE_COLUMNS = 0;
+const char** maze = NULL;
+const char* maze_name = NULL;
+
 void print_maze(int player_row, int player_column) {
+    printf("\033[0;0H");
+    printf("Target    : %s\n", target_name);
+    printf("Pod       : %s\n", pod_name);
+    printf("Maze      : %s\n", maze_name);
+    printf("Input file: %s\n\n", filename);
+
     for (int i = 0; i < MAZE_ROWS; i++) {
         for (int j = 0; j < MAZE_COLUMNS; j++) {
             if (i == player_row && j == player_column) {
@@ -49,8 +98,50 @@ bool found_target(const int* row, const int* column) {
 }
 
 int main(int argc, char* argv[]) {
-    int player_row = 14;
-    int player_col = 13;
+    if (argc < 5) {
+        printf("Syntax: %s <target-name> <pod-name> <input-filename> <maze-type:1|2|3>\n", argv[0]);
+        return 1;
+    }
+
+    target_name = argv[1];
+    pod_name = argv[2];
+    filename = argv[3];
+
+    int player_row;
+    int player_col;
+
+    char *p;
+    int maze_type = (int) strtol(argv[4], &p, 10);
+    if (maze_type == 1) {
+        MAZE_ROWS = MAZE_ROWS_1;
+        MAZE_COLUMNS = MAZE_COLUMNS_1;
+        maze = maze_1;
+        maze_name = "maze";
+
+        player_row = 14;
+        player_col = 13;
+    } else if (maze_type == 2) {
+        MAZE_ROWS = MAZE_ROWS_2;
+        MAZE_COLUMNS = MAZE_COLUMNS_2;
+        maze = maze_2;
+        maze_name = "maze_ijon";
+
+        player_row = 1;
+        player_col = 1;
+    } else if (maze_type == 3) {
+        MAZE_ROWS = MAZE_ROWS_3;
+        MAZE_COLUMNS = MAZE_COLUMNS_3;
+        maze = maze_3;
+        maze_name = "maze_klee";
+
+        player_row = 1;
+        player_col = 1;
+    } else {
+        printf("Unknown maze type %d\n", maze_type);
+        return 1;
+    }
+
+    printf("\033[2J\033[0;0H");
 
     int delta_row;
     int delta_col;
@@ -64,6 +155,7 @@ int main(int argc, char* argv[]) {
     char option;
     bool error = false;
     bool done = false;
+    print_maze(player_row, player_col);
     while (!done && !error) {
         //print_maze(player_row, player_col);
         printf("u, d, l, or r: ");
@@ -138,13 +230,15 @@ int main(int argc, char* argv[]) {
                     done = true;
                 }
             } else {
-                printf("You smashed into a wall and died!\n");
+                printf("You smashed into the wall!\n");
                 done = true;
             }
 
-            printf("\n");
+            print_maze(player_row, player_col);
+            usleep(62500);
         }
     }
 
+    usleep(1000 * 1000);
     return error ? 1 : 0;
 }

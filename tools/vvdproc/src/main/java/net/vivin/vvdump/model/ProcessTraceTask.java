@@ -1,5 +1,6 @@
 package net.vivin.vvdump.model;
 
+import static org.awaitility.Awaitility.await;
 import static net.vivin.vvdump.service.TraceProcessingService.Metrics;
 
 import lombok.NonNull;
@@ -14,7 +15,9 @@ import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.io.UncheckedIOException;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.List;
+import java.util.Random;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -25,6 +28,8 @@ import java.util.zip.GZIPOutputStream;
 @Slf4j
 public class ProcessTraceTask implements Runnable {
     private ProcessTrace processTrace = null;
+
+    private final int traceSize;
 
     @NonNull
     private final Path savedProcessTracePath;
@@ -39,11 +44,13 @@ public class ProcessTraceTask implements Runnable {
     private final Metrics metrics;
 
     public ProcessTraceTask(ProcessTrace processTrace, @NonNull Path dataDirectory, @NonNull ExecutorService executor, @NonNull CassandraRepository cassandra, @NonNull Metrics metrics) {
+
+        this.traceSize = processTrace.size();
         savedProcessTracePath = dataDirectory.resolve(
             String.format(
                 "process-trace-%s-%d.sgz",
                 RandomStringUtils.randomAlphabetic(13),
-                processTrace.getTraceItems().size()
+                processTrace.size()
             )
         );
 
@@ -58,7 +65,6 @@ public class ProcessTraceTask implements Runnable {
             final var objectOutputStream = new ObjectOutputStream(gzipOutputStream);
 
             objectOutputStream.writeObject(processTrace);
-
             objectOutputStream.close();
         } catch (IOException e) {
             throw new UncheckedIOException(e);
@@ -113,6 +119,7 @@ public class ProcessTraceTask implements Runnable {
         ).collect(Collectors.toList());
 
         try {
+            processTrace = null;
             executor.invokeAll(callables);
             metrics.incrementProcessedProcessTraces();
         } catch (InterruptedException e) {

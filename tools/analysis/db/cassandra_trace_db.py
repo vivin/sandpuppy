@@ -158,8 +158,8 @@ def retrieve_variable_value_traces_information(variable, session, experiment, su
     traces_info = {
         'traces': [],
         'modified_lines': set(),
-        'variable_values': [],
-        'modified_line_values': {}
+        'variable_values': []
+        #'modified_line_values': {}
     }
 
     traces_by_pid = {}
@@ -190,10 +190,10 @@ def retrieve_variable_value_traces_information(variable, session, experiment, su
         traces_info['modified_lines'].add(modified_line)
         traces_info['variable_values'].append(variable_value)
 
-        if modified_line not in traces_info['modified_line_values']:
-            traces_info['modified_line_values'][modified_line] = []
-
-        traces_info['modified_line_values'][modified_line].append(variable_value)
+        # if modified_line not in traces_info['modified_line_values']:
+        #     traces_info['modified_line_values'][modified_line] = []
+        #
+        # traces_info['modified_line_values'][modified_line].append(variable_value)
 
     # Need to wrap with list(...) otherwise stupid multiprocessing doesn't work
     traces_info['traces'] = list(traces_by_pid.values())

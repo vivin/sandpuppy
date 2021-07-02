@@ -96,5 +96,11 @@ add_executable(rarebug
 
 add_executable(maze
         subjects/maze/maze.c
-        subjects/maze/maze-disp.c
+        subjects/maze/maze-anim.c
         subjects/maze/maze-phash.c)
+
+add_executable(maze_ijon
+        subjects/maze/maze_ijon.c)
+
+add_executable(maze_klee
+        subjects/maze/maze_klee.c)

@@ -1,6 +1,6 @@
 #!/bin/bash
 
-INPUT_FILES_DIR=/mnt/kube-nfs/vivin/smartdsf/maze/results/sandpuppy-sync/$1/queue
+INPUT_FILES_DIR=/mnt/vivin-nfs/vivin/smartdsf/maze/results/sandpuppy-sync/$1/queue
 CMD="cat $INPUT_FILES_DIR/% | workspace/smartdsf/maze/binaries/sandpuppy-vvhash-maze.c\:main\:player_col\:53\,player_row\:52/maze \"%\" | grep . > scratch/hashes/%.hash; sleep 1"
 
 FILE_REGEX=$2

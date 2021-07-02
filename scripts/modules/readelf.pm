@@ -118,7 +118,6 @@ sub get_fuzz_command {
         $binary_context,
         $exec_context,
         utils::merge($options, {
-            binary_name      => "readelf",
             asan_memory_limit => 20971597,
             hang_timeout     => $waypoints =~ /vvdump/ ? 600 : 0,
             no_splicing     => $waypoints =~ /vvdump/ ? 1 : 0,

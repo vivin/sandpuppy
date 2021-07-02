@@ -7,6 +7,7 @@
 #include <iostream>
 #include <regex>
 #include <set>
+#include <random>
 
 #ifndef BASEVVFEEDBACK_H
 #define BASEVVFEEDBACK_H
@@ -26,6 +27,23 @@ std::vector<std::string> split(const std::string &s, char delimiter) {
     std::vector<std::string> elements;
     split(s, delimiter, std::back_inserter(elements));
     return elements;
+}
+
+// from: https://stackoverflow.com/a/440240/263004
+// adapted to use C++ random
+std::string gen_random(const int len) {
+    static std::minstd_rand simple_rand((unsigned) time(nullptr) * getpid());
+    static const char alphanum[] =
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+        "abcdefghijklmnopqrstuvwxyz";
+
+    std::string tmp_s;
+    tmp_s.reserve(len);
+
+    for (int i = 0; i < len; ++i)
+        tmp_s += alphanum[simple_rand() % (sizeof(alphanum) - 1)];
+
+    return tmp_s;
 }
 
 class StructInfo {
@@ -409,6 +427,28 @@ protected:
         }
 
         return irb.CreateAlignedLoad(DomainFeedback<V>::getIntTy(bitWidth), load, store->getAlign());
+    }
+
+    static GlobalVariable* getOrCreateGlobalStringVariable(Module* module, const std::string& variableName, const std::string& variableValue) {
+        GlobalVariable* globalVariable = module->getGlobalVariable(variableName);
+        if (!globalVariable) {
+            Constant* variableValueConstant = ConstantDataArray::getString(
+                module->getContext(),
+                variableValue
+            );
+
+            globalVariable = (GlobalVariable*) module->getOrInsertGlobal(
+                variableName,
+                variableValueConstant->getType()
+            );
+            globalVariable->setConstant(true);
+            globalVariable->setLinkage(GlobalValue::PrivateLinkage);
+            globalVariable->setUnnamedAddr(GlobalValue::UnnamedAddr::Global);
+            globalVariable->setAlignment(Align(1));
+            globalVariable->setInitializer(variableValueConstant);
+        }
+
+        return globalVariable;
     }
 
     virtual bool shouldProcess(llvm::Function &function) = 0;

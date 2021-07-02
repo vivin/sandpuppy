@@ -6,14 +6,15 @@
 using namespace fuzzfactory;
 
 class TwoVariablesMaximizationConfiguration {
-    const int NUM_COMPONENTS = 6;
+    const int NUM_COMPONENTS = 7;
     enum Components {
         filename = 0,
         functionName = 1,
         variableName1 = 2,
         declaredLine1 = 3,
         variableName2 = 4,
-        declaredLine2 = 5
+        declaredLine2 = 5,
+        slotSz = 6
     };
 
     std::string targetedFilename;
@@ -24,6 +25,8 @@ class TwoVariablesMaximizationConfiguration {
 
     std::string secondVariable;
     int secondDeclaredLine = 0;
+
+    int slotSize = 0;
 
     void initializeFromVariablesFile() {
         std::ifstream variablesFile(VariablesFile);
@@ -45,6 +48,8 @@ class TwoVariablesMaximizationConfiguration {
 
                 secondVariable = std::move(components[Components::variableName2]);
                 secondDeclaredLine = std::stoi(components[Components::declaredLine2]);
+
+                slotSize = std::stoi(components[Components::slotSz]);
             } else if (!components.empty()) {
                 std::cerr << "Invalid number of components: " << components.size() << "\n";
                 error = true;
@@ -96,6 +101,10 @@ public:
     int getSecondDeclaredLine() const {
         return secondDeclaredLine;
     }
+
+    int getSlotSize() const {
+        return slotSize;
+    }
 };
 
 /**
@@ -109,6 +118,7 @@ class TwoVariablesValueMaximizationFeedback : public BaseVariableValueFeedback<T
     const TwoVariablesMaximizationConfiguration configuration;
 
     Function *dsfSetFunction;
+    Function *printMax2ValsFunction;
 
     void instrument(StoreInst *storeInstVariable1, StoreInst *storeInstVariable2, bool variable1ModifiedFirst) {
 
@@ -157,9 +167,42 @@ class TwoVariablesValueMaximizationFeedback : public BaseVariableValueFeedback<T
             valueVariable2 = irb.CreateTrunc(valueVariable2, Int32Ty);
         }
 
-        // Maximize value of variable2 with respect to variable1. Meaning, we keep track of the max value of variable2
-        // for every value of variable1
-        irb.CreateCall(dsfSetFunction, { DsfMapVariable, valueVariable1, valueVariable2 });
+        // Maximize value of variable1 with respect to variable2. Meaning, we keep track of the max value of variable1
+        // for every slotted value of variable2. This means that we need to first divide the value of variable2 by the
+        // provided slot size to get the correct slot number.
+        auto *slotNumber = irb.CreateUDiv(valueVariable2, getConst(configuration.getSlotSize()));
+        irb.CreateCall(dsfSetFunction, { DsfMapVariable, slotNumber, valueVariable1 });
+
+        /*
+        auto *module = storeInstVariable1->getFunction()->getParent();
+        irb.CreateCall(printMax2ValsFunction, {
+            getOrCreateGlobalStringVariable(
+                module,
+                gen_random(16),
+                configuration.getTargetedFilename()
+            ),
+            getOrCreateGlobalStringVariable(
+                module,
+                gen_random(16),
+                configuration.getTargetedFunctionName()
+            ),
+            getOrCreateGlobalStringVariable(
+                module,
+                gen_random(16),
+                variable1Name
+            ),
+            getConst(configuration.getFirstDeclaredLine()),
+            valueVariable1,
+            slotNumber,
+            getOrCreateGlobalStringVariable(
+                module,
+                gen_random(16),
+                variable2Name
+            ),
+            getConst(configuration.getSecondDeclaredLine()),
+            valueVariable2
+        });
+        */
     }
 
 protected:
@@ -222,6 +265,21 @@ public:
                 getIntPtrTy(32),
                 Int32Ty,
                 Int32Ty
+            }
+        );
+        printMax2ValsFunction = this->resolveFunction(
+            "__print_max2_vals",
+            VoidTy,
+            {
+                this->getIntTy(8),
+                this->getIntTy(8),
+                this->getIntTy(8),
+                this->getIntTy(8),
+                this->getIntTy(8),
+                this->getIntTy(8),
+                this->getIntTy(8),
+                this->getIntTy(8),
+                this->getIntTy(8)
             }
         );
     }

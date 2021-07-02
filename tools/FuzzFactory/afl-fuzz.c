@@ -2453,6 +2453,18 @@ EXP_ST void init_forkserver(char** argv) {
 
 }
 
+void DEBUG3 (char const *fmt, ...) {
+    static FILE *f = NULL;
+    if (f == NULL) {
+        f= fopen("/home/vivin/rtdebuglog", "a");
+    }
+    va_list ap;
+    va_start(ap, fmt);
+    vfprintf(f, fmt, ap);
+    va_end(ap);
+    fflush(f);
+}
+
 
 /* Execute target application, monitoring for timeouts. Return status
    information. The called program will update trace_bits[]. */

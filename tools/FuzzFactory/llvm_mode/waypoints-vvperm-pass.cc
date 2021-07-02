@@ -151,7 +151,7 @@ class VariableValuePermuteFeedback : public BaseVariableValueFeedback<VariableVa
         // Load the current value of the global variable
         Value *permutationVariableValue = irb.CreateAlignedLoad(permutationVariable, MaybeAlign(4));
 
-        //irb.CreateCall(printValFunction, { permutationVariableValue });
+        //irb.CreateCall(printHashValFunction, { permutationVariableValue });
 
         // If value is greater than 32 bits, truncate.
         if (value->getType()->getIntegerBitWidth() > 32) {

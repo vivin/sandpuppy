@@ -2,26 +2,17 @@
 #include <string.h>
 #include <stdbool.h>
 
-const int MAZE_ROWS = 16;
-const int MAZE_COLUMNS = 32;
+const int MAZE_ROWS = 7;
+const int MAZE_COLUMNS = 11;
 
 const char* maze[] = {
-    "+-+---------+------------------+",
-    "| |         |                  |",
-    "| +------- -+ +-+ +------------+",
-    "|             | | |            |",
-    "| +-----------+ | | +----+ | | |",
-    "| |           | | | +----+ | | |",
-    "| +---------+ | | |        | | |",
-    "|           | | | +------+ | | |",
-    "| +---------+ | |       *| | | |",
-    "| +---------+ | +--------+ | | |",
-    "|           | |            | | |",
-    "| ----------+ +----------- | | |",
-    "|           | |            |   |",
-    "| ----------+ +----------- +---+",
-    "|                              |",
-    "+------------------------------+"
+    "+-+---+---+",
+    "| |     |*|",
+    "| | --+ | |",
+    "| |   | | |",
+    "| +-- | | |",
+    "|     |   |",
+    "+-----+---+"
 };
 
 void print_maze(int player_row, int player_column) {
@@ -49,8 +40,8 @@ bool found_target(const int* row, const int* column) {
 }
 
 int main(int argc, char* argv[]) {
-    int player_row = 14;
-    int player_col = 13;
+    int player_row = 1;
+    int player_col = 1;
 
     int delta_row;
     int delta_col;

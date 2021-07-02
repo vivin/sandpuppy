@@ -111,7 +111,7 @@ class VariableValueHashFeedback : public BaseVariableValueFeedback<VariableValue
 
     Function *dsfSetFunction;
     Function *hashIntsFunction;
-    Function *printValFunction;
+    Function *printHashValFunction;
 
     void instrument(StoreInst *storeInstVariable1, StoreInst *storeInstVariable2, bool variable1ModifiedFirst) {
 
@@ -161,9 +161,35 @@ class VariableValueHashFeedback : public BaseVariableValueFeedback<VariableValue
         }
 
         auto *hash = irb.CreateCall(hashIntsFunction, { valueVariable1, valueVariable2 });
-        //irb.CreateCall(printValFunction, { hash });
-
         irb.CreateCall(dsfSetFunction, { DsfMapVariable, hash, getConst(1) });
+        /*
+        auto *module = storeInstVariable1->getFunction()->getParent();
+        irb.CreateCall(printHashValFunction, {
+            getOrCreateGlobalStringVariable(
+                module,
+                gen_random(16),
+                configuration.getTargetedFilename()
+            ),
+            getOrCreateGlobalStringVariable(
+                module,
+                gen_random(16),
+                configuration.getTargetedFunctionName()
+            ),
+            getOrCreateGlobalStringVariable(
+                module,
+                gen_random(16),
+                variable1Name
+            ),
+            getConst(configuration.getFirstDeclaredLine()),
+            getOrCreateGlobalStringVariable(
+                module,
+                gen_random(16),
+                variable2Name
+            ),
+            getConst(configuration.getSecondDeclaredLine()),
+            hash
+        });
+        */
     }
 
 protected:
@@ -236,10 +262,16 @@ public:
                 Int32Ty,
             }
         );
-        printValFunction = this->resolveFunction(
-            "__print_val",
+        printHashValFunction = this->resolveFunction(
+            "__print_hash_val",
             VoidTy,
             {
+                this->getIntTy(8),
+                this->getIntTy(8),
+                this->getIntTy(8),
+                this->getIntTy(8),
+                this->getIntTy(8),
+                this->getIntTy(8),
                 Int32Ty
             }
         );

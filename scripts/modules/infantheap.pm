@@ -77,9 +77,8 @@ sub get_fuzz_command {
         $binary_context,
         $exec_context,
         utils::merge($options, {
-            binary_name     => "infantheap",
-            no_splicing     => $waypoints =~ /vvdump/ ? 1 : 0,
-            seeds_directory => "$RESOURCES/seeds/infantheap/non-crashing"
+            no_splicing       => $waypoints =~ /vvdump/ ? 1 : 0,
+            seeds_directory   => "$RESOURCES/seeds/infantheap"
         })
     );
 }
