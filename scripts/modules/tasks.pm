@@ -43,7 +43,7 @@ my $subjects = {
             fuzz        => create_fuzz_task(\&vctestbed::get_fuzz_command),
             pod_command => create_pod_command_task(\&vctestbed::get_fuzz_command)
         },
-        fuzz_time   => 1200
+        fuzz_time   => 600
     },
     infantheap => {
         binary_name => "infantheap",
