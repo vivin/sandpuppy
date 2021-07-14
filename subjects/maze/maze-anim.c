@@ -235,10 +235,9 @@ int main(int argc, char* argv[]) {
             }
 
             print_maze(player_row, player_col);
-            usleep(62500);
+            usleep(31250);
         }
     }
 
-    usleep(1000 * 1000);
     return error ? 1 : 0;
 }

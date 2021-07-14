@@ -8,4 +8,4 @@ fi;
 EXPERIMENT=$1
 SUBJECT=$2
 
-pod_names | grep $EXPERIMENT | grep $SUBJECT | pods_delete
+pod_names | grep $EXPERIMENT | grep $SUBJECT | xargs kubectl delete pod --grace-period=0 --force

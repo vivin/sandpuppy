@@ -10,6 +10,7 @@ use POSIX;
 use YAML::XS;
 use Data::Dumper;
 
+use vctestbed;
 use utils;
 use display;
 use infantheap;
@@ -35,6 +36,15 @@ my $SANDPUPPY_MAIN_TARGET_NAME = "sandpuppy-main";
 my $SANDPUPPY_SYNC_DIRECTORY = "sandpuppy-sync";
 
 my $subjects = {
+    vctestbed => {
+        binary_name => "vctestbed",
+        tasks       => {
+            build       => \&vctestbed::build,
+            fuzz        => create_fuzz_task(\&vctestbed::get_fuzz_command),
+            pod_command => create_pod_command_task(\&vctestbed::get_fuzz_command)
+        },
+        fuzz_time   => 1200
+    },
     infantheap => {
         binary_name => "infantheap",
         tasks       => {
@@ -473,14 +483,14 @@ sub sandpuppy_fuzz_k8s {
 
     if (! -d $nfs_workspace) {
         system("mkdir -p $nfs_workspace");
+    }
 
-        if (! -d "$nfs_workspace/results") {
-            system("mkdir $nfs_workspace/results");
-        }
+    if (! -d "$nfs_workspace/results") {
+        system("mkdir $nfs_workspace/results");
+    }
 
-        if (! -d "$nfs_workspace/binaries") {
-            system("mkdir $nfs_workspace/binaries");
-        }
+    if (! -d "$nfs_workspace/binaries") {
+        system("mkdir $nfs_workspace/binaries");
     }
 
     #open my $TASKS, ">", "$workspace/tasks";
@@ -526,14 +536,28 @@ sub sandpuppy_fuzz_k8s {
         my $shared_binary_dir = "$container_shared_workspace/binaries/$main_target_binary_dir";
 
         open my $TARGET_SCRIPT, ">", "$nfs_workspace/$main_target->{id}";
-        print $TARGET_SCRIPT "#!/bin/bash\n";
+        print $TARGET_SCRIPT "#!/bin/bash\n\n";
+        print $TARGET_SCRIPT "sync() {\n";
+        print $TARGET_SCRIPT "  while :\n";
+        print $TARGET_SCRIPT "  do\n";
+        print $TARGET_SCRIPT "    cp -ur /out/$main_target->{id} $container_shared_workspace/results/$SANDPUPPY_SYNC_DIRECTORY\n";
+        print $TARGET_SCRIPT "    sleep 5\n";
+        print $TARGET_SCRIPT "  done\n";
+        print $TARGET_SCRIPT "}\n\n";
         print $TARGET_SCRIPT "echo \"Experiment: $experiment_name\"\n";
         print $TARGET_SCRIPT "echo \"Subject: " . $subject . ($version ? "-$version" : "") . "\"\n";
         print $TARGET_SCRIPT "echo \"Target name: $main_target->{name}\"\n";
         print $TARGET_SCRIPT "echo \"Pod name: $pod_name\"\n";
         print $TARGET_SCRIPT "ln -sf /private-nfs/vivin /home/vivin/Projects/phd/workspace\n";
-        print $TARGET_SCRIPT "mkdir /home/vivin/Projects/phd/bin\n";
+        print $TARGET_SCRIPT "mkdir -p /home/vivin/Projects/phd/bin\n";
+        print $TARGET_SCRIPT "mkdir -p $container_shared_workspace/results/$SANDPUPPY_SYNC_DIRECTORY\n";
+        print $TARGET_SCRIPT "if [[ ! -f \"$container_shared_workspace/results/$SANDPUPPY_SYNC_DIRECTORY/start_ts\" ]]; then\n";
+        print $TARGET_SCRIPT "  date +%s >$container_shared_workspace/results/$SANDPUPPY_SYNC_DIRECTORY/start_ts\n";
+        print $TARGET_SCRIPT "fi\n";
         print $TARGET_SCRIPT "cp -rv $shared_binary_dir /home/vivin/Projects/phd/bin\n";
+        print $TARGET_SCRIPT "cd /home/vivin/Projects/phd\n";
+        print $TARGET_SCRIPT "sync &\n";
+        print $TARGET_SCRIPT "SYNC_PID=\$!\n";
         print $TARGET_SCRIPT pod_command(
             $experiment_name,
             $subject,
@@ -543,11 +567,12 @@ sub sandpuppy_fuzz_k8s {
             $main_target->{execution_context},
             {
                 async               => 1,
-                fuzzer_id           => $main_target->{id},
-                sync_directory_name => $SANDPUPPY_SYNC_DIRECTORY,
-                parallel_fuzz_mode  => "parent"
+                fuzzer_id           => $main_target->{id}
+                #sync_directory_name => $SANDPUPPY_SYNC_DIRECTORY,
+                #parallel_fuzz_mode  => "parent"
             }
         ) . "\n";
+        print $TARGET_SCRIPT "kill \$SYNC_PID >/dev/null 2>&1\n";
         close $TARGET_SCRIPT;
         system "chmod 755 $nfs_workspace/$main_target->{id}";
     } else {
@@ -610,15 +635,29 @@ sub sandpuppy_fuzz_k8s {
             my $shared_binary_dir = "$container_shared_workspace/binaries/$target_binary_dir";
 
             open my $TARGET_SCRIPT, ">", "$nfs_workspace/$target->{id}";
-            print $TARGET_SCRIPT "#!/bin/bash\n";
+            print $TARGET_SCRIPT "#!/bin/bash\n\n";
+            print $TARGET_SCRIPT "sync() {\n";
+            print $TARGET_SCRIPT "  while :\n";
+            print $TARGET_SCRIPT "  do\n";
+            print $TARGET_SCRIPT "    cp -ur /out/$target->{id} $container_shared_workspace/results/$SANDPUPPY_SYNC_DIRECTORY\n";
+            print $TARGET_SCRIPT "    sleep 5\n";
+            print $TARGET_SCRIPT "  done\n";
+            print $TARGET_SCRIPT "}\n\n";
             print $TARGET_SCRIPT "echo \"Experiment: $experiment_name\"\n";
             print $TARGET_SCRIPT "echo \"Subject: " . $subject . ($version ? "-$version" : "") . "\"\n";
             print $TARGET_SCRIPT "echo \"Target name: $target->{name}\"\n";
             print $TARGET_SCRIPT "echo \"Pod name: $pod_name\"\n";
             print $TARGET_SCRIPT "echo \"\"\n";
             print $TARGET_SCRIPT "ln -sf /private-nfs/vivin /home/vivin/Projects/phd/workspace\n";
-            print $TARGET_SCRIPT "mkdir /home/vivin/Projects/phd/bin\n";
+            print $TARGET_SCRIPT "mkdir -p /home/vivin/Projects/phd/bin\n";
+            print $TARGET_SCRIPT "mkdir -p $container_shared_workspace/results/$SANDPUPPY_SYNC_DIRECTORY\n";
+            print $TARGET_SCRIPT "if [[ ! -f \"$container_shared_workspace/results/$SANDPUPPY_SYNC_DIRECTORY/start_ts\" ]]; then\n";
+            print $TARGET_SCRIPT "  date +%s >$container_shared_workspace/results/$SANDPUPPY_SYNC_DIRECTORY/start_ts\n";
+            print $TARGET_SCRIPT "fi\n";
             print $TARGET_SCRIPT "cp -rv $shared_binary_dir /home/vivin/Projects/phd/bin\n";
+            print $TARGET_SCRIPT "cd /home/vivin/Projects/phd\n";
+            print $TARGET_SCRIPT "sync &\n";
+            print $TARGET_SCRIPT "SYNC_PID=\$!\n";
             print $TARGET_SCRIPT pod_command(
                 $experiment_name,
                 $subject,
@@ -628,12 +667,13 @@ sub sandpuppy_fuzz_k8s {
                 $target->{execution_context},
                 {
                     async               => 1,
-                    fuzzer_id           => $target->{id},
-                    sync_directory_name => $SANDPUPPY_SYNC_DIRECTORY,
-                    parallel_fuzz_mode  => "child",
-                    exit_when_done      => 1
+                    fuzzer_id           => $target->{id}
+                    #sync_directory_name => $SANDPUPPY_SYNC_DIRECTORY,
+                    #parallel_fuzz_mode  => "child",
+                    #exit_when_done      => 1
                 }
             ) . "\n";
+            print $TARGET_SCRIPT "kill \$SYNC_PID >/dev/null 2>&1\n";
             close $TARGET_SCRIPT;
             system "chmod 755 $nfs_workspace/$target->{id}";
         } else {
@@ -655,6 +695,10 @@ sub sandpuppy_fuzz_k8s {
 
     my $id_to_pod_name_and_target_file = "$nfs_workspace/results/id_to_pod_name_and_target.yml";
     YAML::XS::DumpFile($id_to_pod_name_and_target_file, $id_to_pod_name_and_target);
+
+    #if (1) {
+    #    exit(0);
+    #}
 
     $log->info("Getting list of existing pods (so that we don't recreate)...");
     system ("kuboid/scripts/pod_names > /tmp/sandpuppy.existing");
@@ -1056,7 +1100,7 @@ sub build_sandpuppy_targets {
             my $second_variable = $variables_entry->{second_variable};
             my $second_min = $variables_entry->{second_min};
             my $second_max = $variables_entry->{second_max};
-            foreach my $slot_size (4, 8, 16, 32, 64) {
+            foreach my $slot_size (1, 4, 8, 16, 32, 64) {
                 # If both the maximum and minimum values of the second variable end up being in the same slot, let's
                 # skip this pair because it's no different than maximizing the first variable by itself.
                 next if (int $second_min / $slot_size) == (int $second_max / $slot_size);

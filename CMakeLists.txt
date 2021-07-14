@@ -89,7 +89,8 @@ add_executable(PhD
         tools/FuzzFactory/test-instr.c
         tools/FuzzFactory/types.h
         tools/FuzzFactory/include/vvdump.h
-        tools/FuzzFactory/llvm_mode/shared-opts.cc)
+        tools/FuzzFactory/llvm_mode/shared-opts.cc
+        subjects/vctestbed/vctestbed.c)
 
 add_executable(rarebug
         subjects/rarebug/rarebug.c)

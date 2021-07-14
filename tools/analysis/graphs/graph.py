@@ -351,7 +351,7 @@ def graph_classes(path, variables, classes):
         'max_value_to_input_size_correlation',
         'num_modified_lines',
         'num_unique_values',
-        'order_of_magnitudes_stddev',
+#        'order_of_magnitudes_stddev',
         'times_modified_to_input_size_correlation',
 #        'varying_deltas'
     ]

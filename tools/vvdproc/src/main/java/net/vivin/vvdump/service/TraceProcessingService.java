@@ -66,7 +66,7 @@ public class TraceProcessingService {
 
     private final Metrics metrics = new Metrics();
 
-    private final Map<String, Long> lastProcessedTraceItems = new HashMap<>();
+    private long lastProcessedTraceItems;
     private long lastLoggedTime;
     private boolean showProgress = false;
 
@@ -79,7 +79,7 @@ public class TraceProcessingService {
         this.processTraceExecutor = Executors.newFixedThreadPool(PROCESS_TRACE_EXECUTOR_NUM_THREADS);
         this.traceItemInsertionExecutor = Executors.newFixedThreadPool(TRACE_ITEM_EXECUTOR_NUM_THREADS);
         this.dataDirectory = Files.createTempDirectory("vvdump-data");
-        this.lastProcessedTraceItems.put("value", 0L);
+        this.lastProcessedTraceItems = 0L;
     }
 
     @PostConstruct
@@ -208,11 +208,12 @@ public class TraceProcessingService {
         long totalTraceItems = metrics.getTotalTraceItems();
         long processingTraceItems = metrics.getProcessingTraceItems();
 
-        long lastProcessedTraceItems = this.lastProcessedTraceItems.get("value");
+        long lastProcessedTraceItems = this.lastProcessedTraceItems;
         long processedTraceItems = metrics.getProcessedTraceItems();
-        this.lastProcessedTraceItems.put("value", processedTraceItems);
-
+        long elapsed = System.currentTimeMillis() - this.lastLoggedTime;
         long remainingTraceItems = totalTraceItems - processedTraceItems;
+
+        this.lastProcessedTraceItems = processedTraceItems;
         this.lastLoggedTime = System.currentTimeMillis();
 
         long totalProcessTraces = metrics.getTotalProcessTraces();
@@ -222,7 +223,7 @@ public class TraceProcessingService {
         double newlyProcessedTraceItems = Long.valueOf(processedTraceItems - lastProcessedTraceItems).doubleValue();
         if (newlyProcessedTraceItems > 0) {
             metrics.recordTraceProcessingTime(
-                Long.valueOf(System.currentTimeMillis() - lastLoggedTime).doubleValue() / newlyProcessedTraceItems
+                Long.valueOf(elapsed).doubleValue() / newlyProcessedTraceItems
             );
         }
 
@@ -286,7 +287,7 @@ public class TraceProcessingService {
         private final DescriptiveStatistics traceProcessingTimes = new DescriptiveStatistics();
 
         public Metrics() {
-            traceProcessingTimes.setWindowSize(1000);
+            traceProcessingTimes.setWindowSize(60);
         }
 
         public long getTotalTraceItems() {

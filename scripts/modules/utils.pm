@@ -152,14 +152,20 @@ sub build_fuzz_command {
         $ENV_VARS{AFL_PRELOAD} = $preload;
     }
 
-    if (($fuzzer_id || $sync_directory_name || $parallel_fuzz_mode) &&
+    if (!$use_kubernetes &&
+        ($fuzzer_id || $sync_directory_name || $parallel_fuzz_mode) &&
         (!$fuzzer_id || !$sync_directory_name || !$parallel_fuzz_mode)) {
         die "If any of fuzzer_id, sync_directory_name, or parallel_fuzz_mode is provided, all must be provided";
     }
 
     my $workspace = get_workspace($experiment_name, $subject, $version);
     my $results_base = "$workspace/results";
-    my $results_dir = !$sync_directory_name ? "$results_base/$exec_context" : "$results_base/$sync_directory_name";
+    my $results_dir;
+    if ($use_kubernetes) {
+        $results_dir = "/out/$fuzzer_id";
+    } else {
+        $results_dir = !$sync_directory_name ? "$results_base/$exec_context" : "$results_base/$sync_directory_name";
+    }
 
     if (!$resume) {
         create_results_dir_and_backup_existing($results_base, $exec_context) if !$fuzzer_id;
@@ -200,7 +206,7 @@ sub build_fuzz_command {
     my $banner = $subject . ($version ? "-$version" : "") . "-$experiment_name-$exec_context";
     $fuzz_command .= " -o $results_dir -T \"$banner\"";
 
-    if ($fuzzer_id) {
+    if ($fuzzer_id && $parallel_fuzz_mode) {
         #$ENV_VARS{AFL_IMPORT_FIRST} = 1;  # disable importing first so that there is initial divergence in search paths
         $fuzz_command .= (($parallel_fuzz_mode eq "parent" ? " -M " : " -S ") . "\"$fuzzer_id\"");
     }

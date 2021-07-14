@@ -89,10 +89,6 @@ def is_enum(features):
     if features['order_of_magnitudes_stddev'] > 1:
         return False
 
-    # An enum is likely to hop all over the place and not increment or decrement consistently.
-    #if features['directional_consistency'] == 1:
-    #    return False
-
     # How many places is this variable modified? We have two cases where a variable can be like an enum
     # variable:
     #
