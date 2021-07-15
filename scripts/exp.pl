@@ -15,7 +15,7 @@ my $supported_tasks = {
 
 if (scalar @ARGV < 3) {
     die "Syntax:\n $0 <experiment> build <subject>[:<version>] with waypoints <waypoints> as <binary-context>" .
-        "\n $0 <experiment> fuzz <subject>[:<version>] with waypoints <waypoints> using <binary-context> as <exec-context>" .
+        "\n $0 <experiment> fuzz <subject>[:<version>] with waypoints <waypoints> using <binary-context> as <exec-context> [resume]" .
         "\n $0 <experiment> spfuzz <subject>[:<version>] [with asan]\n";
 }
 
@@ -39,6 +39,7 @@ my $waypoints;
 my $binary_context;
 my $execution_context;
 my $use_asan = 0;
+my $resume = 0;
 if ($task eq "build" or $task eq "fuzz") {
     if ($ARGV[3] ne "with" && $ARGV[4] ne "waypoints") {
         die "Expected \"with waypoints\":\n $0 $experiment_name $task $original_subject with waypoints <waypoints> ...";
@@ -77,6 +78,12 @@ if ($task eq "build" or $task eq "fuzz") {
         }
 
         $execution_context = $ARGV[9];
+
+        if ($ARGV[10] && $ARGV[10] ne "resume") {
+            die "Expected \"resume\":\n $0 $experiment_name $task $original_subject with waypoints $waypoints using $binary_context as $execution_context resume";
+        } elsif ($ARGV[10] && $ARGV[10] eq "resume") {
+            $resume = 1;
+        }
     }
 } else {
     if ($ARGV[3] && $ARGV[3] ne "with") {
@@ -107,9 +114,9 @@ if ($task eq "build") {
 
     if ($task eq "fuzz") {
         if ($waypoints =~ /vvdump/) {
-            tasks::vvdump_fuzz($experiment_name, $subject, $version, $waypoints, $binary_context, $execution_context, {});
+            tasks::vvdump_fuzz($experiment_name, $subject, $version, $waypoints, $binary_context, $execution_context, { resume => $resume });
         } else {
-            tasks::fuzz($experiment_name, $subject, $version, $waypoints, $binary_context, $execution_context, {});
+            tasks::fuzz($experiment_name, $subject, $version, $waypoints, $binary_context, $execution_context, { resume => $resume });
         }
     } elsif ($task eq "spfuzz") {
         tasks::sandpuppy_fuzz(

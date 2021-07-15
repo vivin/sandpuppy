@@ -15,9 +15,7 @@ import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.io.UncheckedIOException;
 import java.nio.file.Path;
-import java.time.Duration;
 import java.util.List;
-import java.util.Random;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -111,10 +109,12 @@ public class ProcessTraceTask implements Runnable {
         final var endTraceItem = trace.getEndTraceItem();
         final List<Callable<Object>> callables = trace.getTraceItems().stream().map(traceItem ->
             Executors.callable(() -> {
+                var start = System.currentTimeMillis();
                 cassandra.insertFullTraceItem(FullTraceItem.from(traceItem, endTraceItem));
 
                 metrics.decrementProcessingTraceItems();
                 metrics.incrementProcessedTraceItems();
+                metrics.accumulateProcessingTime(System.currentTimeMillis() - start);
             })
         ).collect(Collectors.toList());
 

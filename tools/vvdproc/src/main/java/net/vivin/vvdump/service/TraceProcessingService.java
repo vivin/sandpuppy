@@ -186,13 +186,21 @@ public class TraceProcessingService {
         shutdownExecutorAndMonitor(loggerExecutor);
 
         long totalTime = System.currentTimeMillis() - start;
+        long actualTotalProcessingTime = metrics.getActualTotalProcessingTime();
         double totalTraceItems = Long.valueOf(metrics.getTotalTraceItems()).doubleValue();
         log.info(
-            "Processed {} traces in {} ({} traces/s; {} ms/trace)",
+            "Processed {} traces in {} seconds overall ({} traces/s; {} ms/trace)",
             metrics.getTotalTraceItems(),
             getDescriptiveTimeDelta(totalTime / 1000),
             df.format(totalTraceItems / (totalTime / 1000d)),
             df.format(totalTime / totalTraceItems)
+        );
+        log.info(
+            "Processed {} traces in {} seconds actual ({} traces/s; {} ms/trace)",
+            metrics.getTotalTraceItems(),
+            getDescriptiveTimeDelta(actualTotalProcessingTime / (1000 * TRACE_ITEM_EXECUTOR_NUM_THREADS)),
+            df.format(totalTraceItems / (actualTotalProcessingTime / (1000d * TRACE_ITEM_EXECUTOR_NUM_THREADS))),
+            df.format((actualTotalProcessingTime / (1d * TRACE_ITEM_EXECUTOR_NUM_THREADS)) / totalTraceItems)
         );
     }
 
@@ -283,6 +291,7 @@ public class TraceProcessingService {
 
         private final LongAdder totalProcessTraces = new LongAdder();
         private final LongAdder processedProcessTraces = new LongAdder();
+        private final LongAdder cumulativeProcessingTime = new LongAdder();
 
         private final DescriptiveStatistics traceProcessingTimes = new DescriptiveStatistics();
 
@@ -314,6 +323,10 @@ public class TraceProcessingService {
             return traceProcessingTimes;
         }
 
+        public long getActualTotalProcessingTime() {
+            return cumulativeProcessingTime.longValue();
+        }
+
         public void addToTotalTraceItems(long value) {
             totalTraceItems.add(value);
         }
@@ -340,6 +353,10 @@ public class TraceProcessingService {
 
         public void recordTraceProcessingTime(double time) {
             traceProcessingTimes.addValue(time);
+        }
+
+        public void accumulateProcessingTime(long millis) {
+            cumulativeProcessingTime.add(millis);
         }
     }
 }

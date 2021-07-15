@@ -13,26 +13,13 @@ from sklearn.cluster import DBSCAN, OPTICS
 from hdbscan import HDBSCAN
 
 feature_labels = {
-    'num_traces': "Number of Traces",
-    'average_counter_segment_length': "Average Counter-Segment Length",
-    'average_counter_segment_length_filtered': "Average Counter-Segment Length (filtered)",
-    'average_delta': "Average Delta",
     'average_value_set_cardinality_ratio': "Average Value-Set Cardinality Ratio",
-    'delta_stddev': "Delta Standard Deviation",
-    'lag_one_autocorr': "Lag-One Auto-Correlation",
-    'lag_one_autocorr_filtered': "Lag-One Auto-Correlation (filtered)",
     'loop_sequence_proportion': "Loop Sequence Proportion",
-    'loop_sequence_proportion_filtered': "Loop Sequence Proportion (filtered)",
     'directional_consistency': "Directional Consistency",
     'max_values_variance': "Maximum Values Variance",
     'max_value_to_input_size_correlation': "Maximum Value to Input-Size Correlation",
     'num_modified_lines': "Number of Modified Lines",
     'num_unique_values': "Number of Unique Values",
-    'order_of_magnitudes_stddev': "Order of Magnitudes Standard Deviation",
-    'second_difference_roughness': "Second-Difference Roughness",
-    'second_difference_roughness_filtered': "Second-Difference Roughness (filtered)",
-    'total_counter_segments_filtered_to_num_traces_ratio': "Total Counter Segments (filtered) to Number of Traces Ratio",
-    'total_counter_segments_to_num_traces_ratio': "Total Counter Segments to Number of Traces Ratio",
     'times_modified_to_input_size_correlation': "Times Modified to Input-Size Correlation",
     'varying_deltas': "Varying Deltas"
 }
@@ -41,6 +28,38 @@ feature_labels = {
 def graph_classes(path, variables, classes):
     if len(variables) == 0:
         return
+
+    def scatter_plot_feature(dataset, feature_name, dimension_reduction_method, graph_type):
+        print(f"Plotting {dimension_reduction_method} {graph_type} scatter-plot graph for {feature_name} "
+              f"colored by its value")
+
+        fig = plt.figure(figsize=(20, 10))
+        fig.suptitle(f"Plot of {feature_labels[feature_name]} colored by value")
+
+        if graph_type == "2d":
+            ax = fig.add_subplot()
+        else:
+            ax = fig.add_subplot(projection='3d')
+
+        ax.set_title(dimension_reduction_method)
+
+        combined_dataset = pandas.concat((dataset, selected_features[feature_name]), axis=1)
+        #for index, row in combined_dataset.iterrows():
+        #    if graph_type == "2d":
+        #        ax.plot(row[0], row[1], 'o', c=row[feature_name], cmap='coolwarm')
+        #    else:
+        #        ax.plot(row[0], row[1], row[2], 'o', c=row[feature_name], markeredgecolor='k', cmap='coolwarm')
+        if graph_type == "2d":
+            ax.scatter(combined_dataset[0], combined_dataset[1], c=combined_dataset[feature_name],
+                       marker='o', cmap='coolwarm')
+        else:
+            ax.scatter(combined_dataset[0], combined_dataset[1], combined_dataset[2],
+                       s=100, c=combined_dataset[feature_name], marker='o', cmap='coolwarm')
+
+        ax.legend()
+
+        plt.savefig(f"{scatter_path}/{feature_name}_{dimension_reduction_method}_{graph_type}.png")
+        plt.close(fig)
 
     def cluster_plot(dataset, clustering_method, dimension_reduction_method, graph_type):
         print(
@@ -273,6 +292,10 @@ def graph_classes(path, variables, classes):
     if not os.path.isdir(clustering_path):
         os.makedirs(clustering_path)
 
+    scatter_path = f"{path}/scatter"
+    if not os.path.isdir(scatter_path):
+        os.makedirs(scatter_path)
+
     strip_plot_path = f"{path}/strip_plot"
     if not os.path.isdir(strip_plot_path):
         os.makedirs(strip_plot_path)
@@ -341,31 +364,20 @@ def graph_classes(path, variables, classes):
     # TODO: or even ignore them??
 
     selected_feature_names = [
-#        'average_delta',
         'average_value_set_cardinality_ratio',
-#        'delta_stddev',
-#        'lag_one_autocorr',
         'loop_sequence_proportion',
         'directional_consistency',
         'max_values_variance',
         'max_value_to_input_size_correlation',
         'num_modified_lines',
         'num_unique_values',
-#        'order_of_magnitudes_stddev',
         'times_modified_to_input_size_correlation',
-#        'varying_deltas'
     ]
     selected_features = df.filter(selected_feature_names)
 
     # When you write the paper, i think you can say that it makes sense to cap max_values_variance make it
     # categorical or binary as 0,1. because logically it makes sense based on the semantics. it's not something we need
     # to use clustering to figure out.
-    #selected_features.loc[selected_features.average_delta < 255, 'average_delta'] = 0
-    #selected_features.loc[selected_features.average_delta > 1000, 'average_delta'] = 1000
-    #selected_features.loc[selected_features.delta_stddev < 255, 'delta_stddev'] = 0
-    #selected_features.loc[selected_features.delta_stddev > 1000, 'delta_stddev'] = 1000
-    #selected_features.loc[selected_features.order_of_magnitudes_stddev < 1, 'order_of_magnitudes_stddev'] = 0
-    #selected_features.loc[selected_features.order_of_magnitudes_stddev > 1, 'order_of_magnitudes_stddev'] = 1
     #selected_features.loc[selected_features.num_unique_values < 255, 'num_unique_values'] = 0
     #selected_features.loc[selected_features.num_unique_values > 255, 'num_unique_values'] = 1
     selected_features.loc[selected_features.max_values_variance > 0, 'max_values_variance'] = 1
@@ -389,6 +401,14 @@ def graph_classes(path, variables, classes):
         cluster_plot(pca_3d, clustering_method, "PCA", "3d")
         cluster_plot(nmf_2d, clustering_method, "NMF", "2d")
         cluster_plot(nmf_3d, clustering_method, "NMF", "3d")
+
+    for feature in ["average_value_set_cardinality_ratio", "loop_sequence_proportion", "directional_consistency",
+                    "max_values_variance", "max_value_to_input_size_correlation",
+                    "times_modified_to_input_size_correlation"]:
+        scatter_plot_feature(pca_2d, feature, "PCA", "2d")
+        scatter_plot_feature(pca_3d, feature, "PCA", "3d")
+        scatter_plot_feature(nmf_2d, feature, "NMF", "2d")
+        scatter_plot_feature(nmf_3d, feature, "NMF", "3d")
 
     print("Clustering variables using k-means and {num} clusters".format(num=len(classes)))
     kmeans = KMeans(n_clusters=len(classes)).fit(selected_features_normalized)

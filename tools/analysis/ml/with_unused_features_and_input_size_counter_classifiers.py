@@ -64,8 +64,10 @@ def classify_counter(features):
     # dynamic counter. Otherwise this is an input size counter.
     if max_values_variance == 0 and average_value_set_cardinality_ratio == 1:
         return "static"
-    else:
+    elif max_value_to_input_size_correlation < 0.5:
         return "dynamic"
+    else:
+        return "input_size"
 
 
 def is_enum(features):
@@ -76,6 +78,15 @@ def is_enum(features):
     # ascertain the amount of bytes actually read by the process from either stdin or a file. Not sure if that is
     # possible, though.
     if features['times_modified_to_input_size_correlation'] < 0.5:
+        return False
+
+    # This is super sketch, and I probably need to mathematically prove it or something. But anyway, the
+    # assumption is that these enum values come from a small set of values, and even if sequential,
+    # aren't wildly different in their magnitudes. We have a limit of 255 unique values and so we don't
+    # expect those to vary wildly in an enum. For example, it's not likely we will have an enum with
+    # values like 0, 1, 2, and then 12355914 or something. So what we'll do is calculate the standard
+    # deviation of the log10 of the values and ignore the variable if that value is greater than 1.
+    if features['order_of_magnitudes_stddev'] > 1:
         return False
 
     # How many places is this variable modified? We have two cases where a variable can be like an enum

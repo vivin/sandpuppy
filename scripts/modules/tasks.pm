@@ -376,9 +376,16 @@ sub vvdump_fuzz {
         close $writer;
         $SIG{INT} = 'IGNORE';
 
-        my $STARTUP_TIME = 10; # about the time it takes to start up vvdproc and the fuzzer
+        my $SLEEP_TIME = 10;
+        my $STARTUP_TIME = 5; # about the time it takes to start up vvdproc and the fuzzer
         my $FUZZ_TIME = $subjects->{$subject}->{fuzz_time} + $STARTUP_TIME;
         my $killed = 0;
+
+        $| = 1;
+
+        print "Waiting ${SLEEP_TIME}s for trace processor to be ready...";
+        sleep $SLEEP_TIME;
+
         my $start_time = time();
 
         # If parallel fuzzing is requested during trace generation we are going to start a parent fuzzer and a child
@@ -390,7 +397,10 @@ sub vvdump_fuzz {
             $waypoints,
             $binary_context,
             $execution_context,
-            { exit_when_done => 1 }
+            {
+                exit_when_done => 1,
+                resume         => $options->{resume}
+            }
         );
 
         my $start_printing = 0;
@@ -424,7 +434,7 @@ sub vvdump_fuzz {
 
         chdir "$TOOLS/vvdproc";
         #my $vvdproc = "unbuffer mvn package && unbuffer java -agentpath:/home/vivin/jprofiler12/bin/linux-x64/libjprofilerti.so=port=8849 -Xms1G -Xmx4G -jar target/vvdproc.jar 2>&1";
-        my $vvdproc = "unbuffer mvn clean package && unbuffer java -Xms8G -Xmx16G -jar target/vvdproc.jar 2>&1";
+        my $vvdproc = "unbuffer mvn package && unbuffer java -Xms8G -Xmx16G -jar target/vvdproc.jar 2>&1";
         open my $vvdproc_output, "-|", $vvdproc;
         while (<$vvdproc_output>) {
             print $writer $_;

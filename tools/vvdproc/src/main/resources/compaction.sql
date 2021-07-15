@@ -1,0 +1,11 @@
+alter table phd.experiments with gc_grace_seconds = 10;
+alter table phd.experiment_subjects with gc_grace_seconds = 10;
+alter table phd.experiment_subject_binaries with gc_grace_seconds = 10;
+alter table phd.experiment_subject_binary_executions with gc_grace_seconds = 10;
+alter table phd.subject_files with gc_grace_seconds = 10;
+alter table phd.subject_file_functions with gc_grace_seconds = 10;
+alter table phd.subject_file_function_variables with gc_grace_seconds = 10;
+alter table phd.subject_file_function_variables_by_declaration_order with gc_grace_seconds = 10;
+alter table phd.processes with gc_grace_seconds = 10;
+alter table phd.process_variable_value_traces with gc_grace_seconds = 10;
+alter table phd.process_variable_value_traces with compaction = {'class' : 'SizeTieredCompactionStrategy', 'min_threshold' : 4 }

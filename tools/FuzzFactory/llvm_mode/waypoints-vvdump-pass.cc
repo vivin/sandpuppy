@@ -14,6 +14,7 @@ class VariableValueDumpFeedback : public BaseVariableValueFeedback<VariableValue
 
     std::map<std::string, Value*> variableNameToValue;
     std::map<std::string, Value*> formatStringToValue;
+    std::set<std::string> ignoredFunctions;
 
     Function *dumpVariableValueFunction;
 
@@ -137,7 +138,10 @@ class VariableValueDumpFeedback : public BaseVariableValueFeedback<VariableValue
 
 protected:
     bool shouldProcess(Function &function) override {
-        return true;
+        auto process = ignoredFunctions.find(function.getName().str()) == ignoredFunctions.end();
+        std::cout<<"Process function " << function.getName().str() << ": " << process << "\n";
+
+        return process;
     }
 
     void processFunction(Function &function) override {
@@ -185,6 +189,33 @@ public:
             sourceFileNameVariableName,
             module.getSourceFileName()
         );
+
+        // Process global annotations to see if there are any functions we should ignore.
+        // adapted from: https://stackoverflow.com/a/47881182/263004
+
+        // First check to see if we have any global annotations. If not, just return.
+        auto *globalAnnotations = module.getGlobalVariable("llvm.global.annotations");
+        if (!globalAnnotations) {
+            return;
+        }
+
+        // Metadata about annotated functions is in the first operand. It is a constant array of structs.
+        auto *entries = dyn_cast<ConstantArray>(globalAnnotations->getOperand(0));
+        for (auto entry = entries->op_begin(); entry != entries->op_end(); ++entry) {
+            auto *entry_struct = dyn_cast<ConstantStruct>(entry->get());
+
+            // Get the data we need from the struct. First we will get the annotation value to see if it is something
+            // we care about. We only care about annotations that contain the string "vvdump_ignore", which tells us
+            // which functions we shouldn't instrument for collecting variable-value traces.
+            auto *annotationVariable = dyn_cast<GlobalVariable>(entry_struct->getOperand(1)->getOperand(0));
+            auto annotationValue = dyn_cast<ConstantDataArray>(annotationVariable->getInitializer())->getAsCString();
+            if (annotationValue.str() == "vvdump_ignore") {
+                auto *function = dyn_cast<Function>(entry_struct->getOperand(0)->getOperand(0));
+                ignoredFunctions.emplace(function->getName().str());
+
+                std::cout << "Got annotation to ignore function " << function->getName().str() << "\n";
+            }
+        }
     }
 };
 

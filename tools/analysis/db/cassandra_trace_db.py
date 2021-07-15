@@ -35,7 +35,7 @@ def get_experiment_subject_binaries(session, experiment, subject):
 
 def get_experiment_subject_binary_executions(session, experiment, subject, binary):
     statement = session.prepare(
-        "SELECT binary FROM experiment_subject_binary_executions "
+        "SELECT execution FROM experiment_subject_binary_executions "
         "WHERE experiment = ? "
         "AND subject = ? "
         "AND binary = ?"

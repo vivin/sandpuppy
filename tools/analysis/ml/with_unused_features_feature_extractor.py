@@ -7,6 +7,7 @@ def extract_features(variable):
         'num_modified_lines': len(variable['traces_info']['modified_lines']),
         'num_unique_values': len(set(variable['traces_info']['variable_values'])),
         'values_set': set(variable['traces_info']['variable_values']),
+        'range': 0,
         'times_modified_variance': 0,
         'times_modified_min': 0,
         'times_modified_max': 0,
@@ -18,12 +19,26 @@ def extract_features(variable):
         'most_max_value': 0,
         'max_values_variance': 0,
         'max_value_to_input_size_correlation': 0,
+        'average_delta': 0,
+        'delta_stddev': -1,
         'varying_deltas': False,
         'average_value_set_cardinality_ratio': 0,
         'loop_sequence_proportion': 0,
+        'loop_sequence_proportion_filtered': 0,
         'directional_consistency': 0,
+        'total_counter_segments_filtered_to_num_traces_ratio': 0,
+        'total_counter_segments_to_num_traces_ratio': 0,
+        'total_counter_segments': 0,
+        'total_counter_segments_filtered': 0,
         'average_counter_segment_length': 0,
         'average_counter_segment_length_filtered': 0,
+        'jaggedness_full': None,
+        'jaggedness_filtered': None,
+        'lag_one_autocorr': 0,
+        'lag_one_autocorr_filtered': 0,
+        'second_difference_roughness': -1,
+        'second_difference_roughness_filtered': -1,
+        'order_of_magnitudes_stddev': 0,
         'times_modified_to_input_size_correlation': 0
     }
 
@@ -76,6 +91,21 @@ def extract_features(variable):
 
     # Now we derive features that can help us identify counters
 
+    def smooth(arr):
+        smoothed = []
+        value_sum = 0
+        for value in arr:
+            if value != 0 and value_sum != 0 \
+                and (value / abs(value)) != (value_sum / abs(value_sum)) \
+                    and abs(value) == abs(value_sum):
+                value_sum = 0
+                continue
+            else:
+                value_sum += value
+                smoothed.append(value)
+
+        return smoothed
+
     # Note that this function will also return segments containing a run of same values if they are present in the
     # array. These are technically not counter segments since the values don't change. However it shouldn't really
     # affect "true" counters as far as roughness measures are concerned, because these segments are still smooth.
@@ -103,6 +133,28 @@ def extract_features(variable):
         segments.append(segment)
 
         return segments
+
+    def lag_one_autocorrelate(x):
+        one_less_at_end = x[:-1]
+        one_less_at_beginning = x[1:]
+
+        if numpy.var(one_less_at_end) > 0 and numpy.var(one_less_at_beginning) > 0:
+            return numpy.corrcoef(one_less_at_end, one_less_at_beginning)[0, 1]
+        elif len(x) > 2 and numpy.var(one_less_at_end) == 0 and numpy.var(one_less_at_beginning) == 0:
+            return 1
+
+        return 0
+
+    def roughness(x):
+        first_d = numpy.diff(x)
+        if numpy.min(first_d) < 0:
+            first_d += numpy.abs(numpy.min(first_d))
+
+        norm_denominator = numpy.max(first_d) - numpy.min(first_d)
+        first_d_norm = (first_d - numpy.min(first_d)) / (norm_denominator if norm_denominator != 0 else 1)
+        second_d_norm = numpy.diff(first_d_norm)
+
+        return numpy.mean(numpy.divide(numpy.square(second_d_norm), 4))
 
     # First we are going to filter out and clean up traces. We ignore any trace with less than two items. Then we
     # will clean up "runs" of values in a trace. Runs of values can happen normally for non-counter variables. But
@@ -152,9 +204,22 @@ def extract_features(variable):
         segments_gt1 = [s for s in combined_trace_counter_segments if len(s) > 1]
         features['average_counter_segment_length'] = numpy.mean([len(s) for s in segments_gt1])
 
+        segments_gt2 = [s for s in combined_trace_counter_segments if len(s) > 2]
+        if len(segments_gt2) > 0:
+            features['lag_one_autocorr'] = numpy.mean([
+                lag_one_autocorrelate(s) for s in segments_gt2
+            ])
+            features['second_difference_roughness'] = numpy.mean([
+                roughness(s) for s in segments_gt2
+            ])
+
     combined_deltas = []
     if len(combined_filtered_trace) > 0:
         filtered_segments_gt1 = [s for s in combined_filtered_trace_counter_segments if len(s) > 1]
+        features['total_counter_segments_filtered'] = len(filtered_segments_gt1)
+        features['total_counter_segments_filtered_to_num_traces_ratio'] = \
+            features['total_counter_segments_filtered'] / features['num_traces']
+
         features['average_counter_segment_length_filtered'] = numpy.mean([len(s) for s in filtered_segments_gt1])
 
         # This is perhaps analogous to jaggedness metrics in a way. Out of all filtered counter segments of length
@@ -189,6 +254,12 @@ def extract_features(variable):
 
         filtered_segments_gt2 = [s for s in combined_filtered_trace_counter_segments if len(s) > 2]
         if len(filtered_segments_gt2) > 0:
+            features['lag_one_autocorr_filtered'] = numpy.mean([
+                lag_one_autocorrelate(s) for s in filtered_segments_gt2
+            ])
+            features['second_difference_roughness_filtered'] = numpy.mean([
+                roughness(s) for s in filtered_segments_gt2
+            ])
             features['loop_sequence_proportion_filtered'] = sum([
                 len(s) for s in filtered_segments_gt2
             ]) / len(combined_filtered_trace)
@@ -204,8 +275,27 @@ def extract_features(variable):
             combined_deltas += numpy.diff(s).tolist()
 
     if len(combined_deltas) > 1:
+        abs_combined_deltas = [abs(delta) for delta in combined_deltas]
+        features['average_delta'] = numpy.mean(abs_combined_deltas)
+        features['delta_stddev'] = numpy.std(abs_combined_deltas)
         if len(set(combined_deltas)) > 1:
             features['varying_deltas'] = True
+
+    combined_trace_deltas_smoothed = smooth(numpy.diff(combined_trace))
+    if len(combined_trace_deltas_smoothed) > 0:
+        stddev = numpy.std(combined_trace_deltas_smoothed)
+        abs_mean = numpy.abs(numpy.mean(combined_trace_deltas_smoothed))
+
+        if abs_mean > 0:
+            features['jaggedness_full'] = stddev / abs_mean
+
+    combined_filtered_trace_deltas_smoothed = smooth(numpy.diff(combined_filtered_trace))
+    if len(combined_filtered_trace_deltas_smoothed) > 0:
+        stddev = numpy.std(combined_filtered_trace_deltas_smoothed)
+        abs_mean = numpy.abs(numpy.mean(combined_filtered_trace_deltas_smoothed))
+
+        if abs_mean > 0:
+            features['jaggedness_filtered'] = stddev / abs_mean
 
     if len(max_values) > 0 and len(input_sizes) > 0:
         features['max_values_variance'] = numpy.var(max_values)
@@ -213,6 +303,15 @@ def extract_features(variable):
         if features['max_values_variance'] > 0 and features['input_sizes_variance'] > 0:
             r = numpy.corrcoef(max_values, input_sizes)
             features['max_value_to_input_size_correlation'] = r[0, 1]
+
+    # We derive some additional features that can help us identify enums
+
+    # We will use the standard deviation of the order of magnitudes to make sure that the distribution of enum
+    # values do not vary too wildly. For example, something that takes on values like 1, 2, 4, and then 500000
+    # is probably not an enum.
+    variable_values = variable['traces_info']['variable_values']
+    order_of_magnitudes = [numpy.log10(v) if v > 0 else 0 for v in variable_values]
+    features['order_of_magnitudes_stddev'] = numpy.std(order_of_magnitudes)
 
     # For enum-like variables, we are looking to maximize the combinations in the input. The assumption is that
     # the enum value is derived from some input element, and that there can be multiple such elements. So one way

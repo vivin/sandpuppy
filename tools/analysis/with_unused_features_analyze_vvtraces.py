@@ -32,17 +32,23 @@ def features_string(var):
     features_str = " (varying deltas)" if features['varying_deltas'] else ""
     features_str += "\n          num_traces=" + str(features['num_traces'])
     features_str += "\n          num_unique_values=" + str(features['num_unique_values'])
-    features_str += "\n          average_value_set_cardinality_ratio="\
-                    + str(features['average_value_set_cardinality_ratio'])
-    features_str += "\n          loop_sequence_proportion=" + str(features['loop_sequence_proportion'])
+    features_str += "\n          lsp=" + str(features['loop_sequence_proportion'])
+    features_str += "\n          lspf=" + str(features['loop_sequence_proportion_filtered'])
     features_str += "\n          directional_consistency=" + str(features['directional_consistency'])
-    features_str += "\n          max_values_variance=" + str(features['max_values_variance'])
-    features_str += "\n          max_value_to_input_size_correlation="\
-                    + str(features['max_value_to_input_size_correlation'])
-    features_str += "\n          num_modified_lines=" + str(features['num_modified_lines'])
-    features_str += "\n          num_unique_values=" + str(features['num_unique_values'])
-    features_str += "\n          times_modified_to_input_size_correlation="\
-                    + str(features['times_modified_to_input_size_correlation'])
+    features_str += "\n          range=" + str(features['most_max_value'] - features['most_min_value'])
+    features_str += "\n          average_delta=" + str(features['average_delta'])
+    features_str += "\n          total_counter_segments=" + str(features['total_counter_segments'])
+    features_str += "\n          total_counter_segments_filtered=" + str(features['total_counter_segments_filtered'])
+    features_str += "\n          average_trace_length=" + str(features['times_modified_mean'])
+    features_str += "\n          avscr=" + str(features['average_value_set_cardinality_ratio'])
+    features_str += "\n          tmisc=" + str(features['times_modified_to_input_size_correlation'])
+    features_str += "\n          mvisc=" + str(features['max_value_to_input_size_correlation'])
+    features_str += "\n          acsl=" + str(features['average_counter_segment_length'])
+    features_str += "\n          acslf=" + str(features['average_counter_segment_length_filtered'])
+    features_str += "\n          sd_roughness=" + str(features['second_difference_roughness'])
+    features_str += "\n          sd_roughness_filtered=" + str(features['second_difference_roughness_filtered'])
+    features_str += "\n          l1_ac=" + str(features['lag_one_autocorr'])
+    features_str += "\n          l1_ac_filtered=" + str(features['lag_one_autocorr_filtered'])
     features_str += "\n"
 
     return features_str
@@ -480,6 +486,22 @@ def classify_variable(variable):
     elif classifiers.is_boolean(features):
         return features, "boolean", variable['traces_info']['modified_lines']
     elif classifiers.is_counter(features):
+        # Some counters with varying deltas may actually be enums, so let's check for that. But some legitimate
+        # counters with varying deltas could end up being mis-classified as enums (the classification boundary
+        # between counters and enums is kind of fuzzy if you think about it). So let's only try and classify
+        # something with varying deltas as an enum if its loop sequence proportion and lag-one autocorrelation on
+        # filtered traces is less than 0.9. Filtered traces are those where repeated runs of values are removed, and
+        # the correlation metric is actually the average of the lag-one autocorrelations of all identified counter
+        # segments with length greater than 2, over all traces. When classifying enums we handle two cases: where
+        # the enum value does not derive from the input value, and the case where it does. The former involves
+        # situations where the entire set of enum values is probably being iterated over. In the latter case the
+        # enum value directly or indirectly derives from some input value.
+        #if features['varying_deltas'] \
+        #    and (features['loop_sequence_proportion'] < 0.8 and features['lag_one_autocorr_filtered'] < 1) \
+        #        and classifiers.is_enum(features):
+
+        #    return features, "enum_from_input"
+        #else:
         counter_class = classifiers.classify_counter(features)
         return features, counter_class + "_counter", variable['traces_info']['modified_lines']
 

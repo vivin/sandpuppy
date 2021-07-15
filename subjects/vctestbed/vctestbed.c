@@ -6,10 +6,10 @@
 #include <string.h>
 #include <errno.h>
 
-#define BUFFER_SIZE    255
+#define BUFFER_SIZE    512
 #define MIN_INPUT_SIZE 31
 #define NUM_OPS        9
-#define MAX_VALUES     15
+#define MAX_VALUES     128
 
 #define STATIC_POS_COUNTER_VAR_NUM                    0
 #define STATIC_NEG_COUNTER_VAR_NUM                    1
@@ -24,177 +24,179 @@
 #define VAR_NUM 0
 #define LIMIT   1
 
-#define ENUM_VAR_MOD_TYPE 0
-#define ENUM_VAR_NUM      1
+#define ENUM_VAR_NUM      0
+#define ENUM_VAR_MOD_TYPE 1
 #define VALUES            2
 
 #define ENUM_VAR_SINGLE_MOD 's'
 #define ENUM_VAR_MULTI_MOD  'm'
 
+#define vvdump_ignore __attribute__((annotate("vvdump_ignore")))
+
 void fn_static_pos_counter_1() {
     for (int static_pos_counter_1 = 1; static_pos_counter_1 <= 10; static_pos_counter_1 ++) {
-        printf("static_pos_counter_1: %d\n", static_pos_counter_1);
+        //printf("static_pos_counter_1: %d\n", static_pos_counter_1);
     }
 }
 
 void fn_static_pos_counter_2() {
     for (int static_pos_counter_2 = 1; static_pos_counter_2 <= 20; static_pos_counter_2 ++) {
-        printf("static_pos_counter_2: %d\n", static_pos_counter_2);
+        //printf("static_pos_counter_2: %d\n", static_pos_counter_2);
     }
 }
 
 void fn_static_pos_counter_3() {
     for (int static_pos_counter_3 = 1; static_pos_counter_3 <= 30; static_pos_counter_3 ++) {
-        printf("static_pos_counter_3: %d\n", static_pos_counter_3);
+        //printf("static_pos_counter_3: %d\n", static_pos_counter_3);
     }
 }
 
 void fn_static_pos_counter_4() {
     for (int static_pos_counter_4 = 1; static_pos_counter_4 <= 40; static_pos_counter_4 ++) {
-        printf("static_pos_counter_4: %d\n", static_pos_counter_4);
+        //printf("static_pos_counter_4: %d\n", static_pos_counter_4);
     }
 }
 
 void fn_static_pos_counter_5() {
     for (int static_pos_counter_5 = 1; static_pos_counter_5 <= 50; static_pos_counter_5 ++) {
-        printf("static_pos_counter_5: %d\n", static_pos_counter_5);
+        //printf("static_pos_counter_5: %d\n", static_pos_counter_5);
     }
 }
 
 void fn_static_neg_counter_1() {
     for (int static_neg_counter_1 = 10; static_neg_counter_1 >= 1; static_neg_counter_1 --) {
-        printf("static_neg_counter_1: %d\n", static_neg_counter_1);
+        //printf("static_neg_counter_1: %d\n", static_neg_counter_1);
     }
 }
 
 void fn_static_neg_counter_2() {
     for (int static_neg_counter_2 = 20; static_neg_counter_2 >= 1; static_neg_counter_2 --) {
-        printf("static_neg_counter_2: %d\n", static_neg_counter_2);
+        //printf("static_neg_counter_2: %d\n", static_neg_counter_2);
     }
 }
 
 void fn_static_neg_counter_3() {
     for (int static_neg_counter_3 = 30; static_neg_counter_3 >= 1; static_neg_counter_3 --) {
-        printf("static_neg_counter_3: %d\n", static_neg_counter_3);
+        //printf("static_neg_counter_3: %d\n", static_neg_counter_3);
     }
 }
 
 void fn_static_neg_counter_4() {
     for (int static_neg_counter_4 = 40; static_neg_counter_4 >= 1; static_neg_counter_4 --) {
-        printf("static_neg_counter_4: %d\n", static_neg_counter_4);
+        //printf("static_neg_counter_4: %d\n", static_neg_counter_4);
     }
 }
 
 void fn_static_neg_counter_5() {
     for (int static_neg_counter_5 = 50; static_neg_counter_5 >= 1; static_neg_counter_5 --) {
-        printf("static_neg_counter_5: %d\n", static_neg_counter_5);
+        //printf("static_neg_counter_5: %d\n", static_neg_counter_5);
     }
 }
 
 void fn_dynamic_pos_counter_1(int limit) {
-    if (limit < 0 || limit >= 100) {
+    if (limit < 0 || limit >= 1000) {
         exit(1);
     }
 
     for (int dynamic_pos_counter_1 = 1; dynamic_pos_counter_1 <= limit; dynamic_pos_counter_1 ++) {
-        printf("dynamic_pos_counter_1: %d\n", dynamic_pos_counter_1);
+        //printf("dynamic_pos_counter_1: %d\n", dynamic_pos_counter_1);
     }
 }
 
 void fn_dynamic_pos_counter_2(int limit) {
-    if (limit < 0 || limit >= 100) {
+    if (limit < 0 || limit >= 1000) {
         exit(1);
     }
 
     for (int dynamic_pos_counter_2 = 1; dynamic_pos_counter_2 <= limit; dynamic_pos_counter_2 ++) {
-        printf("dynamic_pos_counter_2: %d\n", dynamic_pos_counter_2);
+        //printf("dynamic_pos_counter_2: %d\n", dynamic_pos_counter_2);
     }
 }
 
 void fn_dynamic_pos_counter_3(int limit) {
-    if (limit < 0 || limit >= 100) {
+    if (limit < 0 || limit >= 1000) {
         exit(1);
     }
 
     for (int dynamic_pos_counter_3 = 1; dynamic_pos_counter_3 <= limit; dynamic_pos_counter_3 ++) {
-        printf("dynamic_pos_counter_3: %d\n", dynamic_pos_counter_3);
+        //printf("dynamic_pos_counter_3: %d\n", dynamic_pos_counter_3);
     }
 }
 
 void fn_dynamic_pos_counter_4(int limit) {
-    if (limit < 0 || limit >= 100) {
+    if (limit < 0 || limit >= 1000) {
         exit(1);
     }
 
     for (int dynamic_pos_counter_4 = 1; dynamic_pos_counter_4 <= limit; dynamic_pos_counter_4 ++) {
-        printf("dynamic_pos_counter_4: %d\n", dynamic_pos_counter_4);
+        //printf("dynamic_pos_counter_4: %d\n", dynamic_pos_counter_4);
     }
 }
 
 void fn_dynamic_pos_counter_5(int limit) {
-    if (limit < 0 || limit >= 100) {
+    if (limit < 0 || limit >= 1000) {
         exit(1);
     }
 
     for (int dynamic_pos_counter_5 = 1; dynamic_pos_counter_5 <= limit; dynamic_pos_counter_5 ++) {
-        printf("dynamic_pos_counter_5: %d\n", dynamic_pos_counter_5);
+        //printf("dynamic_pos_counter_5: %d\n", dynamic_pos_counter_5);
     }
 }
 
 void fn_dynamic_neg_counter_1(int limit) {
-    if (limit < 0 || limit >= 100) {
+    if (limit < 0 || limit >= 1000) {
         exit(1);
     }
 
     for (int dynamic_neg_counter_1 = limit; dynamic_neg_counter_1 >= 1; dynamic_neg_counter_1 --) {
-        printf("dynamic_neg_counter_1: %d\n", dynamic_neg_counter_1);
+        //printf("dynamic_neg_counter_1: %d\n", dynamic_neg_counter_1);
     }
 }
 
 void fn_dynamic_neg_counter_2(int limit) {
-    if (limit < 0 || limit >= 100) {
+    if (limit < 0 || limit >= 1000) {
         exit(1);
     }
 
     for (int dynamic_neg_counter_2 = limit; dynamic_neg_counter_2 >= 1; dynamic_neg_counter_2 --) {
-        printf("dynamic_neg_counter_2: %d\n", dynamic_neg_counter_2);
+        //printf("dynamic_neg_counter_2: %d\n", dynamic_neg_counter_2);
     }
 }
 
 void fn_dynamic_neg_counter_3(int limit) {
-    if (limit < 0 || limit >= 100) {
+    if (limit < 0 || limit >= 1000) {
         exit(1);
     }
 
     for (int dynamic_neg_counter_3 = limit; dynamic_neg_counter_3 >= 1; dynamic_neg_counter_3 --) {
-        printf("dynamic_neg_counter_3: %d\n", dynamic_neg_counter_3);
+        //printf("dynamic_neg_counter_3: %d\n", dynamic_neg_counter_3);
     }
 }
 
 void fn_dynamic_neg_counter_4(int limit) {
-    if (limit < 0 || limit >= 100) {
+    if (limit < 0 || limit >= 1000) {
         exit(1);
     }
 
     for (int dynamic_neg_counter_4 = limit; dynamic_neg_counter_4 >= 1; dynamic_neg_counter_4 --) {
-        printf("dynamic_neg_counter_4: %d\n", dynamic_neg_counter_4);
+        //printf("dynamic_neg_counter_4: %d\n", dynamic_neg_counter_4);
     }
 }
 
 void fn_dynamic_neg_counter_5(int limit) {
-    if (limit < 0 || limit >= 100) {
+    if (limit < 0 || limit >= 1000) {
         exit(1);
     }
 
     for (int dynamic_neg_counter_5 = limit; dynamic_neg_counter_5 >= 1; dynamic_neg_counter_5 --) {
-        printf("dynamic_neg_counter_5: %d\n", dynamic_neg_counter_5);
+        //printf("dynamic_neg_counter_5: %d\n", dynamic_neg_counter_5);
     }
 }
 
 void fn_varying_static_pos_counter_1() {
     int step = 0;
     for (int varying_static_pos_counter_1 = 1; varying_static_pos_counter_1 <= 25; varying_static_pos_counter_1 += step) {
-        printf("varying_static_pos_counter_1: %d\n", varying_static_pos_counter_1);
+        //printf("varying_static_pos_counter_1: %d\n", varying_static_pos_counter_1);
         step++;
     }
 }
@@ -202,7 +204,7 @@ void fn_varying_static_pos_counter_1() {
 void fn_varying_static_pos_counter_2() {
     int step = 0;
     for (int varying_static_pos_counter_2 = 1; varying_static_pos_counter_2 <= 50; varying_static_pos_counter_2 += step) {
-        printf("varying_static_pos_counter_2: %d\n", varying_static_pos_counter_2);
+        //printf("varying_static_pos_counter_2: %d\n", varying_static_pos_counter_2);
         step++;
     }
 }
@@ -210,7 +212,7 @@ void fn_varying_static_pos_counter_2() {
 void fn_varying_static_pos_counter_3() {
     int step = 0;
     for (int varying_static_pos_counter_3 = 1; varying_static_pos_counter_3 <= 75; varying_static_pos_counter_3 += step) {
-        printf("varying_static_pos_counter_3: %d\n", varying_static_pos_counter_3);
+        //printf("varying_static_pos_counter_3: %d\n", varying_static_pos_counter_3);
         step++;
     }
 }
@@ -218,7 +220,7 @@ void fn_varying_static_pos_counter_3() {
 void fn_varying_static_pos_counter_4() {
     int step = 0;
     for (int varying_static_pos_counter_4 = 1; varying_static_pos_counter_4 <= 100; varying_static_pos_counter_4 += step) {
-        printf("varying_static_pos_counter_4: %d\n", varying_static_pos_counter_4);
+        //printf("varying_static_pos_counter_4: %d\n", varying_static_pos_counter_4);
         step++;
     }
 }
@@ -226,7 +228,7 @@ void fn_varying_static_pos_counter_4() {
 void fn_varying_static_pos_counter_5() {
     int step = 0;
     for (int varying_static_pos_counter_5 = 1; varying_static_pos_counter_5 <= 125; varying_static_pos_counter_5 += step) {
-        printf("varying_static_pos_counter_5: %d\n", varying_static_pos_counter_5);
+        //printf("varying_static_pos_counter_5: %d\n", varying_static_pos_counter_5);
         step++;
     }
 }
@@ -234,7 +236,7 @@ void fn_varying_static_pos_counter_5() {
 void fn_varying_static_neg_counter_1() {
     int step = 0;
     for (int varying_static_neg_counter_1 = 25; varying_static_neg_counter_1 >= 1; varying_static_neg_counter_1 -= step) {
-        printf("varying_static_neg_counter_1: %d\n", varying_static_neg_counter_1);
+        //printf("varying_static_neg_counter_1: %d\n", varying_static_neg_counter_1);
         step++;
     }
 }
@@ -242,7 +244,7 @@ void fn_varying_static_neg_counter_1() {
 void fn_varying_static_neg_counter_2() {
     int step = 0;
     for (int varying_static_neg_counter_2 = 50; varying_static_neg_counter_2 >= 1; varying_static_neg_counter_2 -= step) {
-        printf("varying_static_neg_counter_2: %d\n", varying_static_neg_counter_2);
+        //printf("varying_static_neg_counter_2: %d\n", varying_static_neg_counter_2);
         step++;
     }
 }
@@ -250,7 +252,7 @@ void fn_varying_static_neg_counter_2() {
 void fn_varying_static_neg_counter_3() {
     int step = 0;
     for (int varying_static_neg_counter_3 = 75; varying_static_neg_counter_3 >= 1; varying_static_neg_counter_3 -= step) {
-        printf("varying_static_neg_counter_3: %d\n", varying_static_neg_counter_3);
+        //printf("varying_static_neg_counter_3: %d\n", varying_static_neg_counter_3);
         step++;
     }
 }
@@ -258,7 +260,7 @@ void fn_varying_static_neg_counter_3() {
 void fn_varying_static_neg_counter_4() {
     int step = 0;
     for (int varying_static_neg_counter_4 = 100; varying_static_neg_counter_4 >= 1; varying_static_neg_counter_4 -= step) {
-        printf("varying_static_neg_counter_4: %d\n", varying_static_neg_counter_4);
+        //printf("varying_static_neg_counter_4: %d\n", varying_static_neg_counter_4);
         step++;
     }
 }
@@ -266,127 +268,127 @@ void fn_varying_static_neg_counter_4() {
 void fn_varying_static_neg_counter_5() {
     int step = 0;
     for (int varying_static_neg_counter_5 = 125; varying_static_neg_counter_5 >= 1; varying_static_neg_counter_5 -= step) {
-        printf("varying_static_neg_counter_5: %d\n", varying_static_neg_counter_5);
+        //printf("varying_static_neg_counter_5: %d\n", varying_static_neg_counter_5);
         step++;
     }
 }
 
 void fn_varying_dynamic_pos_counter_1(int limit) {
-    if (limit < 0 || limit >= 100) {
+    if (limit < 0 || limit >= 1000) {
         exit(1);
     }
 
     int step = 0;
     for (int varying_dynamic_pos_counter_1 = 1; varying_dynamic_pos_counter_1 <= limit; varying_dynamic_pos_counter_1 += step) {
-        printf("varying_dynamic_pos_counter_1: %d\n", varying_dynamic_pos_counter_1);
+        //printf("varying_dynamic_pos_counter_1: %d\n", varying_dynamic_pos_counter_1);
         step++;
     }
 }
 
 void fn_varying_dynamic_pos_counter_2(int limit) {
-    if (limit < 0 || limit >= 100) {
+    if (limit < 0 || limit >= 1000) {
         exit(1);
     }
 
     int step = 0;
     for (int varying_dynamic_pos_counter_2 = 1; varying_dynamic_pos_counter_2 <= limit; varying_dynamic_pos_counter_2 += step) {
-        printf("varying_dynamic_pos_counter_2: %d\n", varying_dynamic_pos_counter_2);
+        //printf("varying_dynamic_pos_counter_2: %d\n", varying_dynamic_pos_counter_2);
         step++;
     }
 }
 
 void fn_varying_dynamic_pos_counter_3(int limit) {
-    if (limit < 0 || limit >= 100) {
+    if (limit < 0 || limit >= 1000) {
         exit(1);
     }
 
     int step = 0;
     for (int varying_dynamic_pos_counter_3 = 1; varying_dynamic_pos_counter_3 <= limit; varying_dynamic_pos_counter_3 += step) {
-        printf("varying_dynamic_pos_counter_3: %d\n", varying_dynamic_pos_counter_3);
+        //printf("varying_dynamic_pos_counter_3: %d\n", varying_dynamic_pos_counter_3);
         step++;
     }
 }
 
 void fn_varying_dynamic_pos_counter_4(int limit) {
-    if (limit < 0 || limit >= 100) {
+    if (limit < 0 || limit >= 1000) {
         exit(1);
     }
 
     int step = 0;
     for (int varying_dynamic_pos_counter_4 = 1; varying_dynamic_pos_counter_4 <= limit; varying_dynamic_pos_counter_4 += step) {
-        printf("varying_dynamic_pos_counter_4: %d\n", varying_dynamic_pos_counter_4);
+        //printf("varying_dynamic_pos_counter_4: %d\n", varying_dynamic_pos_counter_4);
         step++;
     }
 }
 
 void fn_varying_dynamic_pos_counter_5(int limit) {
-    if (limit < 0 || limit >= 100) {
+    if (limit < 0 || limit >= 1000) {
         exit(1);
     }
 
     int step = 0;
     for (int varying_dynamic_pos_counter_5 = 1; varying_dynamic_pos_counter_5 <= limit; varying_dynamic_pos_counter_5 += step) {
-        printf("varying_dynamic_pos_counter_5: %d\n", varying_dynamic_pos_counter_5);
+        //printf("varying_dynamic_pos_counter_5: %d\n", varying_dynamic_pos_counter_5);
         step++;
     }
 }
 
 void fn_varying_dynamic_neg_counter_1(int limit) {
-    if (limit < 0 || limit >= 100) {
+    if (limit < 0 || limit >= 1000) {
         exit(1);
     }
 
     int step = 0;
     for (int varying_dynamic_neg_counter_1 = limit; varying_dynamic_neg_counter_1 >= 1; varying_dynamic_neg_counter_1 -= step) {
-        printf("varying_dynamic_neg_counter_1: %d\n", varying_dynamic_neg_counter_1);
+        //printf("varying_dynamic_neg_counter_1: %d\n", varying_dynamic_neg_counter_1);
         step++;
     }
 }
 
 void fn_varying_dynamic_neg_counter_2(int limit) {
-    if (limit < 0 || limit >= 100) {
+    if (limit < 0 || limit >= 1000) {
         exit(1);
     }
 
     int step = 0;
     for (int varying_dynamic_neg_counter_2 = limit; varying_dynamic_neg_counter_2 >= 1; varying_dynamic_neg_counter_2 -= step) {
-        printf("varying_dynamic_neg_counter_2: %d\n", varying_dynamic_neg_counter_2);
+        //printf("varying_dynamic_neg_counter_2: %d\n", varying_dynamic_neg_counter_2);
         step++;
     }
 }
 
 void fn_varying_dynamic_neg_counter_3(int limit) {
-    if (limit < 0 || limit >= 100) {
+    if (limit < 0 || limit >= 1000) {
         exit(1);
     }
 
     int step = 0;
     for (int varying_dynamic_neg_counter_3 = limit; varying_dynamic_neg_counter_3 >= 1; varying_dynamic_neg_counter_3 -= step) {
-        printf("varying_dynamic_neg_counter_3: %d\n", varying_dynamic_neg_counter_3);
+        //printf("varying_dynamic_neg_counter_3: %d\n", varying_dynamic_neg_counter_3);
         step++;
     }
 }
 
 void fn_varying_dynamic_neg_counter_4(int limit) {
-    if (limit < 0 || limit >= 100) {
+    if (limit < 0 || limit >= 1000) {
         exit(1);
     }
 
     int step = 0;
     for (int varying_dynamic_neg_counter_4 = limit; varying_dynamic_neg_counter_4 >= 1; varying_dynamic_neg_counter_4 -= step) {
-        printf("varying_dynamic_neg_counter_4: %d\n", varying_dynamic_neg_counter_4);
+        //printf("varying_dynamic_neg_counter_4: %d\n", varying_dynamic_neg_counter_4);
         step++;
     }
 }
 
 void fn_varying_dynamic_neg_counter_5(int limit) {
-    if (limit < 0 || limit >= 100) {
+    if (limit < 0 || limit >= 1000) {
         exit(1);
     }
 
     int step = 0;
     for (int varying_dynamic_neg_counter_5 = limit; varying_dynamic_neg_counter_5 >= 1; varying_dynamic_neg_counter_5 -= step) {
-        printf("varying_dynamic_neg_counter_5: %d\n", varying_dynamic_neg_counter_5);
+        //printf("varying_dynamic_neg_counter_5: %d\n", varying_dynamic_neg_counter_5);
         step++;
     }
 }
@@ -397,7 +399,7 @@ void fn_enum_var_single_mod_1(int value) {
     }
 
     int enum_var_single_mod_1 = value;
-    printf("enum_var_single_mod_1: %d\n", enum_var_single_mod_1);
+    //printf("enum_var_single_mod_1: %d\n", enum_var_single_mod_1);
 }
 
 void fn_enum_var_single_mod_2(int value) {
@@ -406,7 +408,7 @@ void fn_enum_var_single_mod_2(int value) {
     }
 
     int enum_var_single_mod_2 = value;
-    printf("enum_var_single_mod_2: %d\n", enum_var_single_mod_2);
+    //printf("enum_var_single_mod_2: %d\n", enum_var_single_mod_2);
 }
 
 void fn_enum_var_single_mod_3(int value) {
@@ -415,7 +417,7 @@ void fn_enum_var_single_mod_3(int value) {
     }
 
     int enum_var_single_mod_3 = value;
-    printf("enum_var_single_mod_3: %d\n", enum_var_single_mod_3);
+    //printf("enum_var_single_mod_3: %d\n", enum_var_single_mod_3);
 }
 
 void fn_enum_var_single_mod_4(int value) {
@@ -424,7 +426,7 @@ void fn_enum_var_single_mod_4(int value) {
     }
 
     int enum_var_single_mod_4 = value;
-    printf("enum_var_single_mod_4: %d\n", enum_var_single_mod_4);
+    //printf("enum_var_single_mod_4: %d\n", enum_var_single_mod_4);
 }
 
 void fn_enum_var_single_mod_5(int value) {
@@ -433,7 +435,7 @@ void fn_enum_var_single_mod_5(int value) {
     }
 
     int enum_var_single_mod_5 = value;
-    printf("enum_var_single_mod_5: %d\n", enum_var_single_mod_5);
+    //printf("enum_var_single_mod_5: %d\n", enum_var_single_mod_5);
 }
 
 void fn_enum_var_multi_mod_1(int value) {
@@ -460,7 +462,7 @@ void fn_enum_var_multi_mod_1(int value) {
         enum_var_multi_mod_1 = value + 7;
     }
 
-    printf("enum_var_multi_mod_1: %d\n", enum_var_multi_mod_1);
+    //printf("enum_var_multi_mod_1: %d\n", enum_var_multi_mod_1);
 }
 
 void fn_enum_var_multi_mod_2(int value) {
@@ -487,7 +489,7 @@ void fn_enum_var_multi_mod_2(int value) {
         enum_var_multi_mod_2 = value + 7;
     }
 
-    printf("enum_var_multi_mod_2: %d\n", enum_var_multi_mod_2);
+    //printf("enum_var_multi_mod_2: %d\n", enum_var_multi_mod_2);
 }
 
 void fn_enum_var_multi_mod_3(int value) {
@@ -514,7 +516,7 @@ void fn_enum_var_multi_mod_3(int value) {
         enum_var_multi_mod_3 = value + 7;
     }
 
-    printf("enum_var_multi_mod_3: %d\n", enum_var_multi_mod_3);
+    //printf("enum_var_multi_mod_3: %d\n", enum_var_multi_mod_3);
 }
 
 void fn_enum_var_multi_mod_4(int value) {
@@ -541,7 +543,7 @@ void fn_enum_var_multi_mod_4(int value) {
         enum_var_multi_mod_4 = value + 7;
     }
 
-    printf("enum_var_multi_mod_4: %d\n", enum_var_multi_mod_4);
+    //printf("enum_var_multi_mod_4: %d\n", enum_var_multi_mod_4);
 }
 
 void fn_enum_var_multi_mod_5(int value) {
@@ -568,9 +570,10 @@ void fn_enum_var_multi_mod_5(int value) {
         enum_var_multi_mod_5 = value + 7;
     }
 
-    printf("enum_var_multi_mod_5: %d\n", enum_var_multi_mod_5);
+    //printf("enum_var_multi_mod_5: %d\n", enum_var_multi_mod_5);
 }
 
+vvdump_ignore
 int parse_int(const char *str) {
     char *endptr = NULL;
     int var_num = strtol(str, &endptr, 10);
@@ -582,12 +585,14 @@ int parse_int(const char *str) {
     return var_num;
 }
 
+vvdump_ignore
 void cleanup(char **tokens, int num_tokens) {
     for (int i = 0; i < num_tokens; i++) {
         free(tokens[i]);
     }
 }
 
+vvdump_ignore
 int tokenize(char *buffer, char **tokens, char delim, int limit) {
     int num_tokens = 0;
     int i = 0;
@@ -623,17 +628,6 @@ int tokenize(char *buffer, char **tokens, char delim, int limit) {
 }
 
 int main(int argc, char* argv[]) {
-    int num_inputs_1 = 0;
-    int num_ops_1 = 0;
-    int num_inputs_2 = 0;
-    int num_ops_2 = 0;
-    int num_inputs_3 = 0;
-    int num_ops_3 = 0;
-    int num_inputs_4 = 0;
-    int num_ops_4 = 0;
-    int num_inputs_5 = 0;
-    int num_ops_5 = 0;
-
     char *buffer;
     size_t buffer_size = BUFFER_SIZE;
     size_t num_read;
@@ -649,6 +643,8 @@ int main(int argc, char* argv[]) {
 
     char enum_mod_type;
     char *values[MAX_VALUES];
+
+    int num_ops = 0;
 
     buffer = (char *)malloc(BUFFER_SIZE * sizeof(char));
     if (buffer == NULL) {
@@ -712,16 +708,7 @@ int main(int argc, char* argv[]) {
             exit(1);
     }
 
-    num_inputs_1 += 1;
-    num_ops_1 += 1;
-    num_inputs_2 += 1;
-    num_ops_2 += 1;
-    num_inputs_3 += 1;
-    num_ops_3 += 1;
-    num_inputs_4 += 1;
-    num_ops_4 += 1;
-    num_inputs_5 += 1;
-    num_ops_5 += 1;
+    num_ops++;
 
     // static_neg_counter
     var_num = parse_int(ops[STATIC_NEG_COUNTER_VAR_NUM]);
@@ -760,16 +747,7 @@ int main(int argc, char* argv[]) {
             exit(1);
     }
 
-    num_inputs_1 += 1;
-    num_ops_1 += 1;
-    num_inputs_2 += 1;
-    num_ops_2 += 1;
-    num_inputs_3 += 1;
-    num_ops_3 += 1;
-    num_inputs_4 += 1;
-    num_ops_4 += 1;
-    num_inputs_5 += 1;
-    num_ops_5 += 1;
+    num_ops++;
 
     // dynamic_pos_counter
     num_tokens = tokenize(ops[DYNAMIC_POS_COUNTER_VAR_NUM_AND_LIMIT], var_num_and_limit, ';', 2);
@@ -831,16 +809,7 @@ int main(int argc, char* argv[]) {
             exit(1);
     }
 
-    num_inputs_1 += 2;
-    num_ops_1 += 1;
-    num_inputs_2 += 2;
-    num_ops_2 += 1;
-    num_inputs_3 += 2;
-    num_ops_3 += 1;
-    num_inputs_4 += 2;
-    num_ops_4 += 1;
-    num_inputs_5 += 2;
-    num_ops_5 += 1;
+    num_ops++;
 
     // dynamic_neg_counter
     num_tokens = tokenize(ops[DYNAMIC_NEG_COUNTER_VAR_NUM_AND_LIMIT], var_num_and_limit, ';', 2);
@@ -902,16 +871,7 @@ int main(int argc, char* argv[]) {
             exit(1);
     }
 
-    num_inputs_1 += 2;
-    num_ops_1 += 1;
-    num_inputs_2 += 2;
-    num_ops_2 += 1;
-    num_inputs_3 += 2;
-    num_ops_3 += 1;
-    num_inputs_4 += 2;
-    num_ops_4 += 1;
-    num_inputs_5 += 2;
-    num_ops_5 += 1;
+    num_ops++;
 
     // varying_static_pos_counter
     var_num = parse_int(ops[VARYING_STATIC_POS_COUNTER_VAR_NUM]);
@@ -947,16 +907,7 @@ int main(int argc, char* argv[]) {
             return 1;
     }
 
-    num_inputs_1 += 1;
-    num_ops_1 += 1;
-    num_inputs_2 += 1;
-    num_ops_2 += 1;
-    num_inputs_3 += 1;
-    num_ops_3 += 1;
-    num_inputs_4 += 1;
-    num_ops_4 += 1;
-    num_inputs_5 += 1;
-    num_ops_5 += 1;
+    num_ops++;
 
     // varying_static_neg_counter
     var_num = parse_int(ops[VARYING_STATIC_NEG_COUNTER_VAR_NUM]);
@@ -992,16 +943,7 @@ int main(int argc, char* argv[]) {
             return 1;
     }
 
-    num_inputs_1 += 1;
-    num_ops_1 += 1;
-    num_inputs_2 += 1;
-    num_ops_2 += 1;
-    num_inputs_3 += 1;
-    num_ops_3 += 1;
-    num_inputs_4 += 1;
-    num_ops_4 += 1;
-    num_inputs_5 += 1;
-    num_ops_5 += 1;
+    num_ops++;
 
     // varying_dynamic_pos_counter
     num_tokens = tokenize(ops[VARYING_DYNAMIC_POS_COUNTER_VAR_NUM_AND_LIMIT], var_num_and_limit, ';', 2);
@@ -1063,16 +1005,7 @@ int main(int argc, char* argv[]) {
             exit(1);
     }
 
-    num_inputs_1 += 2;
-    num_ops_1 += 1;
-    num_inputs_2 += 2;
-    num_ops_2 += 1;
-    num_inputs_3 += 2;
-    num_ops_3 += 1;
-    num_inputs_4 += 2;
-    num_ops_4 += 1;
-    num_inputs_5 += 2;
-    num_ops_5 += 1;
+    num_ops++;
 
     // varying_dynamic_neg_counter
     num_tokens = tokenize(ops[VARYING_DYNAMIC_NEG_COUNTER_VAR_NUM_AND_LIMIT], var_num_and_limit, ';', 2);
@@ -1134,16 +1067,7 @@ int main(int argc, char* argv[]) {
             exit(1);
     }
 
-    num_inputs_1 += 2;
-    num_ops_1 += 1;
-    num_inputs_2 += 2;
-    num_ops_2 += 1;
-    num_inputs_3 += 2;
-    num_ops_3 += 1;
-    num_inputs_4 += 2;
-    num_ops_4 += 1;
-    num_inputs_5 += 2;
-    num_ops_5 += 1;
+    num_ops++;
 
     // enum var
     num_tokens = tokenize(ops[ENUM_VAR_AND_VALUES], enum_var_and_values, ';', 3);
@@ -1156,9 +1080,9 @@ int main(int argc, char* argv[]) {
         exit(1);
     }
 
-    enum_mod_type = enum_var_and_values[ENUM_VAR_MOD_TYPE][0];
-    if (enum_mod_type != ENUM_VAR_SINGLE_MOD && enum_mod_type != ENUM_VAR_MULTI_MOD) {
-        printf("Bad enum mod type (%c)\n", enum_mod_type);
+    var_num = parse_int(enum_var_and_values[ENUM_VAR_NUM]);
+    if (var_num <= 0 || var_num > 5) {
+        printf("Bad enum number (%d)\n", var_num);
         free(buffer);
         cleanup(ops, total_ops);
         cleanup(enum_var_and_values, num_tokens);
@@ -1166,9 +1090,9 @@ int main(int argc, char* argv[]) {
         exit(1);
     }
 
-    var_num = parse_int(enum_var_and_values[ENUM_VAR_NUM]);
-    if (var_num <= 0 || var_num > 5) {
-        printf("Bad enum number (%d)\n", var_num);
+    enum_mod_type = enum_var_and_values[ENUM_VAR_MOD_TYPE][0];
+    if (enum_mod_type != ENUM_VAR_SINGLE_MOD && enum_mod_type != ENUM_VAR_MULTI_MOD) {
+        printf("Bad enum mod type (%c)\n", enum_mod_type);
         free(buffer);
         cleanup(ops, total_ops);
         cleanup(enum_var_and_values, num_tokens);
@@ -1248,25 +1172,15 @@ int main(int argc, char* argv[]) {
                    exit(1);
            }
        }
+
+       num_ops++;
     }
-
-    num_inputs_1 += (2 + num_values);
-    num_ops_1 += 1;
-    num_inputs_2 += (2 + num_values);
-    num_ops_2 += 1;
-    num_inputs_3 += (2 + num_values);
-    num_ops_3 += 1;
-    num_inputs_4 += (2 + num_values);
-    num_ops_4 += 1;
-    num_inputs_5 += (2 + num_values);
-    num_ops_5 += 1;
-
-    printf("num inputs: [%d, %d, %d, %d, %d]\n", num_inputs_1, num_inputs_2, num_inputs_3, num_inputs_4, num_inputs_5);
-    printf("num ops: [%d, %d, %d, %d, %d]\n", num_ops_1, num_ops_2, num_ops_3, num_ops_4, num_ops_5);
 
     free(buffer);
     cleanup(ops, total_ops);
     cleanup(values, num_values);
+
+    //printf("Ops performed: %d\n", num_ops);
 
     return 0;
 }
