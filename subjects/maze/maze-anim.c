@@ -99,7 +99,7 @@ bool found_target(const int* row, const int* column) {
 
 int main(int argc, char* argv[]) {
     if (argc < 5) {
-        printf("Syntax: %s <target-name> <pod-name> <input-filename> <maze-type:1|2|3>\n", argv[0]);
+        printf("Syntax: %s <target-name> <pod-name> <input-filename> <maze-type:1|2|3> <animate:0|1>\n", argv[0]);
         return 1;
     }
 
@@ -141,7 +141,11 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    printf("\033[2J\033[0;0H");
+    p = NULL;
+    int animate = (argc == 6) ? (int) strtol(argv[5], &p, 10) : 1;
+    if (animate) {
+        printf("\033[2J\033[0;0H");
+    }
 
     int delta_row;
     int delta_col;
@@ -155,9 +159,11 @@ int main(int argc, char* argv[]) {
     char option;
     bool error = false;
     bool done = false;
-    print_maze(player_row, player_col);
+
+    if (animate) {
+        print_maze(player_row, player_col);
+    }
     while (!done && !error) {
-        //print_maze(player_row, player_col);
         printf("u, d, l, or r: ");
         if (fgets(buffer, BUFFER_SIZE, stdin) == NULL) {
             done = true;
@@ -234,8 +240,10 @@ int main(int argc, char* argv[]) {
                 done = true;
             }
 
-            print_maze(player_row, player_col);
-            usleep(31250);
+            if (animate) {
+                print_maze(player_row, player_col);
+                usleep(31250);
+            }
         }
     }
 

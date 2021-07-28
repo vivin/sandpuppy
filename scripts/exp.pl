@@ -86,12 +86,17 @@ if ($task eq "build" or $task eq "fuzz") {
         }
     }
 } else {
-    if ($ARGV[3] && $ARGV[3] ne "with") {
-        die "Expected \"with\":\n $0 $experiment_name $task $original_subject with asan";
-    } elsif ($ARGV[3] && $ARGV[4] && $ARGV[4] ne "asan") {
+    if ($ARGV[3] && $ARGV[3] ne "with" && $ARGV[3] ne "resume") {
+        die "Expected \"with\":\n $0 $experiment_name $task $original_subject with asan\n   or   \nExpected \"resume\":\n $0 $experiment_name $task $original_subject resume";
+    } elsif ($ARGV[3] && $ARGV[3] eq "with" && (!$ARGV[4] || $ARGV[4] ne "asan")) {
         die "Expected \"asan\":\n $0 $experiment_name $task $original_subject with asan";
-    } elsif ($ARGV[4]) {
+    } elsif ($ARGV[3] && $ARGV[3] eq "with") {
         $use_asan = 1;
+        if ($ARGV[5] && $ARGV[5] eq "resume") {
+            $resume = 1;
+        }
+    } elsif ($ARGV[3]) {
+        $resume = 1;
     }
 }
 
@@ -125,7 +130,8 @@ if ($task eq "build") {
             $version,
             {
                 use_asan       => $use_asan,
-                use_kubernetes => 1
+                use_kubernetes => 1,
+                resume         => $resume
             }
         );
     }

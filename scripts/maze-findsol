@@ -1,0 +1,105 @@
+#!/bin/bash
+
+if [[ $# -lt 2 ]]; then
+  echo "$0 <experiment> <subject> [<file-regex>]"
+  exit 1
+fi
+
+EXPERIMENT=$1
+SUBJECT=$2
+if [ "$SUBJECT" == "maze" ]; then
+  maze_type=1
+elif [ "$SUBJECT" == "maze_ijon" ]; then
+  maze_type=2
+elif [ "$SUBJECT" == "maze_klee" ]; then
+  maze_type=3
+else
+  echo "Unknown maze: $SUBJECT"
+  exit 1
+fi
+
+FILE_REGEX=$3
+if [[ -z "$FILE_REGEX" ]]; then
+  FILE_REGEX=".*id:.*";
+fi
+
+declare -a targets=()
+declare -A target_to_pod_name=()
+declare -A target_to_id=()
+
+function format_seconds {
+  local formatted=""
+
+  local T=$1
+  local D=$((T/60/60/24))
+  local H=$((T/60/60%24))
+  local M=$((T/60%60))
+  local S=$((T%60))
+  (( $D > 0 )) && formatted="$D days "
+  (( $H > 0 )) && formatted="$formatted$H hours "
+  (( $M > 0 )) && formatted="$formatted$M minutes"
+  (( $D > 0 || $H > 0 || $M > 0 )) && formatted="$formatted and "
+  formatted="$formatted$S seconds"
+
+  echo "$formatted"
+}
+
+echo "Finding solutions for \"$SUBJECT\""
+echo "Identifying $SUBJECT targets in experiment $EXPERIMENT..."
+
+SUBJECT_DIR="/mnt/vivin-nfs/vivin/$EXPERIMENT/$SUBJECT"
+id_to_pod_name_and_target_file="$SUBJECT_DIR/results/id_to_pod_name_and_target.yml"
+while IFS= read -r -d '' target_script
+do
+  # shellcheck disable=SC2001
+  id=$(echo "$target_script" | sed -e 's,^.*/,,')
+  pod_name_and_target=$(grep -A2 "^$id" "$id_to_pod_name_and_target_file" | tail -2)
+  pod_name=$(echo "$pod_name_and_target" | head -1 | sed -e 's/^.*pod_name: //')
+  target_name=$(echo "$pod_name_and_target" | tail -1 | sed -e 's/^.*target_name: //')
+
+  targets+=("$target_name")
+  target_to_pod_name[$target_name]="$pod_name"
+  target_to_id[$target_name]="$id"
+done < <(find "$SUBJECT_DIR" -maxdepth 1 -type f -print0 | sort -z)
+
+echo ""
+
+start_ts=$(cat "$SUBJECT_DIR/results/sandpuppy-sync/start_ts")
+
+for i in "${!targets[@]}"; do
+  target=${targets[$i]}
+  pod_name=${target_to_pod_name[$target]}
+  id=${target_to_id[$target]}
+
+  echo "Checking $target ($id) for solutions..."
+  declare -a solutions=()
+  INPUTS_DIR="$SUBJECT_DIR/results/sandpuppy-sync/$id/queue";
+  j=0
+  num_inputs=$(find "$INPUTS_DIR" -maxdepth 1 -type f -regextype posix-extended -regex "$FILE_REGEX" | wc -l)
+  while IFS= read -r -d '' input_file_path
+  do
+    j=$(( j + 1 ))
+    echo -ne "Checking input file $j of $num_inputs\r";
+
+    # shellcheck disable=SC2001
+    filename=$(echo "$input_file_path" | sed -e 's,^.*/,,')
+    mtime=$(stat -c '%Y' "$input_file_path")
+    diff=$((mtime - start_ts))
+    pretty_diff=$(format_seconds $diff)
+
+    resources/maze-anim "$target" "$pod_name" "$filename" "$maze_type" 0 < "$input_file_path" > /tmp/out
+    found_treasure=$(grep "You found the treasure" /tmp/out)
+    if [[ -n "$found_treasure" ]]; then
+      solutions+=("$filename (found after $pretty_diff of fuzzing)")
+    fi
+  done < <(find "$INPUTS_DIR" -maxdepth 1 -type f -regextype posix-extended -regex "$FILE_REGEX" -print0 | sort -z)
+
+  if [[ "${#solutions[@]}" -gt 0 ]]; then
+    for solution in "${solutions[@]}"; do
+      echo "  $solution"
+    done
+
+    echo ""
+  fi
+
+done

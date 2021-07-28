@@ -43,7 +43,7 @@ my $subjects = {
             fuzz        => create_fuzz_task(\&vctestbed::get_fuzz_command),
             pod_command => create_pod_command_task(\&vctestbed::get_fuzz_command)
         },
-        fuzz_time   => 600
+        fuzz_time   => 300
     },
     infantheap => {
         binary_name => "infantheap",
@@ -484,30 +484,30 @@ sub sandpuppy_fuzz_k8s {
 
     $log->info("Fuzzing using kubernetes requested.\n");
 
+    # TODO: do distributed parallel.
+
     #$log->info("Copying target binaries to NFS mount");
 
     my $workspace = utils::get_workspace($experiment_name, $subject, $version);
-    my $directory_structure = utils::get_experiment_subject_directory_structure($experiment_name, $subject, $version);
-    my $nfs_workspace = "/mnt/vivin-nfs/vivin/$directory_structure";
-    my $container_shared_workspace = "/private-nfs/vivin/$directory_structure";
+    my $subject_directory = utils::get_subject_directory($experiment_name, $subject, $version);
+    my $local_nfs_workspace = "/mnt/vivin-nfs/vivin/$subject_directory";
+    my $container_nfs_workspace = "/private-nfs/vivin/$subject_directory";
 
-    if (! -d $nfs_workspace) {
-        system("mkdir -p $nfs_workspace");
+    if (! -d $local_nfs_workspace) {
+        system("mkdir -p $local_nfs_workspace");
     }
 
-    if (! -d "$nfs_workspace/results") {
-        system("mkdir $nfs_workspace/results");
+    if (! -d "$local_nfs_workspace/results") {
+        system("mkdir $local_nfs_workspace/results");
     }
 
-    if (! -d "$nfs_workspace/binaries") {
-        system("mkdir $nfs_workspace/binaries");
+    if (! -d "$local_nfs_workspace/binaries") {
+        system("mkdir $local_nfs_workspace/binaries");
     }
-
-    #open my $TASKS, ">", "$workspace/tasks";
 
     my $main_target_binary_dir = $main_target->{binary_context};
-    if (! -e -d "$nfs_workspace/binaries/$main_target_binary_dir") {
-        system("mkdir $nfs_workspace/binaries/$main_target_binary_dir");
+    if (! -e -d "$local_nfs_workspace/binaries/$main_target_binary_dir") {
+        system("mkdir $local_nfs_workspace/binaries/$main_target_binary_dir");
     }
 
     my @main_target_files = `find "$workspace/binaries/$main_target_binary_dir" -type f | sed -e 's,^.*/,,'`;
@@ -515,7 +515,7 @@ sub sandpuppy_fuzz_k8s {
         chomp($main_target_file);
 
         my $local_file_path = "$workspace/binaries/$main_target_binary_dir/$main_target_file";
-        my $nfs_file_path = "$nfs_workspace/binaries/$main_target_binary_dir/$main_target_file";
+        my $nfs_file_path = "$local_nfs_workspace/binaries/$main_target_binary_dir/$main_target_file";
 
         if (-e -f $nfs_file_path) {
             my $ctime_local_file = stat($local_file_path)->ctime;
@@ -541,34 +541,14 @@ sub sandpuppy_fuzz_k8s {
         target_name => $main_target->{name}
     };
 
-    if (! -e -f "$nfs_workspace/$main_target->{id}") {
-        $log->info("[1/$num_targets] Creating target script for main target...");
-        my $shared_binary_dir = "$container_shared_workspace/binaries/$main_target_binary_dir";
-
-        open my $TARGET_SCRIPT, ">", "$nfs_workspace/$main_target->{id}";
-        print $TARGET_SCRIPT "#!/bin/bash\n\n";
-        print $TARGET_SCRIPT "sync() {\n";
-        print $TARGET_SCRIPT "  while :\n";
-        print $TARGET_SCRIPT "  do\n";
-        print $TARGET_SCRIPT "    cp -ur /out/$main_target->{id} $container_shared_workspace/results/$SANDPUPPY_SYNC_DIRECTORY\n";
-        print $TARGET_SCRIPT "    sleep 5\n";
-        print $TARGET_SCRIPT "  done\n";
-        print $TARGET_SCRIPT "}\n\n";
-        print $TARGET_SCRIPT "echo \"Experiment: $experiment_name\"\n";
-        print $TARGET_SCRIPT "echo \"Subject: " . $subject . ($version ? "-$version" : "") . "\"\n";
-        print $TARGET_SCRIPT "echo \"Target name: $main_target->{name}\"\n";
-        print $TARGET_SCRIPT "echo \"Pod name: $pod_name\"\n";
-        print $TARGET_SCRIPT "ln -sf /private-nfs/vivin /home/vivin/Projects/phd/workspace\n";
-        print $TARGET_SCRIPT "mkdir -p /home/vivin/Projects/phd/bin\n";
-        print $TARGET_SCRIPT "mkdir -p $container_shared_workspace/results/$SANDPUPPY_SYNC_DIRECTORY\n";
-        print $TARGET_SCRIPT "if [[ ! -f \"$container_shared_workspace/results/$SANDPUPPY_SYNC_DIRECTORY/start_ts\" ]]; then\n";
-        print $TARGET_SCRIPT "  date +%s >$container_shared_workspace/results/$SANDPUPPY_SYNC_DIRECTORY/start_ts\n";
-        print $TARGET_SCRIPT "fi\n";
-        print $TARGET_SCRIPT "cp -rv $shared_binary_dir /home/vivin/Projects/phd/bin\n";
-        print $TARGET_SCRIPT "cd /home/vivin/Projects/phd\n";
-        print $TARGET_SCRIPT "sync &\n";
-        print $TARGET_SCRIPT "SYNC_PID=\$!\n";
-        print $TARGET_SCRIPT pod_command(
+    $log->info("[1/$num_targets] Creating target script for main target...");
+    my $target_script = utils::generate_target_script(
+        $experiment_name,
+        $subject,
+        $version,
+        $pod_name,
+        $main_target,
+        pod_command(
             $experiment_name,
             $subject,
             $version,
@@ -576,34 +556,37 @@ sub sandpuppy_fuzz_k8s {
             $main_target->{binary_context},
             $main_target->{execution_context},
             {
-                async               => 1,
-                fuzzer_id           => $main_target->{id}
+                async              => 1,
+                fuzzer_id          => $main_target->{id},
                 #sync_directory_name => $SANDPUPPY_SYNC_DIRECTORY,
-                #parallel_fuzz_mode  => "parent"
+                parallel_fuzz_mode => "parent",
+                resume             => $options->{resume}
             }
-        ) . "\n";
-        print $TARGET_SCRIPT "kill \$SYNC_PID >/dev/null 2>&1\n";
+        )
+    );
+
+    #if (! -f "$local_nfs_workspace/$main_target->{id}") {
+        open my $TARGET_SCRIPT, ">", "$local_nfs_workspace/$main_target->{id}";
+        print $TARGET_SCRIPT $target_script;
         close $TARGET_SCRIPT;
-        system "chmod 755 $nfs_workspace/$main_target->{id}";
-    } else {
-        $log->info("[1/$num_targets] Target script already exists");
-    }
+    #}
+
+    system "chmod 755 $local_nfs_workspace/$main_target->{id}";
 
     print "\n";
 
-    my $pod_command = "$container_shared_workspace/$main_target->{id}";
+    my $pod_command = "$container_nfs_workspace/$main_target->{id}";
     $pod_name_to_create_command->{$pod_name} = {
-        target  => $main_target->{id},
-        command => "kuboid/scripts/pod_create -n \"$pod_name\" -s /tmp/sandpuppy.existing -i vivin/sandpuppy $pod_command"
+        target   => $main_target->{id},
+        command  => "kuboid/scripts/pod_create -n \"$pod_name\" -s /tmp/sandpuppy.existing -i vivin/sandpuppy $pod_command",
+        sort_key => "a" # so that it always shows up first
     };
-
-    #print $TASKS "$container_shared_workspace/$main_target->{id}\n";
 
     my $i = 2; # Account for main target
     foreach my $target (@{$targets}) {
         my $target_binary_dir = $target->{binary_context};
-        if (! -e -d "$nfs_workspace/binaries/$target_binary_dir") {
-            system("mkdir $nfs_workspace/binaries/$target_binary_dir");
+        if (! -e -d "$local_nfs_workspace/binaries/$target_binary_dir") {
+            system("mkdir $local_nfs_workspace/binaries/$target_binary_dir");
         }
 
         my @target_files = `find "$workspace/binaries/$target_binary_dir" -type f | sed -e 's,^.*/,,'`;
@@ -611,7 +594,7 @@ sub sandpuppy_fuzz_k8s {
             chomp($target_file);
 
             my $local_file_path = "$workspace/binaries/$target_binary_dir/$target_file";
-            my $nfs_file_path = "$nfs_workspace/binaries/$target_binary_dir/$target_file";
+            my $nfs_file_path = "$local_nfs_workspace/binaries/$target_binary_dir/$target_file";
 
             if (-e -f $nfs_file_path) {
                 my $ctime_local_file = stat($local_file_path)->ctime;
@@ -640,35 +623,14 @@ sub sandpuppy_fuzz_k8s {
             target_name => $target->{name}
         };
 
-        if (! -e -f "$nfs_workspace/$target->{id}") {
-            $log->info("[$i/$num_targets] Creating target script for $target->{name}...");
-            my $shared_binary_dir = "$container_shared_workspace/binaries/$target_binary_dir";
-
-            open my $TARGET_SCRIPT, ">", "$nfs_workspace/$target->{id}";
-            print $TARGET_SCRIPT "#!/bin/bash\n\n";
-            print $TARGET_SCRIPT "sync() {\n";
-            print $TARGET_SCRIPT "  while :\n";
-            print $TARGET_SCRIPT "  do\n";
-            print $TARGET_SCRIPT "    cp -ur /out/$target->{id} $container_shared_workspace/results/$SANDPUPPY_SYNC_DIRECTORY\n";
-            print $TARGET_SCRIPT "    sleep 5\n";
-            print $TARGET_SCRIPT "  done\n";
-            print $TARGET_SCRIPT "}\n\n";
-            print $TARGET_SCRIPT "echo \"Experiment: $experiment_name\"\n";
-            print $TARGET_SCRIPT "echo \"Subject: " . $subject . ($version ? "-$version" : "") . "\"\n";
-            print $TARGET_SCRIPT "echo \"Target name: $target->{name}\"\n";
-            print $TARGET_SCRIPT "echo \"Pod name: $pod_name\"\n";
-            print $TARGET_SCRIPT "echo \"\"\n";
-            print $TARGET_SCRIPT "ln -sf /private-nfs/vivin /home/vivin/Projects/phd/workspace\n";
-            print $TARGET_SCRIPT "mkdir -p /home/vivin/Projects/phd/bin\n";
-            print $TARGET_SCRIPT "mkdir -p $container_shared_workspace/results/$SANDPUPPY_SYNC_DIRECTORY\n";
-            print $TARGET_SCRIPT "if [[ ! -f \"$container_shared_workspace/results/$SANDPUPPY_SYNC_DIRECTORY/start_ts\" ]]; then\n";
-            print $TARGET_SCRIPT "  date +%s >$container_shared_workspace/results/$SANDPUPPY_SYNC_DIRECTORY/start_ts\n";
-            print $TARGET_SCRIPT "fi\n";
-            print $TARGET_SCRIPT "cp -rv $shared_binary_dir /home/vivin/Projects/phd/bin\n";
-            print $TARGET_SCRIPT "cd /home/vivin/Projects/phd\n";
-            print $TARGET_SCRIPT "sync &\n";
-            print $TARGET_SCRIPT "SYNC_PID=\$!\n";
-            print $TARGET_SCRIPT pod_command(
+        $log->info("[$i/$num_targets] Creating target script for $target->{name}...");
+        $target_script = utils::generate_target_script(
+            $experiment_name,
+            $subject,
+            $version,
+            $pod_name,
+            $target,
+            pod_command(
                 $experiment_name,
                 $subject,
                 $version,
@@ -676,45 +638,49 @@ sub sandpuppy_fuzz_k8s {
                 $target->{binary_context},
                 $target->{execution_context},
                 {
-                    async               => 1,
-                    fuzzer_id           => $target->{id}
+                    async              => 1,
+                    fuzzer_id          => $target->{id},
                     #sync_directory_name => $SANDPUPPY_SYNC_DIRECTORY,
-                    #parallel_fuzz_mode  => "child",
+                    parallel_fuzz_mode => "child",
+                    resume             => $options->{resume}
                     #exit_when_done      => 1
                 }
-            ) . "\n";
-            print $TARGET_SCRIPT "kill \$SYNC_PID >/dev/null 2>&1\n";
-            close $TARGET_SCRIPT;
-            system "chmod 755 $nfs_workspace/$target->{id}";
-        } else {
-            $log->info("[$i/$num_targets] Target script already exists");
-        }
+            )
+        );
 
-        $pod_command = "$container_shared_workspace/$target->{id}";
+        #if (! -f "$local_nfs_workspace/$target->{id}") {
+            open $TARGET_SCRIPT, ">", "$local_nfs_workspace/$target->{id}";
+            print $TARGET_SCRIPT $target_script;
+            close $TARGET_SCRIPT;
+
+            system "chmod 755 $local_nfs_workspace/$target->{id}";
+        #}
+
+        $pod_command = "$container_nfs_workspace/$target->{id}";
         $pod_name_to_create_command->{$pod_name} = {
-            target  => $target->{id},
-            command => "kuboid/scripts/pod_create -n \"$pod_name\" -s /tmp/sandpuppy.existing -i vivin/sandpuppy $pod_command"
+            target   => $target->{id},
+            command  => "kuboid/scripts/pod_create -n \"$pod_name\" -s /tmp/sandpuppy.existing -i vivin/sandpuppy $pod_command",
+            sort_key => $target->{name}
         };
 
         print "\n";
         $i++;
-        #print $TASKS "$container_shared_workspace/$target->{id}\n";
     }
 
     $log->info("Preparing to create and run kubernetes pods for targets...");
 
-    my $id_to_pod_name_and_target_file = "$nfs_workspace/results/id_to_pod_name_and_target.yml";
+    my $id_to_pod_name_and_target_file = "$local_nfs_workspace/results/id_to_pod_name_and_target.yml";
     YAML::XS::DumpFile($id_to_pod_name_and_target_file, $id_to_pod_name_and_target);
 
-    #if (1) {
-    #    exit(0);
-    #}
+    if (1) {
+        exit(0);
+    }
 
     $log->info("Getting list of existing pods (so that we don't recreate)...");
     system ("kuboid/scripts/pod_names > /tmp/sandpuppy.existing");
 
     $i = 1;
-    foreach $pod_name (sort keys %{$pod_name_to_create_command}) {
+    foreach $pod_name (sort { $pod_name_to_create_command->{$a}->{sort_key} cmp $pod_name_to_create_command->{$b}->{sort_key} } keys %{$pod_name_to_create_command}) {
         my $target = $pod_name_to_create_command->{$pod_name}->{target};
         my $command = $pod_name_to_create_command->{$pod_name}->{command};
 
@@ -751,8 +717,6 @@ sub sandpuppy_fuzz_k8s {
 
         sleep 2;
     }
-
-    #close $TASKS;
 }
 
 sub sandpuppy_fuzz_local {

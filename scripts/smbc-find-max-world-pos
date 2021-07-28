@@ -1,0 +1,139 @@
+#!/bin/bash
+
+if [[ $# -lt 2 ]]; then
+  echo "$0 <experiment> <level> [<file-regex>]"
+  exit 1
+fi
+
+EXPERIMENT=$1
+LEVEL=$2
+FILE_REGEX=$3
+if [[ -z "$FILE_REGEX" ]]; then
+  FILE_REGEX=".*id:.*";
+fi
+
+declare -a targets=()
+declare -A target_to_pod_name=()
+declare -A target_to_id=()
+declare -A target_to_max_world_pos=()
+declare -A target_to_max_world_pos_info=()
+
+function format_seconds {
+  local formatted=""
+
+  local T=$1
+  local D=$((T/60/60/24))
+  local H=$((T/60/60%24))
+  local M=$((T/60%60))
+  local S=$((T%60))
+  (( $D > 0 )) && formatted="$D days "
+  (( $H > 0 )) && formatted="$formatted$H hours "
+  (( $M > 0 )) && formatted="$formatted$M minutes"
+  (( $D > 0 || $H > 0 || $M > 0 )) && formatted="$formatted and "
+  formatted="$formatted$S seconds"
+
+  echo "$formatted"
+}
+
+echo "Finding maximum world positions for smbc"
+echo "Identifying smbc targets in experiment $EXPERIMENT..."
+
+STATE_DIR="/home/vivin/Projects/phd/.script-state/$(basename "$0")"
+mkdir -p "$STATE_DIR"
+
+SUBJECT_DIR="/mnt/vivin-nfs/vivin/$EXPERIMENT/smbc"
+id_to_pod_name_and_target_file="$SUBJECT_DIR/results/id_to_pod_name_and_target.yml"
+while IFS= read -r -d '' target_script
+do
+  # shellcheck disable=SC2001
+  id=$(echo "$target_script" | sed -e 's,^.*/,,')
+  pod_name_and_target=$(grep -A2 "^$id" "$id_to_pod_name_and_target_file" | tail -2)
+  pod_name=$(echo "$pod_name_and_target" | head -1 | sed -e 's/^.*pod_name: //')
+  target_name=$(echo "$pod_name_and_target" | tail -1 | sed -e 's/^.*target_name: //')
+
+  targets+=("$target_name")
+  target_to_pod_name[$target_name]="$pod_name"
+  target_to_id[$target_name]="$id"
+  target_to_max_world_pos[$target_name]=0
+done < <(find "$SUBJECT_DIR" -maxdepth 1 -type f -print0 | sort -z)
+
+echo ""
+
+start_ts=$(cat "$SUBJECT_DIR/results/sandpuppy-sync/start_ts")
+
+overall_max_world_pos=0
+for i in "${!targets[@]}"; do
+  target=${targets[$i]}
+  if [[ "$target" =~ "sleep:" ]] && [[ "$target" =~ "idle:" ]]; then # These take for EVER and are unlikely to contain solutions anyway
+    continue
+  fi
+
+  pod_name=${target_to_pod_name[$target]}
+  id=${target_to_id[$target]}
+
+  echo "Checking $target ($id) for input resulting in maximum world position..."
+  saved_max_world_pos_input_filename=""
+  if [[ -f "$STATE_DIR/$id.max" ]]; then
+    saved_max_world_pos_input_filename=$(cat "$STATE_DIR/$id.max")
+  fi
+
+  INPUTS_DIR="$SUBJECT_DIR/results/sandpuppy-sync/$id/queue";
+  j=0
+  num_inputs=$(find "$INPUTS_DIR" -maxdepth 1 -type f -regextype posix-extended -regex "$FILE_REGEX" | wc -l)
+  max_world_pos=0
+  max_world_pos_info=""
+  while IFS= read -r -d '' input_file_path
+  do
+    j=$(( j + 1 ))
+
+    # shellcheck disable=SC2001
+    filename=$(basename "$input_file_path")
+
+    # Check to see if we have already processed this file. If so, skip it unless it is the file that gave us the
+    # maximum world position. The reason we don't skip it is because we want to compare its world position against
+    # any new files, and if there aren't any new files, we can just report the previously identified file.
+    if [[ -f "$STATE_DIR/$id-$filename" ]] && [[ "$filename" != "$saved_max_world_pos_input_filename" ]]; then
+      echo -ne "Skipping input file $j of $num_inputs\r";
+      continue
+
+    else
+      echo -ne "Checking input file $j of $num_inputs\r";
+    fi
+
+    mtime=$(stat -c '%Y' "$input_file_path")
+    diff=$((mtime - start_ts))
+    pretty_diff=$(format_seconds $diff)
+
+    end_world_pos=$(resources/smbc "$LEVEL" trace < "$input_file_path" | tail -2 | head -1  | sed -e 's/,.*$//')
+    if [[ "$end_world_pos" -gt "$max_world_pos" ]]; then
+      target_to_max_world_pos[$target]=$end_world_pos
+      target_to_max_world_pos_info[$target]=$(printf "Target: %s\nPod: %s\nWorld Position: %s\n from %s (found after %s of fuzzing)" "$target" "$pod_name" "$end_world_pos" "$filename" "$pretty_diff")
+      max_world_pos_info="World Position: $end_world_pos from $filename (found after $pretty_diff of fuzzing)"
+      max_world_pos=$end_world_pos
+
+      echo "$filename" > "$STATE_DIR/$id.max"
+
+      if [[ "$end_world_pos" -gt "$overall_max_world_pos" ]]; then
+        overall_max_world_pos=$end_world_pos
+      fi
+    fi
+
+    # Create an empty file representing this input file in the state dir, signifying that we have processed it.
+    touch "$STATE_DIR/$id-$filename"
+  done < <(find "$INPUTS_DIR" -maxdepth 1 -type f -regextype posix-extended -regex "$FILE_REGEX" -print0 | sort -z)
+
+  printf '%s\n\n' "$max_world_pos_info"
+done
+
+echo "Targets with inputs resulting in overall maximum world position of $overall_max_world_pos:"
+echo ""
+for i in "${!targets[@]}"; do
+  target=${targets[$i]}
+  max_world_pos=${target_to_max_world_pos[$target]}
+  max_world_pos_info=${target_to_max_world_pos_info[$target]}
+
+  if [[ "$max_world_pos" -eq "$overall_max_world_pos" ]]; then
+    printf '%s\n\n' "$max_world_pos_info"
+  fi
+done
+

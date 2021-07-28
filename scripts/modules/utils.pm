@@ -14,6 +14,8 @@ my $TOOLS = "$BASEPATH/tools";
 my $RESOURCES = "$BASEPATH/resources";
 my $SUBJECTS = "$BASEPATH/subjects";
 
+my $SANDPUPPY_SYNC_DIRECTORY = "sandpuppy-sync";
+
 my $ASAN_MEMORY_LIMIT = 1024; #20971586; # Depends on the system. For 64-bit ASAN allocates something ridiculous like 20 TB.
 
 sub get_clang_library_path {
@@ -28,7 +30,7 @@ sub get_clang_asan_static_lib {
     return get_clang_library_path() . "/libclang_rt.asan-x86_64.a";
 }
 
-sub get_experiment_subject_directory_structure {
+sub get_subject_directory {
     my $experiment_name = $_[0];
     my $subject = $_[1];
     my $version = $_[2];
@@ -162,7 +164,7 @@ sub build_fuzz_command {
     my $results_base = "$workspace/results";
     my $results_dir;
     if ($use_kubernetes) {
-        $results_dir = "/out/$fuzzer_id";
+        $results_dir = $parallel_fuzz_mode ? "/out" : "/out/$fuzzer_id";
     } else {
         $results_dir = !$sync_directory_name ? "$results_base/$exec_context" : "$results_base/$sync_directory_name";
     }
@@ -170,7 +172,7 @@ sub build_fuzz_command {
     if (!$resume) {
         create_results_dir_and_backup_existing($results_base, $exec_context) if !$fuzzer_id;
     } elsif (! -d $results_dir) {
-        die "Cannot resume because cannot find results dir at $results_dir";
+        die "Cannot resume because cannot find results dir at $results_dir" if !$use_kubernetes;
     }
 
     my $binary = "$workspace/binaries/$binary_context/$binary_name";
@@ -287,4 +289,95 @@ sub merge {
 sub get_random_fuzzer_id {
     chomp(my $id = `cat /dev/urandom | tr -dc 'a-z0-9' | fold -w 16 | head -n 1`);
     return join "-", ($id =~ m/.{4}/g);
+}
+
+sub generate_target_script {
+    my $experiment_name = $_[0];
+    my $subject = $_[1];
+    my $version = $_[2];
+    my $pod_name = $_[3];
+    my $target = $_[4];
+    my $fuzz_command = $_[5];
+
+    my $subject_directory = get_subject_directory($experiment_name, $subject, $version);
+    my $container_nfs_workspace = "/private-nfs/vivin/$subject_directory";
+
+    return <<~"HERE";
+    #!/bin/bash
+
+    NUM_CORES=\$(lscpu | grep -e "^CPU(s):" | sed -e 's,^.* ,,')
+    AVAILABLE_CORES=\$(( NUM_CORES / 2 )) # Don't want to OOM
+
+    sync() {
+      # Check to see if the list of other targets exist. If not, make it.
+      if [[ ! -f "/out/targets" ]]; then
+        grep -e "^[^- ]" $container_nfs_workspace/results/id_to_pod_name_and_target.yml | sed -e 's,:,,' | grep -v "$target->{id}" > /out/targets
+      fi
+
+      # Sleep first before we start syncing. This gives AFL time to start up and produce some results.
+      sleep 30
+
+      count=0
+      while :
+      do
+        # If 30 minutes have elapsed let's sync results from the other targets
+        if [[ "\$count" -eq 6 ]]; then
+          cd $container_nfs_workspace/results/$SANDPUPPY_SYNC_DIRECTORY
+          while IFS="" read -r target || [ -n "\$target" ]
+          do
+            if [[ -d "\$target" ]]; then
+              echo "[\$(date -u)] Start syncing results from \$target"
+              find \$target -type d | parallel -j"\$AVAILABLE_CORES" mkdir -p /out/{}
+              find \$target -type f | parallel -j"\$AVAILABLE_CORES" cp -u --preserve=timestamps {} /out/{}
+              echo "[\$(date -u)] Done syncing targets from \$target"
+            else
+              echo "[\$(date -u)] No results found for target \$target"
+            fi
+          done < /out/targets
+
+          count=0
+        else
+          cd /out
+          echo "[\$(date -u)] Copying results to shared mount"
+          find $target->{id} -type d | parallel -j"\$AVAILABLE_CORES" mkdir -p $container_nfs_workspace/results/$SANDPUPPY_SYNC_DIRECTORY/{}
+          find $target->{id} -type f | parallel -j"\$AVAILABLE_CORES" cp -u --preserve=timestamps {} $container_nfs_workspace/results/$SANDPUPPY_SYNC_DIRECTORY/{}
+          echo "[\$(date -u)] Done copying results to shared mount"
+        fi
+
+        sleep 300
+        count=\$(( count + 1 ))
+      done
+    }
+
+    echo "Experiment: $experiment_name"
+    echo "Subject: ${\($subject . ($version ? "-$version" : ""))}"
+    echo "Target name: $target->{name}"
+    echo "Pod name: $pod_name"
+
+    ln -sf /private-nfs/vivin /home/vivin/Projects/phd/workspace
+    mkdir -p /home/vivin/Projects/phd/bin
+    mkdir -p $container_nfs_workspace/results/$SANDPUPPY_SYNC_DIRECTORY
+    if [[ ! -f "$container_nfs_workspace/results/$SANDPUPPY_SYNC_DIRECTORY/start_ts" ]]; then
+      date +%s >$container_nfs_workspace/results/$SANDPUPPY_SYNC_DIRECTORY/start_ts
+    else
+      # We might be resuming; copy results directory (if it exists) from share into local results directory
+      cd $container_nfs_workspace/results/$SANDPUPPY_SYNC_DIRECTORY
+      if [[ -d "$target->{id}" ]]; then
+        echo "[\$(date -u)] Copying previous results from share into local results directory"
+        find $target->{id} -type d | parallel -j"\$AVAILABLE_CORES" mkdir -p /out/{}
+        find $target->{id} -type f | parallel -j"\$AVAILABLE_CORES" cp -u --preserve=timestamps {} /out/{}
+        echo "[\$(date -u)] Done copying previous results from share into local results directory"
+      fi
+    fi
+
+    # Copy the binary and any other files in the nfs binary directory to a local directory
+    cp -rv "$container_nfs_workspace/binaries/$target->{binary_context}" /home/vivin/Projects/phd/bin
+    cd /home/vivin/Projects/phd
+    sync &
+    SYNC_PID=\$!
+
+    $fuzz_command
+
+    kill \$SYNC_PID >/dev/null 2>&1
+    HERE
 }

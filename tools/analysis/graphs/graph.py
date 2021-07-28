@@ -7,14 +7,13 @@ from sklearn import preprocessing
 from sklearn.mixture import GaussianMixture, BayesianGaussianMixture
 from sklearn.cluster import KMeans
 from sklearn.decomposition import PCA
-from sklearn.decomposition import NMF
 from sklearn.cluster import DBSCAN, OPTICS
 
 from hdbscan import HDBSCAN
 
 feature_labels = {
     'average_value_set_cardinality_ratio': "Average Value-Set Cardinality Ratio",
-    'loop_sequence_proportion': "Loop Sequence Proportion",
+    'loop_sequence_proportion': "Loop-Sequence Proportion",
     'directional_consistency': "Directional Consistency",
     'max_values_variance': "Maximum Values Variance",
     'max_value_to_input_size_correlation': "Maximum Value to Input-Size Correlation",
@@ -33,30 +32,27 @@ def graph_classes(path, variables, classes):
         print(f"Plotting {dimension_reduction_method} {graph_type} scatter-plot graph for {feature_name} "
               f"colored by its value")
 
-        fig = plt.figure(figsize=(20, 10))
-        fig.suptitle(f"Plot of {feature_labels[feature_name]} colored by value")
+        fig = plt.figure(figsize=(8, 6))
 
         if graph_type == "2d":
             ax = fig.add_subplot()
         else:
             ax = fig.add_subplot(projection='3d')
 
-        ax.set_title(dimension_reduction_method)
+        ax.set_title(f"{feature_labels[feature_name]} colormap\n"
+                     f"({dimension_reduction_method} Projection of variables)")
 
         combined_dataset = pandas.concat((dataset, selected_features[feature_name]), axis=1)
-        #for index, row in combined_dataset.iterrows():
-        #    if graph_type == "2d":
-        #        ax.plot(row[0], row[1], 'o', c=row[feature_name], cmap='coolwarm')
-        #    else:
-        #        ax.plot(row[0], row[1], row[2], 'o', c=row[feature_name], markeredgecolor='k', cmap='coolwarm')
         if graph_type == "2d":
-            ax.scatter(combined_dataset[0], combined_dataset[1], c=combined_dataset[feature_name],
-                       marker='o', cmap='coolwarm')
+            scatter = ax.scatter(combined_dataset[0], combined_dataset[1], c=combined_dataset[feature_name],
+                                 marker='o', cmap='coolwarm', vmin=0, vmax=1)
         else:
-            ax.scatter(combined_dataset[0], combined_dataset[1], combined_dataset[2],
-                       s=100, c=combined_dataset[feature_name], marker='o', cmap='coolwarm')
+            scatter = ax.scatter(combined_dataset[0], combined_dataset[1], combined_dataset[2],
+                                 s=80, c=combined_dataset[feature_name], marker='o', cmap='coolwarm',
+                                 vmin=0, vmax=1)
 
-        ax.legend()
+        colorbar = fig.colorbar(scatter, ax=ax, shrink=0.8)
+        colorbar.set_label(feature_labels[feature_name], labelpad=10)
 
         plt.savefig(f"{scatter_path}/{feature_name}_{dimension_reduction_method}_{graph_type}.png")
         plt.close(fig)
@@ -98,23 +94,41 @@ def graph_classes(path, variables, classes):
         grouped_by_label = dataset.groupby('label')
 
         # Plot vectors after PCA and NMF
-        fig = plt.figure(figsize=(20, 10))
-        fig.suptitle(f"Clustering method: {clustering_method}")
+        fig = plt.figure(figsize=(8, 6))
+
+        title_clustering_method = clustering_method.upper()
+        if clustering_method == "kmeans":
+            title_clustering_method = "k-means"
+
+        formatted_title = f"Variables classified using {title_clustering_method} " \
+                          f"after {dimension_reduction_method} Projection"
+        if clustering_method == "manual":
+            formatted_title = f"Variables classified manually and projected using {dimension_reduction_method}"
 
         if graph_type == "2d":
             ax = fig.add_subplot()
         else:
             ax = fig.add_subplot(projection='3d')
 
-        ax.set_title(dimension_reduction_method)
+        ax.set_title(formatted_title)
 
         for label, group in grouped_by_label:
             if graph_type == "2d":
-                ax.plot(group[0], group[1], 'o', label=label)
+                ax.plot(group[0], group[1], 'o',
+                        label=label if clustering_method == "manual" else f"Cluster {label}")
             else:
-                ax.plot(group[0], group[1], group[2], 'o', label=label, markeredgecolor='k')
+                ax.plot(group[0], group[1], group[2], 'o',
+                        markeredgecolor='k', label=label if clustering_method == "manual" else f"Cluster {label}")
 
-            ax.legend()
+        box = ax.get_position()
+        ax.set_position([box.x0, box.y0, box.width * 0.8, box.height])
+
+        # Put a legend to the right of the current axis
+        if graph_type == "2d":
+            ax.legend(loc='center left', bbox_to_anchor=(1.025, 0.5))
+        else:
+            ax.legend(loc='center left', bbox_to_anchor=(1.05, 0.5))
+
         #        cmap = plt.cm.get_cmap("RdYlGn")
         #        colors = [cmap(each) for each in numpy.linspace(0, 1, len(unique_labels))]
         #        for label, color in zip(unique_labels, colors):
@@ -390,25 +404,25 @@ def graph_classes(path, variables, classes):
 
     print("Performing PCA (2 and 3 dimensions)")
     pca_2d = pandas.DataFrame(PCA(n_components=2).fit_transform(selected_features_normalized))
-    pca_3d = pandas.DataFrame(PCA(n_components=3).fit_transform(selected_features_normalized))
+    # pca_3d = pandas.DataFrame(PCA(n_components=3).fit_transform(selected_features_normalized))
 
-    print("Performing NMF (2 and 3 dimensions)")
-    nmf_2d = pandas.DataFrame(NMF(n_components=2, max_iter=75000).fit_transform(selected_features_normalized))
-    nmf_3d = pandas.DataFrame(NMF(n_components=3, max_iter=75000).fit_transform(selected_features_normalized))
+    # print("Performing NMF (2 and 3 dimensions)")
+    # nmf_2d = pandas.DataFrame(NMF(n_components=2, max_iter=75000).fit_transform(selected_features_normalized))
+    # nmf_3d = pandas.DataFrame(NMF(n_components=3, max_iter=75000).fit_transform(selected_features_normalized))
 
     for clustering_method in ["kmeans", "gmm", "manual"]: #, "bgmm"
         cluster_plot(pca_2d, clustering_method, "PCA", "2d")
-        cluster_plot(pca_3d, clustering_method, "PCA", "3d")
-        cluster_plot(nmf_2d, clustering_method, "NMF", "2d")
-        cluster_plot(nmf_3d, clustering_method, "NMF", "3d")
+        # cluster_plot(pca_3d, clustering_method, "PCA", "3d")
+        # cluster_plot(nmf_2d, clustering_method, "NMF", "2d")
+        # cluster_plot(nmf_3d, clustering_method, "NMF", "3d")
 
     for feature in ["average_value_set_cardinality_ratio", "loop_sequence_proportion", "directional_consistency",
                     "max_values_variance", "max_value_to_input_size_correlation",
                     "times_modified_to_input_size_correlation"]:
         scatter_plot_feature(pca_2d, feature, "PCA", "2d")
-        scatter_plot_feature(pca_3d, feature, "PCA", "3d")
-        scatter_plot_feature(nmf_2d, feature, "NMF", "2d")
-        scatter_plot_feature(nmf_3d, feature, "NMF", "3d")
+        # scatter_plot_feature(pca_3d, feature, "PCA", "3d")
+        # scatter_plot_feature(nmf_2d, feature, "NMF", "2d")
+        # scatter_plot_feature(nmf_3d, feature, "NMF", "3d")
 
     print("Clustering variables using k-means and {num} clusters".format(num=len(classes)))
     kmeans = KMeans(n_clusters=len(classes)).fit(selected_features_normalized)
@@ -436,7 +450,7 @@ def graph_classes(path, variables, classes):
         independent_feature = selected_feature_names[i]
 
         print("Plotting group histograms, strip plots, and swarm plots for {x}...".format(x=feature_labels[independent_feature]))
-        plot_seaborn_group_distributions_for_feature(independent_feature)
+        #plot_seaborn_group_distributions_for_feature(independent_feature)
 
         for j in range(i + 1, len(selected_feature_names)):
             dependent_feature = selected_feature_names[j]
@@ -445,6 +459,6 @@ def graph_classes(path, variables, classes):
                 y=feature_labels[dependent_feature],
                 x=feature_labels[independent_feature]
             ))
-            plot_seaborn_bivariate_distributions_for_features(independent_feature, dependent_feature)
+            #plot_seaborn_bivariate_distributions_for_features(independent_feature, dependent_feature)
 
         print("")

@@ -97,7 +97,7 @@ sub get_fuzz_command {
         $exec_context,
         utils::merge($options, {
             binary_arguments => "0",
-            hang_timeout     => $waypoints =~ /vvdump/ ? "100000+" : 250,
+            hang_timeout     => $waypoints =~ /vvdump/ ? "100000+" : 5000,
             slow_target      => $waypoints =~ /vvdump/,
             no_arithmetic    => $waypoints =~ /vvdump/,
             seeds_directory  => "$RESOURCES/seeds/smbc"
@@ -106,3 +106,10 @@ sub get_fuzz_command {
 }
 
 1;
+
+#smartdsf-smbc--yoif-iks3-v2ro-wvcw-vvmax2
+#smartdsf-smbc--u9nc-26vb-i7t9-dx5l-vvmax2
+#smartdsf-smbc--pa9i-umb6-a9n8-kudz-vvmax2
+#smartdsf-smbc--80hx-0w9i-gt71-xnid-vvmax2
+#smartdsf-smbc--7zv5-fuvr-3koj-6sy6-vvmax2
+#smartdsf-smbc--4cs6-29o3-3v8q-deic-vvmax2
