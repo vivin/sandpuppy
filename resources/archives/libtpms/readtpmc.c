@@ -14,7 +14,11 @@
 #define BUFFER_SIZE 255
 #define EXIT_TEST_SKIP 77
 
+#define vvdump_ignore __attribute__((annotate("vvdump_ignore")))
+
 // Based on https://raw.githubusercontent.com/libb64/libb64/master/examples/c-example1.c
+
+vvdump_ignore
 __attribute__((no_sanitize("address")))
 char* decode(const char* input, int* length) {
     /* set up a destination buffer large enough to hold the encoded data */
@@ -34,6 +38,7 @@ char* decode(const char* input, int* length) {
     return output;
 }
 
+vvdump_ignore
 __attribute__((no_sanitize("address")))
 int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size)
 {
@@ -99,6 +104,7 @@ int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size)
     return response_code == TPM_SUCCESS ? 0 : 1;
 }
 
+vvdump_ignore
 __attribute__((no_sanitize("address")))
 int main(int argc, char **argv)
 {
