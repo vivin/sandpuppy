@@ -31,6 +31,9 @@
 #  include "../../png.h"
 #endif
 
+#define vvdump_ignore __attribute__((annotate("vvdump_ignore")))
+
+vvdump_ignore
 __attribute__((no_sanitize("address")))
 static int
 read_png(FILE *fp)
@@ -107,6 +110,7 @@ read_png(FILE *fp)
    return 1;
 }
 
+vvdump_ignore
 __attribute__((no_sanitize("address")))
 int
 main(void)

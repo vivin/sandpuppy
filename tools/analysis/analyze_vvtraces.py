@@ -483,11 +483,11 @@ def classify_variable(variable):
         counter_class = classifiers.classify_counter(features)
         return features, counter_class + "_counter", variable['traces_info']['modified_lines']
 
-    elif classifiers.is_enum(features):
-        return features, "enum_from_input", variable['traces_info']['modified_lines']
-
     elif classifiers.is_correlated_with_input_size(features):
         return features, "correlated_with_input_size", variable['traces_info']['modified_lines']
+
+    elif classifiers.is_enum(features):
+        return features, "enum_from_input", variable['traces_info']['modified_lines']
 
     return features, "unknown", variable['traces_info']['modified_lines']
 

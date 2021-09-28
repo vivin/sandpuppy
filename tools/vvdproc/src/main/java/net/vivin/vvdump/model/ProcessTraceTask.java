@@ -110,6 +110,7 @@ public class ProcessTraceTask implements Runnable {
         final List<Callable<Object>> callables = trace.getTraceItems().stream().map(traceItem ->
             Executors.callable(() -> {
                 var start = System.currentTimeMillis();
+
                 cassandra.insertFullTraceItem(FullTraceItem.from(traceItem, endTraceItem));
 
                 metrics.decrementProcessingTraceItems();

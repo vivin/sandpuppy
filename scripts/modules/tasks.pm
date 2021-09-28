@@ -20,6 +20,8 @@ use libpng;
 use readelf;
 use libtpms;
 use smbc;
+use cgc;
+use dmg2img;
 
 sub shut_down {
     display::restore_display();
@@ -36,7 +38,7 @@ my $SANDPUPPY_MAIN_TARGET_NAME = "sandpuppy-main";
 my $SANDPUPPY_SYNC_DIRECTORY = "sandpuppy-sync";
 
 my $subjects = {
-    vctestbed => {
+    vctestbed  => {
         binary_name => "vctestbed",
         tasks       => {
             build       => \&vctestbed::build,
@@ -45,7 +47,7 @@ my $subjects = {
         },
         fuzz_time   => 300
     },
-    infantheap => {
+    infantheap  => {
         binary_name => "infantheap",
         tasks       => {
             build       => \&infantheap::build,
@@ -54,7 +56,7 @@ my $subjects = {
         },
         fuzz_time   => 600
     },
-    rarebug    => {
+    rarebug     => {
         binary_name => "rarebug",
         tasks       => {
             build   => \&rarebug::build,
@@ -63,7 +65,7 @@ my $subjects = {
         },
         fuzz_time   => 600
     },
-    maze       => {
+    maze        => {
         binary_name => "maze",
         source_name => "maze.c",
         tasks       => {
@@ -73,7 +75,7 @@ my $subjects = {
         },
         fuzz_time   => 360
     },
-    maze_ijon  => {
+    maze_ijon   => {
         binary_name => "maze_ijon",
         source_name => "maze_ijon.c",
         tasks       => {
@@ -83,7 +85,7 @@ my $subjects = {
         },
         fuzz_time   => 360
     },
-    maze_klee  => {
+    maze_klee   => {
         binary_name => "maze_klee",
         source_name => "maze_klee.c",
         tasks       => {
@@ -93,16 +95,16 @@ my $subjects = {
         },
         fuzz_time   => 360
     },
-    libpng     => {
+    libpng      => {
         binary_name => "readpng",
         tasks       => {
             build   => \&libpng::build,
             fuzz    => create_fuzz_task(\&libpng::get_fuzz_command),
             pod_command => create_pod_command_task(\&libpng::get_fuzz_command)
         },
-        fuzz_time   => 600
+        fuzz_time   => 900
     },
-    readelf    => {
+    readelf     => {
         binary_name => "readelf",
         tasks       => {
             build   => \&readelf::build,
@@ -111,7 +113,7 @@ my $subjects = {
         },
         fuzz_time   => 600
     },
-    libtpms    => {
+    libtpms     => {
         binary_name => "readtpmc",
         tasks       => {
             build   => \&libtpms::build,
@@ -120,12 +122,30 @@ my $subjects = {
         },
         fuzz_time   => 600
     },
-    smbc       => {
+    smbc        => {
         binary_name => "smbc",
         tasks       => {
             build   => \&smbc::build,
             fuzz    => create_fuzz_task(\&smbc::get_fuzz_command),
             pod_command => create_pod_command_task(\&smbc::get_fuzz_command)
+        },
+        fuzz_time   => 360
+    },
+    hawaii_sets => {
+        binary_name => "hawaii_sets",
+        tasks       => {
+            build   => \&cgc::build,
+            fuzz    => create_fuzz_task(\&cgc::get_fuzz_command),
+            pod_command => create_pod_command_task(\&cgc::get_fuzz_command)
+        },
+        fuzz_time   => 600
+    },
+    dmg2img     => {
+        binary_name => "dmg2img",
+        tasks       => {
+            build   => \&dmg2img::build,
+            fuzz    => create_fuzz_task(\&dmg2img::get_fuzz_command),
+            pod_command => create_pod_command_task(\&dmg2img::get_fuzz_command)
         },
         fuzz_time   => 360
     }
@@ -490,24 +510,24 @@ sub sandpuppy_fuzz_k8s {
 
     my $workspace = utils::get_workspace($experiment_name, $subject, $version);
     my $subject_directory = utils::get_subject_directory($experiment_name, $subject, $version);
-    my $local_nfs_workspace = "/mnt/vivin-nfs/vivin/$subject_directory";
-    my $container_nfs_workspace = "/private-nfs/vivin/$subject_directory";
+    my $local_nfs_subject_directory = "/mnt/vivin-nfs/vivin/$subject_directory";
+    my $container_nfs_subject_directory = "/private-nfs/vivin/$subject_directory";
 
-    if (! -d $local_nfs_workspace) {
-        system("mkdir -p $local_nfs_workspace");
+    if (! -d $local_nfs_subject_directory) {
+        system("mkdir -p $local_nfs_subject_directory");
     }
 
-    if (! -d "$local_nfs_workspace/results") {
-        system("mkdir $local_nfs_workspace/results");
+    if (! -d "$local_nfs_subject_directory/results") {
+        system("mkdir $local_nfs_subject_directory/results");
     }
 
-    if (! -d "$local_nfs_workspace/binaries") {
-        system("mkdir $local_nfs_workspace/binaries");
+    if (! -d "$local_nfs_subject_directory/binaries") {
+        system("mkdir $local_nfs_subject_directory/binaries");
     }
 
     my $main_target_binary_dir = $main_target->{binary_context};
-    if (! -e -d "$local_nfs_workspace/binaries/$main_target_binary_dir") {
-        system("mkdir $local_nfs_workspace/binaries/$main_target_binary_dir");
+    if (! -e -d "$local_nfs_subject_directory/binaries/$main_target_binary_dir") {
+        system("mkdir $local_nfs_subject_directory/binaries/$main_target_binary_dir");
     }
 
     my @main_target_files = `find "$workspace/binaries/$main_target_binary_dir" -type f | sed -e 's,^.*/,,'`;
@@ -515,7 +535,7 @@ sub sandpuppy_fuzz_k8s {
         chomp($main_target_file);
 
         my $local_file_path = "$workspace/binaries/$main_target_binary_dir/$main_target_file";
-        my $nfs_file_path = "$local_nfs_workspace/binaries/$main_target_binary_dir/$main_target_file";
+        my $nfs_file_path = "$local_nfs_subject_directory/binaries/$main_target_binary_dir/$main_target_file";
 
         if (-e -f $nfs_file_path) {
             my $ctime_local_file = stat($local_file_path)->ctime;
@@ -548,6 +568,7 @@ sub sandpuppy_fuzz_k8s {
         $version,
         $pod_name,
         $main_target,
+        $options,
         pod_command(
             $experiment_name,
             $subject,
@@ -566,16 +587,16 @@ sub sandpuppy_fuzz_k8s {
     );
 
     #if (! -f "$local_nfs_workspace/$main_target->{id}") {
-        open my $TARGET_SCRIPT, ">", "$local_nfs_workspace/$main_target->{id}";
+        open my $TARGET_SCRIPT, ">", "$local_nfs_subject_directory/$main_target->{id}";
         print $TARGET_SCRIPT $target_script;
         close $TARGET_SCRIPT;
     #}
 
-    system "chmod 755 $local_nfs_workspace/$main_target->{id}";
+    system "chmod 755 $local_nfs_subject_directory/$main_target->{id}";
 
     print "\n";
 
-    my $pod_command = "$container_nfs_workspace/$main_target->{id}";
+    my $pod_command = "$container_nfs_subject_directory/$main_target->{id}";
     $pod_name_to_create_command->{$pod_name} = {
         target   => $main_target->{id},
         command  => "kuboid/scripts/pod_create -n \"$pod_name\" -s /tmp/sandpuppy.existing -i vivin/sandpuppy $pod_command",
@@ -585,8 +606,8 @@ sub sandpuppy_fuzz_k8s {
     my $i = 2; # Account for main target
     foreach my $target (@{$targets}) {
         my $target_binary_dir = $target->{binary_context};
-        if (! -e -d "$local_nfs_workspace/binaries/$target_binary_dir") {
-            system("mkdir $local_nfs_workspace/binaries/$target_binary_dir");
+        if (! -e -d "$local_nfs_subject_directory/binaries/$target_binary_dir") {
+            system("mkdir $local_nfs_subject_directory/binaries/$target_binary_dir");
         }
 
         my @target_files = `find "$workspace/binaries/$target_binary_dir" -type f | sed -e 's,^.*/,,'`;
@@ -594,7 +615,7 @@ sub sandpuppy_fuzz_k8s {
             chomp($target_file);
 
             my $local_file_path = "$workspace/binaries/$target_binary_dir/$target_file";
-            my $nfs_file_path = "$local_nfs_workspace/binaries/$target_binary_dir/$target_file";
+            my $nfs_file_path = "$local_nfs_subject_directory/binaries/$target_binary_dir/$target_file";
 
             if (-e -f $nfs_file_path) {
                 my $ctime_local_file = stat($local_file_path)->ctime;
@@ -630,6 +651,7 @@ sub sandpuppy_fuzz_k8s {
             $version,
             $pod_name,
             $target,
+            $options,
             pod_command(
                 $experiment_name,
                 $subject,
@@ -649,14 +671,14 @@ sub sandpuppy_fuzz_k8s {
         );
 
         #if (! -f "$local_nfs_workspace/$target->{id}") {
-            open $TARGET_SCRIPT, ">", "$local_nfs_workspace/$target->{id}";
+            open $TARGET_SCRIPT, ">", "$local_nfs_subject_directory/$target->{id}";
             print $TARGET_SCRIPT $target_script;
             close $TARGET_SCRIPT;
 
-            system "chmod 755 $local_nfs_workspace/$target->{id}";
+            system "chmod 755 $local_nfs_subject_directory/$target->{id}";
         #}
 
-        $pod_command = "$container_nfs_workspace/$target->{id}";
+        $pod_command = "$container_nfs_subject_directory/$target->{id}";
         $pod_name_to_create_command->{$pod_name} = {
             target   => $target->{id},
             command  => "kuboid/scripts/pod_create -n \"$pod_name\" -s /tmp/sandpuppy.existing -i vivin/sandpuppy $pod_command",
@@ -669,12 +691,12 @@ sub sandpuppy_fuzz_k8s {
 
     $log->info("Preparing to create and run kubernetes pods for targets...");
 
-    my $id_to_pod_name_and_target_file = "$local_nfs_workspace/results/id_to_pod_name_and_target.yml";
+    my $id_to_pod_name_and_target_file = "$local_nfs_subject_directory/results/id_to_pod_name_and_target.yml";
     YAML::XS::DumpFile($id_to_pod_name_and_target_file, $id_to_pod_name_and_target);
 
-    if (1) {
-        exit(0);
-    }
+    #if (1) {
+    #    exit(0);
+    #}
 
     $log->info("Getting list of existing pods (so that we don't recreate)...");
     system ("kuboid/scripts/pod_names > /tmp/sandpuppy.existing");

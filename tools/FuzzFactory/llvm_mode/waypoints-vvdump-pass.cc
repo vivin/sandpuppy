@@ -138,10 +138,7 @@ class VariableValueDumpFeedback : public BaseVariableValueFeedback<VariableValue
 
 protected:
     bool shouldProcess(Function &function) override {
-        auto process = ignoredFunctions.find(function.getName().str()) == ignoredFunctions.end();
-        std::cout<<"Process function " << function.getName().str() << ": " << process << "\n";
-
-        return process;
+        return ignoredFunctions.find(function.getName().str()) == ignoredFunctions.end();
     }
 
     void processFunction(Function &function) override {
@@ -212,8 +209,6 @@ public:
             if (annotationValue.str() == "vvdump_ignore") {
                 auto *function = dyn_cast<Function>(entry_struct->getOperand(0)->getOperand(0));
                 ignoredFunctions.emplace(function->getName().str());
-
-                std::cout << "Got annotation to ignore function " << function->getName().str() << "\n";
             }
         }
     }

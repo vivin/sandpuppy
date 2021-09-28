@@ -84,7 +84,7 @@ def graph_classes(path, variables, classes):
             cluster_labels = variable_trace_vector_string_labels
 
         dataset = pandas.concat((dataset, pandas.DataFrame(cluster_labels, columns=['label'])), axis=1)
-        if clustering_method == "manual" and dimension_reduction_method == "NMF" and graph_type == "2d":
+        if clustering_method == "manual":
             with pandas.option_context('display.max_rows', None,
                                        'display.max_columns', None,
                                        'display.max_colwidth', 255,
@@ -446,19 +446,19 @@ def graph_classes(path, variables, classes):
     labeled_variables = pandas.concat((selected_features, labels), axis=1)
     labeled_variables = labeled_variables.rename({0: 'labels'}, axis=1)
 
-    for i in range(0, len(selected_feature_names)):
-        independent_feature = selected_feature_names[i]
+    # for i in range(0, len(selected_feature_names)):
+    #     independent_feature = selected_feature_names[i]
 
-        print("Plotting group histograms, strip plots, and swarm plots for {x}...".format(x=feature_labels[independent_feature]))
-        #plot_seaborn_group_distributions_for_feature(independent_feature)
+    #     print("Plotting group histograms, strip plots, and swarm plots for {x}...".format(x=feature_labels[independent_feature]))
+    #     #plot_seaborn_group_distributions_for_feature(independent_feature)
 
-        for j in range(i + 1, len(selected_feature_names)):
-            dependent_feature = selected_feature_names[j]
+    #     for j in range(i + 1, len(selected_feature_names)):
+    #         dependent_feature = selected_feature_names[j]
 
-            print("Plotting various distribution visualizations of {y} with respect to {x}...".format(
-                y=feature_labels[dependent_feature],
-                x=feature_labels[independent_feature]
-            ))
-            #plot_seaborn_bivariate_distributions_for_features(independent_feature, dependent_feature)
+    #         print("Plotting various distribution visualizations of {y} with respect to {x}...".format(
+    #             y=feature_labels[dependent_feature],
+    #             x=feature_labels[independent_feature]
+    #         ))
+    #         #plot_seaborn_bivariate_distributions_for_features(independent_feature, dependent_feature)
 
-        print("")
+    #     print("")

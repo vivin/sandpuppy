@@ -1,4 +1,4 @@
-package smbc;
+package cgc;
 
 use strict;
 use warnings FATAL => 'all';
@@ -24,39 +24,27 @@ sub build {
 
     my $binary_base = "$workspace/binaries";
     my $binary_dir =  "$binary_base/$binary_context";
-    my $binary_name = "smbc";
+    my $binary_name = $subject;
     utils::create_binary_dir({
         binary_dir     => $binary_dir,
         artifact_names => [$binary_name],
         backup         => $options->{backup}
     });
 
-    my $smbc_src_dir = "$SUBJECTS/smbc";
-    my $smbc_build_dir = "$smbc_src_dir/build";
-    if (! -d $smbc_build_dir) {
-        system ("mkdir $smbc_build_dir");
+    my $cgc_src_dir = "$SUBJECTS/cb-multios";
+    my $cgc_build_dir = "$cgc_src_dir/build";
+    if (-d $cgc_build_dir) {
+        system ("rm -rf $cgc_build_dir");
     }
 
-    chdir $smbc_build_dir;
-    system("ls -la");
-    system ("rm -rf CMake* cmake_install.cmake codegen/ Makefile smbc");
-    system("ls -la");
+    chdir $cgc_src_dir;
 
     my $FUZZ_FACTORY = "$TOOLS/FuzzFactory";
     my $cc = "$FUZZ_FACTORY/afl-clang-fast";
     my $cxx = "$FUZZ_FACTORY/afl-clang-fast++";
-    my $compiler_flags = "-fno-inline-functions -fno-discard-value-names -fno-unroll-loops";
-    if ($options->{m32}) {
-        $compiler_flags .= " -m32";
-    }
+    my $compiler_flags = "-fno-inline-functions -fno-discard-value-names -fno-unroll-loops -m32";
 
     my $clang_waypoint_options = utils::build_options_string($options->{clang_waypoint_options});
-    print ("cmake .. -DCMAKE_C_COMPILER=$cc -DCMAKE_CXX_COMPILER=$cxx -DCMAKE_CXX_FLAGS='$compiler_flags$clang_waypoint_options -isystem /usr/include/SDL2'\n");
-    system ("cmake .. -DCMAKE_C_COMPILER=$cc -DCMAKE_CXX_COMPILER=$cxx -DCMAKE_CXX_FLAGS='$compiler_flags$clang_waypoint_options -isystem /usr/include/SDL2'");
-    if ($? != 0) {
-       die "Generating Makefiles using CMake failed";
-    }
-
     if ($binary_context =~ /-asan/) {
         $ENV{"AFL_USE_ASAN"} = 1;
     }
@@ -65,7 +53,9 @@ sub build {
         $ENV{"WAYPOINTS"} = $waypoints;
     }
 
-    system ("make -j12");
+    # We are always going to build 32-bit, so we will never use build64.sh
+    print ("env CMAKE_C_COMPILER=\"$cc\" CMAKE_CXX_COMPILER=\"$cxx\" CMAKE_ASM_COMPILER=\"$cc\" CMAKE_CXX_FLAGS='$compiler_flags$clang_waypoint_options' CMAKE_C_FLAGS='$compiler_flags$clang_waypoint_options' CMAKE_ASM_FLAGS='$compiler_flags$clang_waypoint_options' ./build.sh $subject");
+    system ("env CMAKE_C_COMPILER=\"$cc\" CMAKE_CXX_COMPILER=\"$cxx\" CMAKE_ASM_COMPILER=\"$cc\" CMAKE_CXX_FLAGS='$compiler_flags$clang_waypoint_options' CMAKE_C_FLAGS='$compiler_flags$clang_waypoint_options' CMAKE_ASM_FLAGS='$compiler_flags$clang_waypoint_options' ./build.sh $subject");
     if ($? != 0) {
         delete $ENV{"WAYPOINTS"};
         delete $ENV{"AFL_USE_ASAN"};
@@ -73,7 +63,7 @@ sub build {
         die "Make failed";
     }
 
-    system ("mv smbc $binary_dir/$binary_name");
+    system ("mv $cgc_build_dir/challenges/$subject/$binary_name $binary_dir/$binary_name");
 
     delete $ENV{"WAYPOINTS"};
     delete $ENV{"AFL_USE_ASAN"};
@@ -96,20 +86,11 @@ sub get_fuzz_command {
         $binary_context,
         $exec_context,
         utils::merge($options, {
-            binary_arguments => "0",
-            hang_timeout     => $waypoints =~ /vvdump/ ? "100000+" : 17500,
+            hang_timeout     => $waypoints =~ /vvdump/ ? "100000+" : 5000,
             slow_target      => $waypoints =~ /vvdump/,
-            no_arithmetic    => $waypoints =~ /vvdump/,
-            seeds_directory  => "$RESOURCES/seeds/smbc"
+            seeds_directory  => "$RESOURCES/seeds/hawaii_sets"
         })
     );
 }
 
 1;
-
-#smartdsf-smbc--yoif-iks3-v2ro-wvcw-vvmax2
-#smartdsf-smbc--u9nc-26vb-i7t9-dx5l-vvmax2
-#smartdsf-smbc--pa9i-umb6-a9n8-kudz-vvmax2
-#smartdsf-smbc--80hx-0w9i-gt71-xnid-vvmax2
-#smartdsf-smbc--7zv5-fuvr-3koj-6sy6-vvmax2
-#smartdsf-smbc--4cs6-29o3-3v8q-deic-vvmax2

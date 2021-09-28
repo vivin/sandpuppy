@@ -38,7 +38,7 @@ function format_seconds {
 echo "Finding maximum world positions for smbc"
 echo "Identifying smbc targets in experiment $EXPERIMENT..."
 
-STATE_DIR="/home/vivin/Projects/phd/.script-state/$(basename "$0")"
+STATE_DIR="/home/vivin/.script-state/$(basename "$0")"
 mkdir -p "$STATE_DIR"
 
 SUBJECT_DIR="/mnt/vivin-nfs/vivin/$EXPERIMENT/smbc"
@@ -81,6 +81,7 @@ for i in "${!targets[@]}"; do
   j=0
   num_inputs=$(find "$INPUTS_DIR" -maxdepth 1 -type f -regextype posix-extended -regex "$FILE_REGEX" | wc -l)
   max_world_pos=0
+  max_pos_y=0
   max_world_pos_info=""
   while IFS= read -r -d '' input_file_path
   do
@@ -104,12 +105,18 @@ for i in "${!targets[@]}"; do
     diff=$((mtime - start_ts))
     pretty_diff=$(format_seconds $diff)
 
-    end_world_pos=$(resources/smbc "$LEVEL" trace < "$input_file_path" | tail -2 | head -1  | sed -e 's/,.*$//')
-    if [[ "$end_world_pos" -gt "$max_world_pos" ]]; then
+    end_coordinate=$(resources/smbc "$LEVEL" trace < "$input_file_path" | tail -2 | head -1)
+    # shellcheck disable=SC2001
+    end_world_pos=$(echo "$end_coordinate" | sed -e 's/,.*$//')
+    # shellcheck disable=SC2001
+    end_pos_y=$(echo "$end_coordinate" | sed -e 's/^.*,//' | sed -e 's,\s,,g')
+
+    if [[ "$end_world_pos" -gt "$max_world_pos" || ("$end_world_pos" -eq "$max_world_pos" && "$end_pos_y" -gt "$max_pos_y") ]]; then
       target_to_max_world_pos[$target]=$end_world_pos
-      target_to_max_world_pos_info[$target]=$(printf "Target: %s\nPod: %s\nWorld Position: %s\n from %s (found after %s of fuzzing)" "$target" "$pod_name" "$end_world_pos" "$filename" "$pretty_diff")
-      max_world_pos_info="World Position: $end_world_pos from $filename (found after $pretty_diff of fuzzing)"
+      target_to_max_world_pos_info[$target]=$(printf "Target: %s\nPod: %s\nWorld Position: (%s, %s)\n from %s (found after %s of fuzzing)" "$target" "$pod_name" "$end_world_pos" "$end_pos_y" "$filename" "$pretty_diff")
+      max_world_pos_info="World Position: ($end_world_pos, $end_pos_y) from $filename (found after $pretty_diff of fuzzing)"
       max_world_pos=$end_world_pos
+      max_pos_y=$end_pos_y
 
       echo "$filename" > "$STATE_DIR/$id.max"
 

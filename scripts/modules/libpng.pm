@@ -103,9 +103,7 @@ sub build {
         die "Could not find build libpng library at $libpng_lib_file";
     }
 
-    if (! -f "$libpng_src_dir/contrib/libtests/readpng.c") {
-        system ("cp $libpng_resources/readpng.c $libpng_src_dir/contrib/libtests");
-    }
+    system ("cp $libpng_resources/readpng.c $libpng_src_dir/contrib/libtests");
 
     chdir "$libpng_src_dir/contrib/libtests";
 

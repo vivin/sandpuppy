@@ -1033,7 +1033,7 @@ static inline u8 has_dsf_changed() {
         dsf_cumulated[i] = new_cumulated;
         ret = 1;
         dsf_entry_changed[i] = 1;
-        DEBUG("DSF update at key=0x%06x, val=%u (0x%08x); new aggregate: %u (0x%08x); earlier was: %u (0x%08x)\n", i, cur_val, cur_val, new_cumulated, new_cumulated, old_cumulated, old_cumulated);
+        //DEBUG("DSF update at key=0x%06x, val=%u (0x%08x); new aggregate: %u (0x%08x); earlier was: %u (0x%08x)\n", i, cur_val, cur_val, new_cumulated, new_cumulated, old_cumulated, old_cumulated);
       }
     }
   }
@@ -1342,7 +1342,7 @@ static void update_bitmap_score(struct queue_entry* q) {
           /* Insert ourselves as the new winner. */
           top_rated[i] = q;
           score_changed = 1;
-          DEBUG("This input is the new top rated entry for key 0x%06x\n", i);
+          //DEBUG("This input is the new top rated entry for key 0x%06x\n", i);
           dsf_entry_changed[i] = 0;
         }
       }
@@ -2760,7 +2760,7 @@ static void write_with_gap(void* mem, u32 len, u32 skip_at, u32 skip_len) {
 }
 
 
-static void write_vvdump_end_trace(u8 fault, s32 input_size) {
+static void write_vvdump_end_trace(u8 fault, u32 input_size) {
     if (!vvdump_named_pipe_available || !vvdump_env_vars_available) {
         //DEBUG("failed writing end trace! pipe avail: %d env avail: %d\n", vvdump_named_pipe_available, vvdump_env_vars_available);
         return;
@@ -2971,7 +2971,11 @@ static u8 calibrate_case(char** argv, struct queue_entry* q, u8* use_mem,
 
   /* If this case didn't result in new output from the instrumentation, tell
      parent. This is a non-critical problem, but something to warn the user
-     about. */
+     about. DSF: if DSF is enabled and there was no new output from the
+     instrumentation, check to see if dsf changed */
+  if (dsf_enabled && !new_bits) {
+      new_bits = has_dsf_changed();
+  }
 
   if (!dumb_mode && first_run && !fault && !new_bits) fault = FAULT_NOBITS;
 

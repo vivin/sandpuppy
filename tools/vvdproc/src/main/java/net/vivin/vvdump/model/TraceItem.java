@@ -17,7 +17,6 @@ import java.util.function.Supplier;
 
 @Slf4j
 @Getter
-@ToString
 public class TraceItem implements Entity {
 
     private final String experimentName;
@@ -118,5 +117,24 @@ public class TraceItem implements Entity {
         }
 
         return tableFieldToGetter.get(tableFieldName).get();
+    }
+
+    @Override
+    public String toString() {
+        return "TraceItem{" +
+            "experimentName='" + experimentName + '\'' +
+            ", subject='" + subject + '\'' +
+            ", binaryContext='" + binaryContext + '\'' +
+            ", execContext='" + execContext + '\'' +
+            ", pid=" + pid +
+            ", filename='" + filename + '\'' +
+            ", functionName='" + functionName + '\'' +
+            ", variableName='" + variableName + '\'' +
+            ", declaredLine=" + declaredLine +
+            ", modifiedLine=" + modifiedLine +
+            ", timestamp=" + timestamp +
+            ", variableType='" + variableType + '\'' +
+            ", variableValue='" + variableValue + '\'' +
+            '}';
     }
 }

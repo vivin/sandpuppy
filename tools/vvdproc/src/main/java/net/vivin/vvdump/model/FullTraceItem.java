@@ -111,4 +111,12 @@ public class FullTraceItem implements Entity {
             EndTraceMessage.from(endTraceMessage)
         );
     }
+
+    @Override
+    public String toString() {
+        return "FullTraceItem{" +
+            "traceItem=" + traceItem +
+            ", endTraceMessage=" + endTraceMessage +
+            '}';
+    }
 }

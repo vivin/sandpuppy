@@ -11,12 +11,12 @@ my $log = Log::Simple::Color->new;
 my $BASEPATH = glob "~/Projects/phd";
 my $BASEWORKSPACEPATH = "$BASEPATH/workspace";
 my $TOOLS = "$BASEPATH/tools";
-my $RESOURCES = "$BASEPATH/resources";
-my $SUBJECTS = "$BASEPATH/subjects";
 
 my $SANDPUPPY_SYNC_DIRECTORY = "sandpuppy-sync";
 
 my $ASAN_MEMORY_LIMIT = 1024; #20971586; # Depends on the system. For 64-bit ASAN allocates something ridiculous like 20 TB.
+
+srand(time);
 
 sub get_clang_library_path {
     return "/usr/lib/llvm-10/lib/clang/10.0.0/lib/linux"
@@ -297,54 +297,121 @@ sub generate_target_script {
     my $version = $_[2];
     my $pod_name = $_[3];
     my $target = $_[4];
-    my $fuzz_command = $_[5];
+    my $options = $_[5];
+    my $fuzz_command = $_[6];
 
     my $subject_directory = get_subject_directory($experiment_name, $subject, $version);
-    my $container_nfs_workspace = "/private-nfs/vivin/$subject_directory";
+    my $container_nfs_subject_directory = "/private-nfs/vivin/$subject_directory";
+    my $remote_nfs_subject_directory = "/media/2tb/phd-workspace/nfs/vivin/$subject_directory";
 
+    my $resume = "";
+    if ($options->{resume}) {
+        $resume = "resume";
+    }
+
+    my $random_initial_sleep = int(rand(30)) + 1;
     return <<~"HERE";
     #!/bin/bash
 
     NUM_CORES=\$(lscpu | grep -e "^CPU(s):" | sed -e 's,^.* ,,')
-    AVAILABLE_CORES=\$(( NUM_CORES / 2 )) # Don't want to OOM
+    AVAILABLE_CORES=\$(( NUM_CORES - 2 )) # One for AFL and one for sync() running in the background
+    RESUME="$resume"
+
+    SYNC_DELAY=300
+    ATTEMPTS_BEFORE_FULL_SYNC=6
+
+    DELAY=0.1
+    EXPONENT=2
+
+    log () {
+      echo -e "\\e[1m\\e[32m[\$(date -u)]\\e[0m \$1"
+    }
+
+    warn () {
+      log "\\e[33m\$1\\e[0m"
+    }
+
+    sync_current_target_to_share() {
+      remote_nfs_sync_directory="$remote_nfs_subject_directory/results/$SANDPUPPY_SYNC_DIRECTORY"
+
+      rsync -az -e "ssh -S '/home/vivin/.ssh/ctl/$target->{id}\@%h:%p'" \\
+            /out/$target->{id} vivin\@vivin.is-a-geek.net:"\$remote_nfs_sync_directory" 2> /dev/null
+    }
+
+    sync_current_target_from_share() {
+      remote_nfs_target_directory="$remote_nfs_subject_directory/results/$SANDPUPPY_SYNC_DIRECTORY/$target->{id}"
+
+      rsync -az -e "ssh -S '/home/vivin/.ssh/ctl/$target->{id}\@%h:%p'" \\
+            vivin\@vivin.is-a-geek.net:"\$remote_nfs_target_directory" /out 2> /dev/null
+    }
+
+    sync_target_inputs_from_share() {
+      target=\$1
+      remote_nfs_target_directory="$remote_nfs_subject_directory/results/$SANDPUPPY_SYNC_DIRECTORY/\$target"
+
+      rsync -az -e "ssh -S '/home/vivin/.ssh/ctl/$target->{id}\@%h:%p'" \\
+            --include="fuzzer_stats" --include="queue/" \\
+            --exclude="hangs*/" --exclude="crashes*/" --exclude=".synced/" --exclude="fuzz_bitmap" \\
+            --exclude=".cur_input" --exclude="plot_data" --exclude="fuzzfactory.log" \\
+            vivin\@vivin.is-a-geek.net:"\$remote_nfs_target_directory" /out 2> /dev/null
+    }
+
+    sync_with_retry() {
+      sync_function=\$1
+      shift
+
+      attempt=1
+      \$sync_function \$\@
+      while [[ "\$?" -ne 0 ]]
+      do
+        calculated_delay=\$(perl -e "print \$DELAY * (\$EXPONENT ** \$attempt)")
+        warn "\$sync_function failed; likely hit limit on open SSH connections. Retrying after sleeping for \$calculated_delay seconds..."
+        sleep "\$calculated_delay"
+
+        attempt=\$(( attempt + 1 ))
+        \$sync_function \$\@
+      done
+    }
 
     sync() {
-      # Check to see if the list of other targets exist. If not, make it.
-      if [[ ! -f "/out/targets" ]]; then
-        grep -e "^[^- ]" $container_nfs_workspace/results/id_to_pod_name_and_target.yml | sed -e 's,:,,' | grep -v "$target->{id}" > /out/targets
-      fi
-
       # Sleep first before we start syncing. This gives AFL time to start up and produce some results.
-      sleep 30
+      sleep "\$SYNC_DELAY"
 
       count=0
       while :
       do
+        # Start control SSH session
+        ssh -nNf -M -S "/home/vivin/.ssh/ctl/$target->{id}\@%h:%p" -o StrictHostKeyChecking=no -i /home/vivin/sandpuppy-pod-key \\
+            vivin\@vivin.is-a-geek.net
+
+        # First copy this target's results over to the share
+        log "Copying target results to share"
+        sync_with_retry sync_current_target_to_share
+        log "Done copying target results to share"
+
         # If 30 minutes have elapsed let's sync results from the other targets
-        if [[ "\$count" -eq 6 ]]; then
-          cd $container_nfs_workspace/results/$SANDPUPPY_SYNC_DIRECTORY
+        if [[ "\$count" -eq "\$ATTEMPTS_BEFORE_FULL_SYNC" ]]; then
           while IFS="" read -r target || [ -n "\$target" ]
           do
-            if [[ -d "\$target" ]]; then
-              echo "[\$(date -u)] Start syncing results from \$target"
-              find \$target -type d | parallel -j"\$AVAILABLE_CORES" mkdir -p /out/{}
-              find \$target -type f | parallel -j"\$AVAILABLE_CORES" cp -u --preserve=timestamps {} /out/{}
-              echo "[\$(date -u)] Done syncing targets from \$target"
+            container_nfs_target_directory="$container_nfs_subject_directory/results/$SANDPUPPY_SYNC_DIRECTORY/\$target"
+            if [[ -d "\$container_nfs_target_directory" ]]; then
+              log "Syncing \$target inputs"
+              sync_with_retry sync_target_inputs_from_share "\$target"
+              log "Done syncing \$target inputs"
+
+              sleep "\$DELAY"
             else
-              echo "[\$(date -u)] No results found for target \$target"
+              log "No existing results found for target \$target"
             fi
           done < /out/targets
 
           count=0
-        else
-          cd /out
-          echo "[\$(date -u)] Copying results to shared mount"
-          find $target->{id} -type d | parallel -j"\$AVAILABLE_CORES" mkdir -p $container_nfs_workspace/results/$SANDPUPPY_SYNC_DIRECTORY/{}
-          find $target->{id} -type f | parallel -j"\$AVAILABLE_CORES" cp -u --preserve=timestamps {} $container_nfs_workspace/results/$SANDPUPPY_SYNC_DIRECTORY/{}
-          echo "[\$(date -u)] Done copying results to shared mount"
         fi
 
-        sleep 300
+        # End control SSH session
+        ssh -O exit -S "/home/vivin/.ssh/ctl/$target->{id}\@%h:%p" vivin\@vivin.is-a-geek.net
+
+        sleep "\$SYNC_DELAY"
         count=\$(( count + 1 ))
       done
     }
@@ -356,22 +423,52 @@ sub generate_target_script {
 
     ln -sf /private-nfs/vivin /home/vivin/Projects/phd/workspace
     mkdir -p /home/vivin/Projects/phd/bin
-    mkdir -p $container_nfs_workspace/results/$SANDPUPPY_SYNC_DIRECTORY
-    if [[ ! -f "$container_nfs_workspace/results/$SANDPUPPY_SYNC_DIRECTORY/start_ts" ]]; then
-      date +%s >$container_nfs_workspace/results/$SANDPUPPY_SYNC_DIRECTORY/start_ts
+    mkdir -p $container_nfs_subject_directory/results/$SANDPUPPY_SYNC_DIRECTORY
+    mkdir -p /home/vivin/.ssh/ctl
+    cp /private-nfs/vivin/sandpuppy-pod-key /home/vivin/sandpuppy-pod-key
+
+    # Check to see if the list of other targets exist. If not, make it. We use this list when syncing.
+    if [[ ! -f "/out/targets" ]]; then
+      grep -e "^[^- ]" $container_nfs_subject_directory/results/id_to_pod_name_and_target.yml | sed -e 's,:,,' | grep -v "$target->{id}" > /out/targets
+    fi
+
+    # We don't want pods slamming the SSH server at the same time on resume or sync, so we will sleep first before we
+    # do anything. This value is generated randomly.
+    log "Sleeping for $random_initial_sleep seconds before starting..."
+    sleep $random_initial_sleep
+
+    if [[ -z "\$RESUME" ]]; then
+      date +%s >$container_nfs_subject_directory/results/$SANDPUPPY_SYNC_DIRECTORY/start_ts
     else
-      # We might be resuming; copy results directory (if it exists) from share into local results directory
-      cd $container_nfs_workspace/results/$SANDPUPPY_SYNC_DIRECTORY
-      if [[ -d "$target->{id}" ]]; then
-        echo "[\$(date -u)] Copying previous results from share into local results directory"
-        find $target->{id} -type d | parallel -j"\$AVAILABLE_CORES" mkdir -p /out/{}
-        find $target->{id} -type f | parallel -j"\$AVAILABLE_CORES" cp -u --preserve=timestamps {} /out/{}
-        echo "[\$(date -u)] Done copying previous results from share into local results directory"
-      fi
+      # Start control SSH session
+      ssh -nNf -M -S "/home/vivin/.ssh/ctl/$target->{id}\@%h:%p" -o StrictHostKeyChecking=no -i /home/vivin/sandpuppy-pod-key \\
+          vivin\@vivin.is-a-geek.net
+
+      # We are resuming, so first copy over this target's results directory, and then the queues from other targets
+      log "Copying previous results from share into local results directory"
+      sync_with_retry sync_current_target_from_share
+      log "Done copying previous results from share into local results directory"
+
+      while IFS="" read -r target || [ -n "\$target" ]
+      do
+        container_nfs_target_directory="$container_nfs_subject_directory/results/$SANDPUPPY_SYNC_DIRECTORY/\$target"
+        if [[ -d "\$container_nfs_target_directory" ]]; then
+          log "Syncing existing inputs for \$target"
+          sync_with_retry sync_target_inputs_from_share "\$target"
+          log "Done syncing existing inputs for \$target"
+
+          sleep "\$DELAY"
+        else
+          log "No existing results found for target \$target"
+        fi
+      done < /out/targets
+
+      # End control SSH session
+      ssh -O exit -S "/home/vivin/.ssh/ctl/$target->{id}\@%h:%p" vivin\@vivin.is-a-geek.net
     fi
 
     # Copy the binary and any other files in the nfs binary directory to a local directory
-    cp -rv "$container_nfs_workspace/binaries/$target->{binary_context}" /home/vivin/Projects/phd/bin
+    cp -r "$container_nfs_subject_directory/binaries/$target->{binary_context}" /home/vivin/Projects/phd/bin
     cd /home/vivin/Projects/phd
     sync &
     SYNC_PID=\$!
