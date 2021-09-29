@@ -130,7 +130,6 @@ if ($task eq "build") {
             $version,
             {
                 use_asan       => $use_asan,
-                use_kubernetes => 1,
                 resume         => $resume
             }
         );

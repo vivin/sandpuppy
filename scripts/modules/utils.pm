@@ -478,3 +478,143 @@ sub generate_target_script {
     kill \$SYNC_PID >/dev/null 2>&1
     HERE
 }
+
+# TODO: convert this into a static script and make sure it is in the docker image. provide subject dir, binary name,
+# TODO: target id (for output dir), and fuzzer name to the script (afl, aflplusplus, qsym). based on fuzzer name it
+# TODO: will find the appropriate binary dir (have a convention; e.g. afl-plain, qsym-plain) also. then it will run
+# TODO: the fuzzer against the binary. so tomorrow install qsym and try running using that in kubernetes. also try
+# TODO: doing aflpluslus with laf-intel and redqueen, and just afl by itself. target is libtins. then we need to try
+# TODO: our approach with libtins as well. after that write the state graph comparison script. we will start off with
+# TODO: state graph generated from the inputs identified by plain afl, aflplusplus (laf-intel and redqueen), and qsym.
+# TODO: keep track of all basic block ids and all transitions. then when generating state graph based on our approach
+# TODO: we will identify all new states and all new transitions. then generate the digraph using graphviz
+sub generate_single_target_script {
+    my $experiment_name = $_[0];
+    my $subject = $_[1];
+    my $version = $_[2];
+    my $pod_name = $_[3];
+    my $target = $_[4];
+    my $options = $_[5];
+    my $fuzz_command = $_[6];
+
+    my $subject_directory = get_subject_directory($experiment_name, $subject, $version);
+    my $container_nfs_subject_directory = "/private-nfs/vivin/$subject_directory";
+    my $remote_nfs_subject_directory = "/media/2tb/phd-workspace/nfs/vivin/$subject_directory";
+
+    my $resume = "";
+    if ($options->{resume}) {
+        $resume = "resume";
+    }
+
+    return <<~"PLAIN";
+    #!/bin/bash
+
+    NUM_CORES=\$(lscpu | grep -e "^CPU(s):" | sed -e 's,^.* ,,')
+    AVAILABLE_CORES=\$(( NUM_CORES - 2 )) # One for fuzzer and one for sync() running in the background
+    RESUME="$resume"
+
+    SYNC_DELAY=300
+    ATTEMPTS_BEFORE_FULL_SYNC=6
+
+    DELAY=0.1
+    EXPONENT=2
+
+    log () {
+      echo -e "\\e[1m\\e[32m[\$(date -u)]\\e[0m \$1"
+    }
+
+    warn () {
+      log "\\e[33m\$1\\e[0m"
+    }
+
+    sync_current_target_to_share() {
+      remote_nfs_sync_directory="$remote_nfs_subject_directory/results"
+
+      rsync -az -e "ssh -S '/home/vivin/.ssh/ctl/$target->{id}\@%h:%p'" \\
+            /out/$target->{id} vivin\@vivin.is-a-geek.net:"\$remote_nfs_sync_directory" 2> /dev/null
+    }
+
+    sync_current_target_from_share() {
+      remote_nfs_target_directory="$remote_nfs_subject_directory/results/$target->{id}"
+
+      rsync -az -e "ssh -S '/home/vivin/.ssh/ctl/$target->{id}\@%h:%p'" \\
+            vivin\@vivin.is-a-geek.net:"\$remote_nfs_target_directory" /out 2> /dev/null
+    }
+
+    sync_with_retry() {
+      sync_function=\$1
+      shift
+
+      attempt=1
+      \$sync_function \$\@
+      while [[ "\$?" -ne 0 ]]
+      do
+        calculated_delay=\$(perl -e "print \$DELAY * (\$EXPONENT ** \$attempt)")
+        warn "\$sync_function failed; likely hit limit on open SSH connections. Retrying after sleeping for \$calculated_delay seconds..."
+        sleep "\$calculated_delay"
+
+        attempt=\$(( attempt + 1 ))
+        \$sync_function \$\@
+      done
+    }
+
+    sync() {
+      # Sleep first before we start syncing. This gives AFL time to start up and produce some results.
+      sleep "\$SYNC_DELAY"
+
+      while :
+      do
+        # Start control SSH session
+        ssh -nNf -M -S "/home/vivin/.ssh/ctl/$target->{id}\@%h:%p" -o StrictHostKeyChecking=no -i /home/vivin/sandpuppy-pod-key \\
+            vivin\@vivin.is-a-geek.net
+
+        # First copy this target's results over to the share
+        log "Copying target results to share"
+        sync_with_retry sync_current_target_to_share
+        log "Done copying target results to share"
+
+        # End control SSH session
+        ssh -O exit -S "/home/vivin/.ssh/ctl/$target->{id}\@%h:%p" vivin\@vivin.is-a-geek.net
+
+        sleep "\$SYNC_DELAY"
+      done
+    }
+
+    echo "Experiment: $experiment_name"
+    echo "Subject: ${\($subject . ($version ? "-$version" : ""))}"
+    echo "Target name: $target->{name}"
+    echo "Pod name: $pod_name"
+
+    ln -sf /private-nfs/vivin /home/vivin/Projects/phd/workspace
+    mkdir -p /home/vivin/Projects/phd/bin
+    mkdir -p $container_nfs_subject_directory/results/$target->{id}
+    mkdir -p /home/vivin/.ssh/ctl
+    cp /private-nfs/vivin/sandpuppy-pod-key /home/vivin/sandpuppy-pod-key
+
+    if [[ -z "\$RESUME" ]]; then
+      date +%s >$container_nfs_subject_directory/results/$target->{id}/start_ts
+    else
+      # Start control SSH session
+      ssh -nNf -M -S "/home/vivin/.ssh/ctl/$target->{id}\@%h:%p" -o StrictHostKeyChecking=no -i /home/vivin/sandpuppy-pod-key \\
+          vivin\@vivin.is-a-geek.net
+
+      # We are resuming, so first copy over this target's results directory
+      log "Copying previous results from share into local results directory"
+      sync_with_retry sync_current_target_from_share
+      log "Done copying previous results from share into local results directory"
+
+      # End control SSH session
+      ssh -O exit -S "/home/vivin/.ssh/ctl/$target->{id}\@%h:%p" vivin\@vivin.is-a-geek.net
+    fi
+
+    # Copy the binary and any other files in the nfs binary directory to a local directory
+    cp -r "$container_nfs_subject_directory/binaries/$target->{binary_context}" /home/vivin/Projects/phd/bin
+    cd /home/vivin/Projects/phd
+    sync &
+    SYNC_PID=\$!
+
+    $fuzz_command
+
+    kill \$SYNC_PID >/dev/null 2>&1
+    PLAIN
+}

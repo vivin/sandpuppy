@@ -455,6 +455,10 @@ void __print_max2_vals(const char* filename, const char* function, const char* v
     );
 }
 
+void __print_basic_block_name(const char* basic_block_name) {
+    printf("\n__#BB#__: %s\n", basic_block_name);
+}
+
 uint64_t __hash_int(uint64_t x) {
     x = (x ^ (x >> 30)) * UINT64_C(0xbf58476d1ce4e5b9);
     x = (x ^ (x >> 27)) * UINT64_C(0x94d049bb133111eb);
