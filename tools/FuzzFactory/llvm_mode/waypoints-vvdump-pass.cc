@@ -45,7 +45,7 @@ class VariableValueDumpFeedback : public BaseVariableValueFeedback<VariableValue
 
     void instrumentIfNecessary(Function* function, StoreInst *store) {
         std::string sourceFileName= store->getModule()->getSourceFileName();
-        std::string functionName = function->getName();
+        std::string functionName = function->getName().str();
 
         Value* variable = store->getPointerOperand();
         std::string variableName = getVariableName(variable);
@@ -107,7 +107,7 @@ class VariableValueDumpFeedback : public BaseVariableValueFeedback<VariableValue
         dumpVariableValueArgs.push_back(formatStringValue); // sixth argument is format string for value (includes type)
         dumpVariableValueArgs.push_back(value); // last argument is value
 
-        irb.CreateCall(dumpVariableValueFunction, dumpVariableValueArgs);
+        irb->CreateCall(dumpVariableValueFunction, dumpVariableValueArgs);
     }
 
     static std::string getFormatSpecifierForValue(Value* value) {

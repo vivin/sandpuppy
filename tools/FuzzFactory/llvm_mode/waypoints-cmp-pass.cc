@@ -7,8 +7,8 @@ class CmpFeedback : public fuzzfactory::DomainFeedback<CmpFeedback> {
     GlobalVariable* ProgramLocationHash = NULL;
     
     /* Updates a global that tracks the last program location before a wrapcmp_* function is called */
-    void updateProgramLocation(IRBuilder<>& irb) {
-        irb.CreateStore(createProgramLocation(), ProgramLocationHash);
+    void updateProgramLocation(std::unique_ptr<IRBuilder<>>& irb) {
+        irb->CreateStore(createProgramLocation(), ProgramLocationHash);
     }
 
     /* Construct __wrap_[n]eq<bw> functions on-demand */
@@ -64,7 +64,7 @@ public:
         }  
 
         // Set IR irb to point to current instruction
-        IRBuilder<> irb = insert_before(I);
+        auto irb = insert_before(I);
 
         // Set program location hash to a statically generated random value
         updateProgramLocation(irb);
@@ -73,7 +73,7 @@ public:
         Function* func = getWrapICmpFunction(eq, bw);
         
         // Wrap cmp
-        auto wrap_cmp = irb.CreateCall(func, { I.getOperand(0), I.getOperand(1) });
+        auto wrap_cmp = irb->CreateCall(func, { I.getOperand(0), I.getOperand(1) });
 
         // Replace icmp with function call if we created one
         I.replaceAllUsesWith(wrap_cmp);
@@ -95,7 +95,7 @@ public:
             callee->getName() == "strstr") {
 
             // Set IR irb to point to current instruction
-            IRBuilder<> irb = insert_before(I);
+            auto irb = insert_before(I);
 
             // Set program location hash to a statically generated random value
             updateProgramLocation(irb);
@@ -107,7 +107,7 @@ public:
             Function* wrapper = getWrapper(callee);
 
             // Insert a call to the wrapper function
-            auto wrap_call = irb.CreateCall(wrapper, args);
+            auto wrap_call = irb->CreateCall(wrapper, args);
 
             // Replace calls with the result of the wrapper
             I.replaceAllUsesWith(wrap_call);
@@ -150,7 +150,7 @@ public:
             args[num_args++] = it->getCaseValue();
         }
 
-        CallInst* wrap_call = irb.CreateCall(WrapSwitchSelect, ArrayRef<Value*>(args, num_args));
+        CallInst* wrap_call = irb->CreateCall(WrapSwitchSelect, ArrayRef<Value*>(args, num_args));
 
         // Replace the switch condition with the result of the call
         I.setCondition(wrap_call);

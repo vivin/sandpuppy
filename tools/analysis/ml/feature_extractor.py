@@ -145,9 +145,9 @@ def extract_features(variable):
     features['average_value_set_cardinality_ratio'] = proportion_sum / features['num_traces']
 
     if len(combined_trace) > 0:
-        features['total_counter_segments'] = len(combined_trace_counter_segments)
-        features['total_counter_segments_to_num_traces_ratio'] = \
-            features['total_counter_segments'] / features['num_traces']
+        # features['total_counter_segments'] = len(combined_trace_counter_segments)
+        # features['total_counter_segments_to_num_traces_ratio'] = \
+        #     features['total_counter_segments'] / features['num_traces']
 
         segments_gt1 = [s for s in combined_trace_counter_segments if len(s) > 1]
         features['average_counter_segment_length'] = numpy.mean([len(s) for s in segments_gt1])

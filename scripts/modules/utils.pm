@@ -335,14 +335,14 @@ sub generate_target_script {
       remote_nfs_sync_directory="$remote_nfs_subject_directory/results/$SANDPUPPY_SYNC_DIRECTORY"
 
       rsync -az -e "ssh -S '/home/vivin/.ssh/ctl/$target->{id}\@%h:%p'" \\
-            /out/$target->{id} vivin\@vivin.is-a-geek.net:"\$remote_nfs_sync_directory" 2> /dev/null
+            /out/$target->{id} vivin\@vivin.is-a-geek.net:"\$remote_nfs_sync_directory" 2> /tmp/rsync.err
     }
 
     sync_current_target_from_share() {
       remote_nfs_target_directory="$remote_nfs_subject_directory/results/$SANDPUPPY_SYNC_DIRECTORY/$target->{id}"
 
       rsync -az -e "ssh -S '/home/vivin/.ssh/ctl/$target->{id}\@%h:%p'" \\
-            vivin\@vivin.is-a-geek.net:"\$remote_nfs_target_directory" /out 2> /dev/null
+            vivin\@vivin.is-a-geek.net:"\$remote_nfs_target_directory" /out 2> /tmp/rsync.err
     }
 
     sync_target_inputs_from_share() {
@@ -353,7 +353,7 @@ sub generate_target_script {
             --include="fuzzer_stats" --include="queue/" \\
             --exclude="hangs*/" --exclude="crashes*/" --exclude=".synced/" --exclude="fuzz_bitmap" \\
             --exclude=".cur_input" --exclude="plot_data" --exclude="fuzzfactory.log" \\
-            vivin\@vivin.is-a-geek.net:"\$remote_nfs_target_directory" /out 2> /dev/null
+            vivin\@vivin.is-a-geek.net:"\$remote_nfs_target_directory" /out 2> /tmp/rsync.err
     }
 
     sync_with_retry() {
@@ -365,7 +365,9 @@ sub generate_target_script {
       while [[ "\$?" -ne 0 ]]
       do
         calculated_delay=\$(perl -e "print \$DELAY * (\$EXPONENT ** \$attempt)")
-        warn "\$sync_function failed; likely hit limit on open SSH connections. Retrying after sleeping for \$calculated_delay seconds..."
+        warn "\$sync_function failed."
+        cat /tmp/rsync.err
+        warn "Retrying after sleeping for \$calculated_delay seconds..."
         sleep "\$calculated_delay"
 
         attempt=\$(( attempt + 1 ))
@@ -469,11 +471,19 @@ sub generate_target_script {
 
     # Copy the binary and any other files in the nfs binary directory to a local directory
     cp -r "$container_nfs_subject_directory/binaries/$target->{binary_context}" /home/vivin/Projects/phd/bin
+
+    # Since we don't copy over the symlinks created for binary directories with colons (we do this because when linking
+    # the linker has issues with paths containing colons) dynamically linked binaries have issues finding their shared
+    # library. So we will create a symlink to the local binary directory and set LD_LIBRARY_PATH to it.
+    ln -s "/home/vivin/Projects/phd/bin/$target->{binary_context}" /home/vivin/lib
+    export LD_LIBRARY_PATH=/home/vivin/lib
+
     cd /home/vivin/Projects/phd
     sync &
     SYNC_PID=\$!
 
-    $fuzz_command
+    #echo core | sudo tee /proc/sys/kernel/core_pattern &> /dev/null
+    AFL_SKIP_CPUFREQ=1 $fuzz_command
 
     kill \$SYNC_PID >/dev/null 2>&1
     HERE
@@ -609,11 +619,19 @@ sub generate_single_target_script {
 
     # Copy the binary and any other files in the nfs binary directory to a local directory
     cp -r "$container_nfs_subject_directory/binaries/$target->{binary_context}" /home/vivin/Projects/phd/bin
+
+    # Since we don't copy over the symlinks created for binary directories with colons (we do this because when linking
+    # the linker has issues with paths containing colons) dynamically linked binaries have issues finding their shared
+    # library. So we will create a symlink to the local binary directory and set LD_LIBRARY_PATH to it.
+    ln -s "/home/vivin/Projects/phd/bin/$target->{binary_context}" /home/vivin/lib
+    export LD_LIBRARY_PATH=/home/vivin/lib
+
     cd /home/vivin/Projects/phd
     sync &
     SYNC_PID=\$!
 
-    $fuzz_command
+    #echo core | sudo tee /proc/sys/kernel/core_pattern &> /dev/null
+    AFL_SKIP_CPUFREQ=1 $fuzz_command
 
     kill \$SYNC_PID >/dev/null 2>&1
     PLAIN

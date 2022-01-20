@@ -13,18 +13,18 @@ public:
         if (callee->getName() == "malloc") { // Handle malloc
             auto key = createProgramLocation(); // static random value
             auto irb = insert_after(call); // Get a handle to the LLVM IR Builder at this point
-            auto bytes = irb.CreateTrunc(call.getArgOperand(0), Int32Ty); // Cast size_t to int32
+            auto bytes = irb->CreateTrunc(call.getArgOperand(0), Int32Ty); // Cast size_t to int32
 
             // Insert call to dsf_increment(dsf_map, key, bytes);
-            irb.CreateCall(DsfIncrementFunction, {DsfMapVariable, key, bytes}); 
+            irb->CreateCall(DsfIncrementFunction, {DsfMapVariable, key, bytes});
 
         } else if (callee->getName() == "calloc") { // Handle calloc
             auto key = createProgramLocation(); // static random value
             auto irb = insert_after(call); // Get a handle to the LLVM IR Builder at this point
-            auto bytes = irb.CreateTrunc(irb.CreateMul(call.getArgOperand(0), call.getArgOperand(1)), Int32Ty); // multiply args to calloc to get total bytes
+            auto bytes = irb->CreateTrunc(irb->CreateMul(call.getArgOperand(0), call.getArgOperand(1)), Int32Ty); // multiply args to calloc to get total bytes
 
             // Insert call to dsf_increment(dsf_map, key, bytes);
-            irb.CreateCall(DsfIncrementFunction, {DsfMapVariable, key, bytes});
+            irb->CreateCall(DsfIncrementFunction, {DsfMapVariable, key, bytes});
         }
     }
 };

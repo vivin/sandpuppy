@@ -371,7 +371,7 @@ protected:
         return "";
     }
 
-    Value* safelyDereferenceStoreValueOperand(StoreInst *store, const std::string &variableName, IRBuilder<> &irb) {
+    Value* safelyDereferenceStoreValueOperand(StoreInst *store, const std::string &variableName, std::unique_ptr<IRBuilder<>> &irb) {
         Value* value = store->getValueOperand();
         if (!value->getType()->isPointerTy() || !isPointerTypeResolvingToIntegerType(value->getType())) {
             std::cerr << variableName << " is not a pointer that resolves to an integer.\n";
@@ -383,20 +383,20 @@ protected:
         std::string ifVariableIsNotNullEndBlockName = ifVariableIsNotNullBlockName + ".end";
 
         // Set insertion point to start at the next non-debug instruction.
-        irb.SetInsertPoint(store->getNextNonDebugInstruction());
+        irb->SetInsertPoint(store->getNextNonDebugInstruction());
 
         // We need to generate an if-then so that we only use the variable value if the pointer is not null.
         // Otherwise we will get a SIGSEGV. We will split the block before the next non-debug instruction.
         auto *splitBeforeInstruction = store->getNextNonDebugInstruction();
         auto *pointerType = cast<PointerType>(store->getPointerOperandType()->getPointerElementType());
-        auto *loadPointer = irb.CreateAlignedLoad(pointerType, store->getPointerOperand(), store->getAlign());
-        auto *condition = irb.CreateICmpNE(loadPointer, ConstantPointerNull::get(pointerType), notNullVariableName);
+        auto *loadPointer = irb->CreateAlignedLoad(pointerType, store->getPointerOperand(), store->getAlign());
+        auto *condition = irb->CreateICmpNE(loadPointer, ConstantPointerNull::get(pointerType), notNullVariableName);
         auto *thenBlock = SplitBlockAndInsertIfThen(condition, splitBeforeInstruction, false);
 
         thenBlock->getParent()->setName(ifVariableIsNotNullBlockName);
         splitBeforeInstruction->getParent()->setName(ifVariableIsNotNullEndBlockName);
 
-        irb.SetInsertPoint(thenBlock);
+        irb->SetInsertPoint(thenBlock);
 
         // Find how many levels of indirection are involved
         auto *type = store->getValueOperand()->getType();
@@ -413,20 +413,20 @@ protected:
         Value* load = value;
         while (indirection > 1) {
             pointerType = getPointerToIntegerType(indirection - 1, bitWidth);
-            load = irb.CreateAlignedLoad(pointerType, load, store->getAlign());
-            condition = irb.CreateICmpNE(load, ConstantPointerNull::get(pointerType), notNullVariableName);
+            load = irb->CreateAlignedLoad(pointerType, load, store->getAlign());
+            condition = irb->CreateICmpNE(load, ConstantPointerNull::get(pointerType), notNullVariableName);
             splitBeforeInstruction = cast<Instruction>(condition)->getNextNonDebugInstruction();
             thenBlock = SplitBlockAndInsertIfThen(condition, splitBeforeInstruction, false);
 
             thenBlock->getParent()->setName(ifVariableIsNotNullBlockName);
             splitBeforeInstruction->getParent()->setName(ifVariableIsNotNullEndBlockName);
 
-            irb.SetInsertPoint(thenBlock);
+            irb->SetInsertPoint(thenBlock);
 
             --indirection;
         }
 
-        return irb.CreateAlignedLoad(DomainFeedback<V>::getIntTy(bitWidth), load, store->getAlign());
+        return irb->CreateAlignedLoad(DomainFeedback<V>::getIntTy(bitWidth), load, store->getAlign());
     }
 
     static GlobalVariable* getOrCreateGlobalStringVariable(Module* module, const std::string& variableName, const std::string& variableValue) {

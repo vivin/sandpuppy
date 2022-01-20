@@ -111,7 +111,7 @@ public:
               for (auto &I : BB) {
                 if (ReturnInst *ri = dyn_cast<ReturnInst>(&I)) {
                   auto irb = insert_before(I);
-                  irb.CreateStore(ConstantInt::get(Int32Ty, 0), InMainLoop);
+                  irb->CreateStore(ConstantInt::get(Int32Ty, 0), InMainLoop);
                 }
               }
             }
@@ -121,8 +121,8 @@ public:
         if (at_top_of_llvmfuzz) {
            BasicBlock::iterator IP = F.begin()->getFirstInsertionPt();
            auto irb = insert_before(*IP);
-           irb.CreateStore(getConst(0), DiffHit);
-           irb.CreateStore(getConst(1), InMainLoop);
+           irb->CreateStore(getConst(0), DiffHit);
+           irb->CreateStore(getConst(1), InMainLoop);
            at_top_of_llvmfuzz = false;
         }
     }
@@ -135,22 +135,22 @@ public:
         
         // Assign hits_diff = 1 if this basic block hits the diff
         if (hits_target(bb, target_locations)) {
-           irb.CreateStore(getConst(1), DiffHit);
-           irb.CreateCall(WaypointHit, {});
+           irb->CreateStore(getConst(1), DiffHit);
+           irb->CreateCall(WaypointHit, {});
         }
 
         /* Prepare current and previous locations */
         auto cur_loc = generateRandom31();
         auto CurLoc = getConst(cur_loc);
-        auto PrevLoc = irb.CreateLoad(PrevDiffLoc);
+        auto PrevLoc = irb->CreateLoad(PrevDiffLoc);
 
         /* Update DSF map */
-        auto key = irb.CreateXor(PrevLoc, CurLoc);
-        auto value = irb.CreateAnd(irb.CreateLoad(DiffHit), irb.CreateLoad(InMainLoop));
-        irb.CreateCall(DsfIncrementFunction, {DsfMapVariable, key, value});
+        auto key = irb->CreateXor(PrevLoc, CurLoc);
+        auto value = irb->CreateAnd(irb->CreateLoad(DiffHit), irb->CreateLoad(InMainLoop));
+        irb->CreateCall(DsfIncrementFunction, {DsfMapVariable, key, value});
 
         /* Store (cur_loc >> 1) in prev_loc */
-        irb.CreateStore(getConst(cur_loc >> 1), PrevDiffLoc);
+        irb->CreateStore(getConst(cur_loc >> 1), PrevDiffLoc);
     }
 };
 

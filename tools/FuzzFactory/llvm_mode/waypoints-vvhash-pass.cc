@@ -137,7 +137,7 @@ class VariableValueHashFeedback : public BaseVariableValueFeedback<VariableValue
 
         // If value is greater than 32 bits, truncate.
         if (valueVariable1->getType()->getIntegerBitWidth() > 32) {
-            valueVariable1 = irb.CreateTrunc(valueVariable1, Int32Ty);
+            valueVariable1 = irb->CreateTrunc(valueVariable1, Int32Ty);
         }
 
         auto variable2Name = getVariableName(storeInstVariable2->getPointerOperand());
@@ -157,14 +157,14 @@ class VariableValueHashFeedback : public BaseVariableValueFeedback<VariableValue
 
         // If value is greater than 32 bits, truncate.
         if (valueVariable2->getType()->getIntegerBitWidth() > 32) {
-            valueVariable2 = irb.CreateTrunc(valueVariable2, Int32Ty);
+            valueVariable2 = irb->CreateTrunc(valueVariable2, Int32Ty);
         }
 
-        auto *hash = irb.CreateCall(hashIntsFunction, { valueVariable1, valueVariable2 });
-        irb.CreateCall(dsfSetFunction, { DsfMapVariable, hash, getConst(1) });
+        auto *hash = irb->CreateCall(hashIntsFunction, { valueVariable1, valueVariable2 });
+        irb->CreateCall(dsfSetFunction, { DsfMapVariable, hash, getConst(1) });
         /*
         auto *module = storeInstVariable1->getFunction()->getParent();
-        irb.CreateCall(printHashValFunction, {
+        irb->CreateCall(printHashValFunction, {
             getOrCreateGlobalStringVariable(
                 module,
                 gen_random(16),

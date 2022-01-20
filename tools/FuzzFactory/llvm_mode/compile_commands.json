@@ -23,7 +23,7 @@
   "directory": "/home/vivin/Projects/phd/tools/FuzzFactory/llvm_mode",
   "arguments": [
    "clang++",
-   "-I/usr/lib/llvm-10/include",
+   "-I/usr/lib/llvm-12/include",
    "-std=c++14",
    "-fno-exceptions",
    "-D_GNU_SOURCE",
@@ -44,7 +44,7 @@
    "afl-llvm-pass.so.cc",
    "-o",
    "../afl-llvm-pass.so",
-   "-L/usr/lib/llvm-10/lib"
+   "-L/usr/lib/llvm-12/lib"
   ],
   "file": "afl-llvm-pass.so.cc"
  },

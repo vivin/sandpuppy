@@ -144,7 +144,7 @@ class TwoVariablesValueMaximizationFeedback : public BaseVariableValueFeedback<T
 
         // If value is greater than 32 bits, truncate.
         if (valueVariable1->getType()->getIntegerBitWidth() > 32) {
-            valueVariable1 = irb.CreateTrunc(valueVariable1, Int32Ty);
+            valueVariable1 = irb->CreateTrunc(valueVariable1, Int32Ty);
         }
 
         auto variable2Name = getVariableName(storeInstVariable2->getPointerOperand());
@@ -164,18 +164,18 @@ class TwoVariablesValueMaximizationFeedback : public BaseVariableValueFeedback<T
 
         // If value is greater than 32 bits, truncate.
         if (valueVariable2->getType()->getIntegerBitWidth() > 32) {
-            valueVariable2 = irb.CreateTrunc(valueVariable2, Int32Ty);
+            valueVariable2 = irb->CreateTrunc(valueVariable2, Int32Ty);
         }
 
         // Maximize value of variable1 with respect to variable2. Meaning, we keep track of the max value of variable1
         // for every slotted value of variable2. This means that we need to first divide the value of variable2 by the
         // provided slot size to get the correct slot number.
-        auto *slotNumber = irb.CreateUDiv(valueVariable2, getConst(configuration.getSlotSize()));
-        irb.CreateCall(dsfSetFunction, { DsfMapVariable, slotNumber, valueVariable1 });
+        auto *slotNumber = irb->CreateUDiv(valueVariable2, getConst(configuration.getSlotSize()));
+        irb->CreateCall(dsfSetFunction, { DsfMapVariable, slotNumber, valueVariable1 });
 
         /*
         auto *module = storeInstVariable1->getFunction()->getParent();
-        irb.CreateCall(printMax2ValsFunction, {
+        irb->CreateCall(printMax2ValsFunction, {
             getOrCreateGlobalStringVariable(
                 module,
                 gen_random(16),

@@ -50,11 +50,13 @@ sub build {
         $compiler_flags .= " -m32";
     }
 
+    #~/Projects/phd/tools/FuzzFactory/afl-clang-fast++ -std=c++11 ~/Projects/phd/resources/archives/libtins/readpcap.cpp -I../include -L./lib -lpthread -ltins -Xlinker -rpath ./lib -o readpcap
+
     my $clang_waypoint_options = utils::build_options_string($options->{clang_waypoint_options});
     print ("cmake .. -DCMAKE_C_COMPILER=$cc -DCMAKE_CXX_COMPILER=$cxx -DCMAKE_CXX_FLAGS='$compiler_flags$clang_waypoint_options -isystem /usr/include/SDL2'\n");
     system ("cmake .. -DCMAKE_C_COMPILER=$cc -DCMAKE_CXX_COMPILER=$cxx -DCMAKE_CXX_FLAGS='$compiler_flags$clang_waypoint_options -isystem /usr/include/SDL2'");
     if ($? != 0) {
-       die "Generating Makefiles using CMake failed";
+        die "Generating Makefiles using CMake failed";
     }
 
     if ($binary_context =~ /-asan/) {

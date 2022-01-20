@@ -60,12 +60,17 @@ do
   targets+=("$target_name")
   target_to_pod_name[$target_name]="$pod_name"
   target_to_id[$target_name]="$id"
-done < <(find "$SUBJECT_DIR" -maxdepth 1 -type f -print0 | sort -z)
+done < <(find "$SUBJECT_DIR" -maxdepth 1 -type f -print0 | sort -rz)
 
 echo ""
 
 start_ts=$(cat "$SUBJECT_DIR/results/sandpuppy-sync/start_ts")
 
+min_time=""
+min_target=""
+min_id=""
+min_filename=""
+min_pretty_diff=""
 for i in "${!targets[@]}"; do
   target=${targets[$i]}
   pod_name=${target_to_pod_name[$target]}
@@ -74,6 +79,12 @@ for i in "${!targets[@]}"; do
   echo "Checking $target ($id) for solutions..."
   declare -a solutions=()
   INPUTS_DIR="$SUBJECT_DIR/results/sandpuppy-sync/$id/queue";
+  if [ ! -d "$INPUTS_DIR" ]; then
+      echo "Did not find directory $INPUTS_DIR"
+      echo
+      continue
+  fi
+
   j=0
   num_inputs=$(find "$INPUTS_DIR" -maxdepth 1 -type f -regextype posix-extended -regex "$FILE_REGEX" | wc -l)
   while IFS= read -r -d '' input_file_path
@@ -83,14 +94,23 @@ for i in "${!targets[@]}"; do
 
     # shellcheck disable=SC2001
     filename=$(echo "$input_file_path" | sed -e 's,^.*/,,')
+    fuzz_start_time=$(stat -c '%Y' "$INPUTS_DIR/id:000000,orig:first.txt")
     mtime=$(stat -c '%Y' "$input_file_path")
-    diff=$((mtime - start_ts))
+    diff=$((mtime - fuzz_start_time))
     pretty_diff=$(format_seconds $diff)
 
     resources/maze-anim "$target" "$pod_name" "$filename" "$maze_type" 0 < "$input_file_path" > /tmp/out
     found_treasure=$(grep "You found the treasure" /tmp/out)
     if [[ -n "$found_treasure" ]]; then
       solutions+=("$filename (found after $pretty_diff of fuzzing)")
+
+      if [[ -z "$min_time" ]] || [[ "$mtime" -lt "$min_time" ]]; then
+        min_time="$mtime"
+        min_target="$target"
+        min_id="$id"
+        min_filename="$filename"
+        min_pretty_diff="$pretty_diff"
+      fi
     fi
   done < <(find "$INPUTS_DIR" -maxdepth 1 -type f -regextype posix-extended -regex "$FILE_REGEX" -print0 | sort -z)
 
@@ -103,3 +123,8 @@ for i in "${!targets[@]}"; do
   fi
 
 done
+
+if [[ -n "$min_target" ]]; then
+  echo "Earliest solution found by $min_target ($min_id):"
+  echo "  $min_filename (found after $min_pretty_diff of fuzzing)"
+fi

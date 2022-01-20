@@ -171,7 +171,7 @@ class VariableValueMaximizeFeedback : public BaseVariableValueFeedback<VariableV
 
     void instrumentIfNecessary(const TargetedFunction* targetedFunction, Function* function, StoreInst *store) {
         std::string sourceFileName= store->getModule()->getSourceFileName();
-        std::string functionName = function->getName();
+        std::string functionName = function->getName().str();
 
         Value* variable = store->getPointerOperand();
         std::string variableName = getVariableName(variable);
@@ -203,10 +203,10 @@ class VariableValueMaximizeFeedback : public BaseVariableValueFeedback<VariableV
 
                 // If value is greater than 32 bits, truncate.
                 if (value->getType()->getIntegerBitWidth() > 32) {
-                    value = irb.CreateTrunc(value, Int32Ty);
+                    value = irb->CreateTrunc(value, Int32Ty);
                 }
 
-                irb.CreateCall(dsfMaxFunction, {DsfMapVariable, key, value});
+                irb->CreateCall(dsfMaxFunction, {DsfMapVariable, key, value});
             }
         }
     }

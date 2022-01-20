@@ -50,12 +50,15 @@ public:
     }
 
     /** Instatiates a new domain and immediately registered the instrumentation pass with LLVM */
-    RegisterDomain() : ModulePass(RegisterDomain<D>::ID) { }
+    RegisterDomain() : ModulePass(RegisterDomain<D>::ID) {
+        static RegisterStandardPasses RegisterFuzzFactoryPass(PassManagerBuilder::EP_OptimizerLast, RegisterDomain<D>::registerPass);
+        static RegisterStandardPasses RegisterFuzzFactoryPass0(PassManagerBuilder::EP_EnabledOnOptLevel0, RegisterDomain<D>::registerPass);
+    }
 
     /* Runs this instrumentation pass on a module */
     bool runOnModule(Module &M) override {
         D instrumentor(M);
-        instrumentor.setRNG(M.createRNG(this));
+        instrumentor.setRNG(M.createRNG(static_cast<StringRef &&>(TypeName<D>::name)));
         instrumentor.visit(M);
         instrumentor.done();
         return true;
@@ -165,36 +168,36 @@ protected:
         }
     }
 
-    IRBuilder<> insert_before(BasicBlock& bb) {
+    std::unique_ptr<IRBuilder<>> insert_before(BasicBlock& bb) {
         // Preprend to basic block
         BasicBlock::iterator ip = bb.getFirstInsertionPt();
-        IRBuilder<> irb(&bb, ip);
+        auto irb = std::make_unique<IRBuilder<>>(&bb, ip);
         NumInstrumentationPoints++;
         return irb;
     }
 
-    IRBuilder<> insert_after(BasicBlock& bb){
+    std::unique_ptr<IRBuilder<>> insert_after(BasicBlock& bb){
         // Append to basic block
-        IRBuilder<> irb(&bb);
+        auto irb = std::make_unique<IRBuilder<>>(&bb);
         NumInstrumentationPoints++;
         return irb;
     }
 
 
-    IRBuilder<> insert_before(Instruction& inst) {
-        IRBuilder<> irb(&inst);
+    std::unique_ptr<IRBuilder<>> insert_before(Instruction& inst) {
+        auto irb = std::make_unique<IRBuilder<>>(&inst);
         NumInstrumentationPoints++;
         return irb;
     }
 
-    IRBuilder<> insert_after(Instruction& inst){
-        IRBuilder<> irb(inst.getNextNode());
+    std::unique_ptr<IRBuilder<>>  insert_after(Instruction& inst){
+        auto irb = std::make_unique<IRBuilder<>>(inst.getNextNode());
         NumInstrumentationPoints++;
         return irb;
     }
 
-    Value* loadDsfMapVariable(IRBuilder<> irb) {
-        return irb.CreateLoad(DsfMapVariable);
+    Value* loadDsfMapVariable(std::unique_ptr<IRBuilder<>> irb) {
+        return irb->CreateLoad(DsfMapVariable);
     }
 
 };
@@ -202,15 +205,19 @@ protected:
 }
 
 /* Called by client domains at the top-level using the instrumentation pass as typename D */
-#define FUZZFACTORY_REGISTER_DOMAIN(D)  template <> struct fuzzfactory::TypeName<D> \
-    { static const char* name; } ; const char* fuzzfactory::TypeName<D>::name = #D; \
-    static fuzzfactory::RegisterDomain<D> D; \
-    RegisterStandardPasses RegisterFuzzFactoryPass(PassManagerBuilder::EP_OptimizerLast, fuzzfactory::RegisterDomain<class D>::registerPass); \
-    RegisterStandardPasses RegisterFuzzFactoryPass0(PassManagerBuilder::EP_EnabledOnOptLevel0, fuzzfactory::RegisterDomain<class D>::registerPass);
+//#define FUZZFACTORY_REGISTER_DOMAIN(D)  template <> struct fuzzfactory::TypeName<D> \
+//    { static const char* name; } ; const char* fuzzfactory::TypeName<D>::name = #D; \
+//    static fuzzfactory::RegisterDomain<D> D; \
+//    llvm::RegisterStandardPasses RegisterFuzzFactoryPass(llvm::PassManagerBuilder::EP_OptimizerLast, fuzzfactory::RegisterDomain<class D>::registerPass); \
+//    llvm::RegisterStandardPasses RegisterFuzzFactoryPass0(llvm::PassManagerBuilder::EP_EnabledOnOptLevel0, fuzzfactory::RegisterDomain<class D>::registerPass);
 
 //NOTE: the above macro has been modified to register the pass. Previously, this was done via the constructor in
 //RegisterDomain, which would register and then reference the static method. However this stopped working because
 //the registerPass method would never be called. This might be due to a change in the LLVM API. Anyway, the macro
 //above seems to work.
+
+#define FUZZFACTORY_REGISTER_DOMAIN(D)  template <> struct fuzzfactory::TypeName<D> \
+{ static const char* name; } ; const char* fuzzfactory::TypeName<D>::name = #D; \
+static fuzzfactory::RegisterDomain<D> D;
 
 #endif // FUZZFACTORY_H

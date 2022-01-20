@@ -375,8 +375,8 @@ def identify_interesting_variables(variables_by_filename_and_function):
                     if label == "related":
                         for related in function_variables[label]:
                             for pair in combinations(related, 2):
-                                num_value_combinations = pair[0]['features']['num_unique_values'] * \
-                                                         pair[1]['features']['num_unique_values']
+                                # num_value_combinations = pair[0]['features']['num_unique_values'] * \
+                                #                          pair[1]['features']['num_unique_values']
 
                                 first_variable = f"{filename}:{function}:{pair[0]['name']}:{pair[0]['declared_line']}"
                                 first_min = pair[0]['features']['most_min_value']
@@ -531,18 +531,18 @@ def identify_related_variables(filename, function, variables_by_filename_and_fun
 
         modified_line = list(variable['traces_info']['modified_lines'])[0]
         candidate_vars = set()
-        for delta in range(1, 6):
-            for line in [modified_line - delta, modified_line + delta]:
-                if line in variables_by_modified_line:
-                    vars_modified_on_line = set([
-                        var['fqn'] for var in variables_by_modified_line[line]
-                        if var['class'] != 'constant' and var['class'] != 'boolean'
-                    ]).difference([variable['fqn']])
-                    if len(vars_modified_on_line) > 0:
-                        # print("        Variables modified on line {l} ({delta}): {vars}".format(
-                        #     l=line, vars=vars_modified_on_line, delta=delta
-                        # ))
-                        candidate_vars = candidate_vars.union(vars_modified_on_line)
+        delta = 6
+        for line in [modified_line - delta, modified_line + delta]:
+            if line in variables_by_modified_line:
+                vars_modified_on_line = set([
+                    var['fqn'] for var in variables_by_modified_line[line]
+                    if var['class'] != 'constant' and var['class'] != 'boolean'
+                ]).difference([variable['fqn']])
+                if len(vars_modified_on_line) > 0:
+                    # print("        Variables modified on line {l} ({delta}): {vars}".format(
+                    #     l=line, vars=vars_modified_on_line, delta=delta
+                    # ))
+                    candidate_vars = candidate_vars.union(vars_modified_on_line)
 
         # If we identified any variables that are modified close to the current variable we're looking at, we perform
         # some additional checks to make sure that they actually are related. In particular, for a given candidate

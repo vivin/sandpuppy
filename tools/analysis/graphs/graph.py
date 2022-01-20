@@ -146,7 +146,10 @@ def graph_classes(path, variables, classes):
         #                        markeredgecolor='k')
         #                ax.legend()
 
-        plt.savefig(f"{clustering_path}/{dimension_reduction_method}_{graph_type}_{clustering_method}.png")
+        plt.savefig(
+            f"{clustering_path}/{dimension_reduction_method}_{graph_type}_{clustering_method}.png",
+            bbox_inches="tight"
+        )
         plt.close(fig)
 
     def plot_seaborn_group_distributions_for_feature(f_name):

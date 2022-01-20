@@ -149,32 +149,32 @@ class VariableValuePermuteFeedback : public BaseVariableValueFeedback<VariableVa
         }
 
         // Load the current value of the global variable
-        Value *permutationVariableValue = irb.CreateAlignedLoad(permutationVariable, MaybeAlign(4));
+        Value *permutationVariableValue = irb->CreateAlignedLoad(permutationVariable, MaybeAlign(4));
 
-        //irb.CreateCall(printHashValFunction, { permutationVariableValue });
+        //irb->CreateCall(printHashValFunction, { permutationVariableValue });
 
         // If value is greater than 32 bits, truncate.
         if (value->getType()->getIntegerBitWidth() > 32) {
-            value = irb.CreateTrunc(value, Int32Ty);
+            value = irb->CreateTrunc(value, Int32Ty);
         }
 
         // Make a call to the shift_add function to calculate (permutationVariable << shiftWidthValue) + value
         Value *shiftWidthValue = getConst(configuration.getTargetedVariableShiftWidth());
-        auto shiftAddResult = irb.CreateCall(shiftAddFunction, {
+        auto shiftAddResult = irb->CreateCall(shiftAddFunction, {
             permutationVariableValue,
             shiftWidthValue,
             value
         });
 
         // Use the shifted and added value as an index into the dsf map and set the value at that location to 1
-        irb.CreateCall(dsfSetFunction, {
+        irb->CreateCall(dsfSetFunction, {
             DsfMapVariable,
             shiftAddResult,
             getConst(1)
         });
 
         // Store the shifted and added result back into the global variable
-        irb.CreateAlignedStore(shiftAddResult, permutationVariable, MaybeAlign(4), false);
+        irb->CreateAlignedStore(shiftAddResult, permutationVariable, MaybeAlign(4), false);
     }
 
 protected:

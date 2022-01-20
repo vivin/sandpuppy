@@ -9,7 +9,7 @@ public:
         
         // Insert call to dsf_increment(dsf_map, key, 1);
         auto irb = insert_before(bb); // Get handle to LLVM IR Builder at this point
-        irb.CreateCall(DsfIncrementFunction, {DsfMapVariable, key, getConst(1)}); 
+        irb->CreateCall(DsfIncrementFunction, {DsfMapVariable, key, getConst(1)});
     }
 };
 

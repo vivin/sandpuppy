@@ -1,0 +1,9 @@
+#!/bin/bash
+
+stopped=$(kubectl get pods | grep libtpms | grep "OOMKilled\|Completed")
+if [[ -z "$stopped" ]]; then
+  echo "All libtpms pods are running"
+else
+  kubectl get pods | grep "OOMKilled\|Completed" | awk '{ print $1; }' | xargs kubectl delete pod
+  scripts/exp.pl smartdsf spfuzz libtpms resume
+fi

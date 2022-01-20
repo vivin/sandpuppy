@@ -8,7 +8,7 @@ public:
     void visitBasicBlock (BasicBlock &bb) {
         // Insert call to `dsf_increment(dsf_map, 0, 1)`;
         auto irb = insert_before(bb); // Get a handle to the LLVM IR Builder at this point
-        irb.CreateCall(DsfIncrementFunction, {DsfMapVariable, getConst(0), getConst(1)}); 
+        irb->CreateCall(DsfIncrementFunction, {DsfMapVariable, getConst(0), getConst(1)});
     }
 };
 

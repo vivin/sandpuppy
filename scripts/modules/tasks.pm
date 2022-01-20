@@ -12,7 +12,6 @@ use Data::Dumper;
 
 use vctestbed;
 use utils;
-use display;
 use infantheap;
 use rarebug;
 use maze;
@@ -22,11 +21,7 @@ use libtpms;
 use smbc;
 use cgc;
 use dmg2img;
-
-sub shut_down {
-    display::restore_display();
-    exit;
-}
+use libtins;
 
 my $log = Log::Simple::Color->new;
 
@@ -146,6 +141,15 @@ my $subjects = {
             build   => \&dmg2img::build,
             fuzz    => create_fuzz_task(\&dmg2img::get_fuzz_command),
             pod_command => create_pod_command_task(\&dmg2img::get_fuzz_command)
+        },
+        fuzz_time   => 360
+    },
+    libtins     => {
+        binary_name => "readpcap",
+        tasks       => {
+            build   => \&libtins::build,
+            fuzz    => create_fuzz_task(\&libtins::get_fuzz_command),
+            pod_command => create_pod_command_task(\&libtins::get_fuzz_command)
         },
         fuzz_time   => 360
     }
@@ -686,15 +690,23 @@ sub sandpuppy_fuzz {
     $log->info("Getting list of existing pods (so that we don't recreate)...");
     system ("kuboid/scripts/pod_names > /tmp/sandpuppy.existing");
 
+    my $existing_pods = 0;
     $i = 1;
     foreach $pod_name (sort { $pod_name_to_create_command->{$a}->{sort_key} cmp $pod_name_to_create_command->{$b}->{sort_key} } keys %{$pod_name_to_create_command}) {
         my $target = $pod_name_to_create_command->{$pod_name}->{target};
         my $command = $pod_name_to_create_command->{$pod_name}->{command};
 
-        $log->info("[$i/$num_targets] Creating pod $pod_name for target $target");
-        system ($command);
+        # Check to see if the pod already exists. If it does, we don't want to create it
+        system("kubectl get pod $pod_name >/dev/null 2>&1");
         if ($? != 0) {
-            print "[$i/$num_targets] Creating pod failed: $!\n";
+            $log->info("[$i/$num_targets] Creating pod $pod_name for target $target");
+            system ($command);
+            if ($? != 0) {
+                print "[$i/$num_targets] Creating pod failed: $!\n";
+            }
+        } else {
+            $log->info("[$i/$num_targets] Skipping existing pod $pod_name for target $target");
+            $existing_pods++;
         }
 
         print "\n";
@@ -702,7 +714,7 @@ sub sandpuppy_fuzz {
         $i++;
     }
 
-    my $requested_pods = scalar @{$targets} + 1;
+    my $requested_pods = (scalar @{$targets} + 1) - $existing_pods;
     my $num_finished = 0;
     until ($num_finished == $requested_pods) {
         my $status_counts = {};
@@ -816,35 +828,35 @@ sub build_sandpuppy_targets {
             my $variable = $variable_entry->{variable};
             my $max_value = $variable_entry->{max};
             my $min_value = $variable_entry->{min};
-            foreach my $shift_width (4, 8) {
-                # If the value is within the 8 bit signed or unsigned range, there is really no point doing a value
-                # permutation pass with a shift width of 8.
-                next if $shift_width == 8 &&
-                    (($min_value >= 0 && $max_value <= 255) || ($min_value >= -128 && $max_value <= 127));
+            my $shift_width = 8;
 
-                my $name = "sandpuppy-vvperm-$variable:sw:$shift_width";
-                $name =~ s/\//./g;
-                $name =~ s/-\././g;
-                my $id = $name_to_id->{$name} ? $name_to_id->{$name} : utils::get_random_fuzzer_id();
-                my $variables_file = "$results_dir/$name.txt";
-                push @{$grouped_targets->{perm}}, {
-                    id                => $id,
-                    name              => $name,
-                    experiment_name   => $experiment_name,
-                    subject           => $subject,
-                    version           => $version,
-                    waypoints         => "vvperm",
-                    binary_context    => $name . ($options->{use_asan} ? "-asan" : ""),
-                    execution_context => $name . ($options->{use_asan} ? "-asan" : ""),
-                    variables_file    => $variables_file
-                };
-
-                $name_to_id->{$name} = $id if !$name_to_id->{$name};
-
-                open my $VVPERM, ">", $variables_file;
-                print $VVPERM "$variable:$shift_width\n";
-                close $VVPERM;
+            # If value never goes above 15 (F), we can shift by 4 bits instead of 8; lets us track more permutations.
+            if ($min_value >= 0 && $max_value <= 15) {
+                $shift_width = 4;
             }
+
+            my $name = "sandpuppy-vvperm-$variable:sw:$shift_width";
+            $name =~ s/\//./g;
+            $name =~ s/-\././g;
+            my $id = $name_to_id->{$name} ? $name_to_id->{$name} : utils::get_random_fuzzer_id();
+            my $variables_file = "$results_dir/$name.txt";
+            push @{$grouped_targets->{perm}}, {
+                id                => $id,
+                name              => $name,
+                experiment_name   => $experiment_name,
+                subject           => $subject,
+                version           => $version,
+                waypoints         => "vvperm",
+                binary_context    => $name . ($options->{use_asan} ? "-asan" : ""),
+                execution_context => $name . ($options->{use_asan} ? "-asan" : ""),
+                variables_file    => $variables_file
+            };
+
+            $name_to_id->{$name} = $id if !$name_to_id->{$name};
+
+            open my $VVPERM, ">", $variables_file;
+            print $VVPERM "$variable:$shift_width\n";
+            close $VVPERM;
         }
     }
 

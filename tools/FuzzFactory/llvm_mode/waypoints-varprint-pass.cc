@@ -106,7 +106,7 @@ class VariablePrintFeedback : public fuzzfactory::DomainFeedback<VariablePrintFe
 
     void printVariableUsage(StoreInst *store, Function* function) {
         std::string sourceFileName= store->getModule()->getSourceFileName();
-        std::string functionName = function->getName();
+        std::string functionName = function->getName().str();
 
         if (store->getDebugLoc() && store->getValueOperand()->getType()->isIntegerTy()) {
             Value* variable = store->getPointerOperand();
