@@ -118,9 +118,9 @@ sub get_basic_blocks_and_commands_for_input {
     open CMDS, "/home/vivin/Projects/phd/resources/readtpmc $file |";
     while (my $line = <CMDS>) {
         chomp $line;
-        if ($line =~ /__\$CMD\$__: /) {
+        if ($line =~ /__#CMD#__: /) {
             my $command = $line;
-            $command =~ s/__\$CMD\$__: //;
+            $command =~ s/__#CMD#__: //;
             push @commands, $command;
         }
     }
