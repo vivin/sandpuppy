@@ -28,7 +28,7 @@ my $fuzzer = $ARGV[0];
 if ($fuzzer eq "sandpuppy") {
     print "Analyzing results for sandpuppy...\n";
 
-    my $num_files = 822563;
+    my $num_files = 1007853;
     open DIRS, "find $BASE_PATH/vivin/smartdsf/libtpms/results/sandpuppy-sync -maxdepth 1 -mindepth 1 -type d |";
     while (my $dir = <DIRS>) {
         chomp $dir;

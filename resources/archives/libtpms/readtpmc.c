@@ -40,7 +40,7 @@ char* decode(const char* input, int* length) {
 
 vvdump_ignore
 __attribute__((no_sanitize("address")))
-int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size)
+int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size, int do_startup)
 {
     unsigned char *rbuffer = NULL;
     uint32_t rlength;
@@ -50,22 +50,24 @@ int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size)
         0x80, 0x01, 0x00, 0x00, 0x00, 0x0c, 0x00, 0x00, 0x01, 0x44, 0x00, 0x00
     };
 
-    res = TPMLIB_ChooseTPMVersion(TPMLIB_TPM_VERSION_2);
-    if (res != TPM_SUCCESS) {
-        fprintf(stderr, "Error: TPMLIB_ChooseTPMVersion(TPMLIB_TPM_VERSION_2) failed\n");
-        return 1;
-    }
+    if (do_startup == 1) {
+        res = TPMLIB_ChooseTPMVersion(TPMLIB_TPM_VERSION_2);
+        if (res != TPM_SUCCESS) {
+            fprintf(stderr, "Error: TPMLIB_ChooseTPMVersion(TPMLIB_TPM_VERSION_2) failed\n");
+            return 1;
+        }
 
-    res = TPMLIB_MainInit();
-    if (res != TPM_SUCCESS) {
-        fprintf(stderr, "Error: TPMLIB_MainInit() failed\n");
-        return 1;
-    }
+        res = TPMLIB_MainInit();
+        if (res != TPM_SUCCESS) {
+            fprintf(stderr, "Error: TPMLIB_MainInit() failed\n");
+            return 1;
+        }
 
-    res = TPMLIB_Process(&rbuffer, &rlength, &rtotal, startup, sizeof(startup));
-    if (res != TPM_SUCCESS) {
-        fprintf(stderr, "Error: TPMLIB_Process(Startup) failed\n");
-        return 1;
+        res = TPMLIB_Process(&rbuffer, &rlength, &rtotal, startup, sizeof(startup));
+        if (res != TPM_SUCCESS) {
+            fprintf(stderr, "Error: TPMLIB_Process(Startup) failed\n");
+            return 1;
+        }
     }
 
     res = TPMLIB_Process(&rbuffer, &rlength, &rtotal, (unsigned char*)data, size);
@@ -122,10 +124,12 @@ int main(int argc, char **argv)
         return 1;
     }
 
+    int do_startup = 1;
     while (exit_code == 0 && (read = getline(&line, &len, f)) != -1) {
         int command_length;
         char *command = decode(line, &command_length);
-        exit_code = LLVMFuzzerTestOneInput((void *)command, (size_t) command_length);
+        exit_code = LLVMFuzzerTestOneInput((void *)command, (size_t) command_length, do_startup);
+        do_startup = 0;
     }
 
     fclose(f);
