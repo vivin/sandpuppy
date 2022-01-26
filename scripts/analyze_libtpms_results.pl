@@ -114,6 +114,7 @@ print "done\n";
 sub get_basic_blocks_and_commands_for_input {
     my $file = $_[0];
 
+    my $prev_line_is_startup = 0;
     my @commands = ();
     open CMDS, "/home/vivin/Projects/phd/resources/readtpmc $file |";
     while (my $line = <CMDS>) {
@@ -121,7 +122,14 @@ sub get_basic_blocks_and_commands_for_input {
         if ($line =~ /__#CMD#__: /) {
             my $command = $line;
             $command =~ s/__#CMD#__: //;
-            push @commands, $command;
+
+            if ($prev_line_is_startup == 0) {
+                push @commands, $command;
+            }
+
+            $prev_line_is_startup = 0;
+        } elsif ($line =~ /__#STARTUP#__/) {
+            $prev_line_is_startup = 1;
         }
     }
     close CMDS;
