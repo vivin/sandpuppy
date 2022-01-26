@@ -109,6 +109,7 @@ print "done\n";
 
 print "Generating PS file out of graphviz file...";
 system "dot -Tps $BASE_PATH/vivin/smartdsf/libtpms/aggregated/$fuzzer.dot -o $BASE_PATH/vivin/smartdsf/libtpms/aggregated/$fuzzer.ps";
+print "done\n";
 
 sub get_basic_blocks_and_commands_for_input {
     my $file = $_[0];
