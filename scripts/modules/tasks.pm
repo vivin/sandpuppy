@@ -36,27 +36,27 @@ my $subjects = {
     vctestbed  => {
         binary_name => "vctestbed",
         tasks       => {
-            build       => \&vctestbed::build,
-            fuzz        => create_fuzz_task(\&vctestbed::get_fuzz_command),
-            pod_command => create_pod_command_task(\&vctestbed::get_fuzz_command)
+            build            => \&vctestbed::build,
+            fuzz             => create_fuzz_task(\&vctestbed::get_fuzz_command),
+            pod_fuzz_command => create_pod_fuzz_command_task(\&vctestbed::get_fuzz_command)
         },
         fuzz_time   => 300
     },
     infantheap  => {
         binary_name => "infantheap",
         tasks       => {
-            build       => \&infantheap::build,
-            fuzz        => create_fuzz_task(\&infantheap::get_fuzz_command),
-            pod_command => create_pod_command_task(\&infantheap::get_fuzz_command)
+            build            => \&infantheap::build,
+            fuzz             => create_fuzz_task(\&infantheap::get_fuzz_command),
+            pod_fuzz_command => create_pod_fuzz_command_task(\&infantheap::get_fuzz_command)
         },
         fuzz_time   => 600
     },
     rarebug     => {
         binary_name => "rarebug",
         tasks       => {
-            build   => \&rarebug::build,
-            fuzz    => create_fuzz_task(\&rarebug::get_fuzz_command),
-            pod_command => create_pod_command_task(\&rarebug::get_fuzz_command)
+            build            => \&rarebug::build,
+            fuzz             => create_fuzz_task(\&rarebug::get_fuzz_command),
+            pod_fuzz_command => create_pod_fuzz_command_task(\&rarebug::get_fuzz_command)
         },
         fuzz_time   => 600
     },
@@ -64,9 +64,9 @@ my $subjects = {
         binary_name => "maze",
         source_name => "maze.c",
         tasks       => {
-            build   => \&maze::build,
-            fuzz    => create_fuzz_task(\&maze::get_fuzz_command),
-            pod_command => create_pod_command_task(\&maze::get_fuzz_command)
+            build            => \&maze::build,
+            fuzz             => create_fuzz_task(\&maze::get_fuzz_command),
+            pod_fuzz_command => create_pod_fuzz_command_task(\&maze::get_fuzz_command)
         },
         fuzz_time   => 360
     },
@@ -74,9 +74,9 @@ my $subjects = {
         binary_name => "maze_ijon",
         source_name => "maze_ijon.c",
         tasks       => {
-            build   => \&maze::build,
-            fuzz    => create_fuzz_task(\&maze::get_fuzz_command),
-            pod_command => create_pod_command_task(\&maze::get_fuzz_command)
+            build            => \&maze::build,
+            fuzz             => create_fuzz_task(\&maze::get_fuzz_command),
+            pod_fuzz_command => create_pod_fuzz_command_task(\&maze::get_fuzz_command)
         },
         fuzz_time   => 360
     },
@@ -84,78 +84,78 @@ my $subjects = {
         binary_name => "maze_klee",
         source_name => "maze_klee.c",
         tasks       => {
-            build   => \&maze::build,
-            fuzz    => create_fuzz_task(\&maze::get_fuzz_command),
-            pod_command => create_pod_command_task(\&maze::get_fuzz_command)
+            build            => \&maze::build,
+            fuzz             => create_fuzz_task(\&maze::get_fuzz_command),
+            pod_fuzz_command => create_pod_fuzz_command_task(\&maze::get_fuzz_command)
         },
         fuzz_time   => 360
     },
     libpng      => {
         binary_name => "readpng",
         tasks       => {
-            build   => \&libpng::build,
-            fuzz    => create_fuzz_task(\&libpng::get_fuzz_command),
-            pod_command => create_pod_command_task(\&libpng::get_fuzz_command)
+            build            => \&libpng::build,
+            fuzz             => create_fuzz_task(\&libpng::get_fuzz_command),
+            pod_fuzz_command => create_pod_fuzz_command_task(\&libpng::get_fuzz_command)
         },
         fuzz_time   => 900
     },
     readelf     => {
         binary_name => "readelf",
         tasks       => {
-            build   => \&readelf::build,
-            fuzz    => create_fuzz_task(\&readelf::get_fuzz_command),
-            pod_command => create_pod_command_task(\&readelf::get_fuzz_command)
+            build            => \&readelf::build,
+            fuzz             => create_fuzz_task(\&readelf::get_fuzz_command),
+            pod_fuzz_command => create_pod_fuzz_command_task(\&readelf::get_fuzz_command)
         },
         fuzz_time   => 600
     },
     libtpms     => {
         binary_name => "readtpmc",
         tasks       => {
-            build   => \&libtpms::build,
-            fuzz    => create_fuzz_task(\&libtpms::get_fuzz_command),
-            pod_command => create_pod_command_task(\&libtpms::get_fuzz_command)
+            build            => \&libtpms::build,
+            fuzz             => create_fuzz_task(\&libtpms::get_fuzz_command),
+            pod_fuzz_command => create_pod_fuzz_command_task(\&libtpms::get_fuzz_command)
         },
         fuzz_time   => 600
     },
     smbc        => {
         binary_name => "smbc",
         tasks       => {
-            build   => \&smbc::build,
-            fuzz    => create_fuzz_task(\&smbc::get_fuzz_command),
-            pod_command => create_pod_command_task(\&smbc::get_fuzz_command)
+            build            => \&smbc::build,
+            fuzz             => create_fuzz_task(\&smbc::get_fuzz_command),
+            pod_fuzz_command => create_pod_fuzz_command_task(\&smbc::get_fuzz_command)
         },
         fuzz_time   => 360
     },
     hawaii_sets => {
         binary_name => "hawaii_sets",
         tasks       => {
-            build   => \&cgc::build,
-            fuzz    => create_fuzz_task(\&cgc::get_fuzz_command),
-            pod_command => create_pod_command_task(\&cgc::get_fuzz_command)
+            build            => \&cgc::build,
+            fuzz             => create_fuzz_task(\&cgc::get_fuzz_command),
+            pod_fuzz_command => create_pod_fuzz_command_task(\&cgc::get_fuzz_command)
         },
         fuzz_time   => 600
     },
     dmg2img     => {
         binary_name => "dmg2img",
         tasks       => {
-            build   => \&dmg2img::build,
-            fuzz    => create_fuzz_task(\&dmg2img::get_fuzz_command),
-            pod_command => create_pod_command_task(\&dmg2img::get_fuzz_command)
+            build            => \&dmg2img::build,
+            fuzz             => create_fuzz_task(\&dmg2img::get_fuzz_command),
+            pod_fuzz_command => create_pod_fuzz_command_task(\&dmg2img::get_fuzz_command)
         },
         fuzz_time   => 360
     },
     libtins     => {
         binary_name => "readpcap",
         tasks       => {
-            build   => \&libtins::build,
-            fuzz    => create_fuzz_task(\&libtins::get_fuzz_command),
-            pod_command => create_pod_command_task(\&libtins::get_fuzz_command)
+            build            => \&libtins::build,
+            fuzz             => create_fuzz_task(\&libtins::get_fuzz_command),
+            pod_fuzz_command => create_pod_fuzz_command_task(\&libtins::get_fuzz_command)
         },
         fuzz_time   => 360
     }
 };
 
-sub create_pod_command_task {
+sub create_pod_fuzz_command_task {
     my $get_fuzz_command = $_[0];
 
     return sub {
@@ -315,11 +315,11 @@ sub fuzz {
     waitpid $fuzzer_pid, 0;
 }
 
-sub pod_command {
+sub pod_fuzz_command {
     my $subject = $_[1];
 
     my $tasks = $subjects->{$subject}->{tasks};
-    return $tasks->{pod_command}->(@_);
+    return $tasks->{pod_fuzz_command}->(@_);
 }
 
 sub setup_named_pipe {
@@ -468,34 +468,38 @@ sub vvdump_fuzz {
     }
 }
 
-sub sandpuppy_fuzz {
+sub sandpuppy_vanilla_fuzz {
     my $experiment_name = $_[0];
     my $subject = $_[1];
     my $version = $_[2];
     my $options = $_[3];
 
-    # Generate variables files and build targets using the output from the analysis phase (which should be stored
-    # under the results for the provided execution_context). The analysis phase identifies interesting variables to
-    # instrument, so we will build targets that do just that.
-    my ($main_target, $targets) = build_sandpuppy_targets(
+    # Build main target. This is just vanilla AFL instrumentation.
+    my $main_target = {
+        id                => "vanilla-$SANDPUPPY_MAIN_TARGET_NAME",
+        name              => "vanilla-$SANDPUPPY_MAIN_TARGET_NAME",
+        experiment_name   => $experiment_name,
+        subject           => $subject,
+        version           => $version,
+        waypoints         => $WAYPOINTS_NONE,
+        binary_context    => $SANDPUPPY_MAIN_TARGET_NAME . ($options->{use_asan} ? "-asan" : ""),
+        execution_context => $SANDPUPPY_MAIN_TARGET_NAME . ($options->{use_asan} ? "-asan" : "")
+    };
+    build(
         $experiment_name,
         $subject,
         $version,
-        $options
+        $main_target->{waypoints},
+        $main_target->{binary_context},
+        { use_existing => 1, backup => 0, m32 => $options->{use_asan} }
     );
 
-    my $num_targets = scalar @{$targets} + 1; # Account for main target
-
     my $full_subject = $subject . ($version ? "-$version" : "");
+    my $run_name = $options->{run_name};
 
     my $id_to_pod_name_and_target = {};
-    my $pod_name_to_create_command = {};
 
-    $log->info("Fuzzing using kubernetes requested.\n");
-
-    # TODO: do distributed parallel.
-
-    #$log->info("Copying target binaries to NFS mount");
+    $log->info("Vanilla AFL fuzzing using kubernetes requested.\n");
 
     my $workspace = utils::get_workspace($experiment_name, $subject, $version);
     my $subject_directory = utils::get_subject_directory($experiment_name, $subject, $version);
@@ -506,8 +510,8 @@ sub sandpuppy_fuzz {
         system("mkdir -p $local_nfs_subject_directory");
     }
 
-    if (! -d "$local_nfs_subject_directory/results") {
-        system("mkdir $local_nfs_subject_directory/results");
+    if (! -d "$local_nfs_subject_directory/results/$run_name") {
+        system("mkdir -p $local_nfs_subject_directory/results/$run_name");
     }
 
     if (! -d "$local_nfs_subject_directory/binaries") {
@@ -531,9 +535,155 @@ sub sandpuppy_fuzz {
             my $ctime_nfs_file = stat($nfs_file_path)->ctime;
 
             if ($ctime_nfs_file >= $ctime_local_file) {
-                $log->info("[1/$num_targets] Not copying $main_target_binary_dir/$main_target_file because it already exists on NFS and is newer.");
+                $log->info("Not copying $main_target_binary_dir/$main_target_file because newer version exists on NFS.");
             } else {
-                $log->info("[1/$num_targets] Copying $main_target_binary_dir/$main_target_file to NFS as it is newer than the existing one..");
+                $log->info("Copying $main_target_binary_dir/$main_target_file to NFS as it is newer than the existing one.");
+                system("cp $local_file_path $nfs_file_path")
+            }
+        } else {
+            $log->info("Copying $main_target_binary_dir/$main_target_file to NFS.");
+            system("cp $local_file_path $nfs_file_path")
+        }
+    }
+
+    my $pod_name = "$experiment_name-$full_subject-$run_name--$main_target->{id}" . ($options->{use_asan} ? "-asan" : "");
+    $pod_name =~ s/[\._]/-/g; # pod names have restrictions
+
+    $id_to_pod_name_and_target->{$main_target->{id}} = {
+        pod_name    => $pod_name,
+        target_name => $main_target->{name}
+    };
+
+    $log->info("Creating target script for main target...");
+    my $target_script = utils::generate_single_target_script(
+        $experiment_name,
+        $subject,
+        $version,
+        $pod_name,
+        $main_target,
+        $options,
+        pod_fuzz_command(
+            $experiment_name,
+            $subject,
+            $version,
+            $main_target->{waypoints},
+            $main_target->{binary_context},
+            $main_target->{execution_context},
+            {
+                async              => 1,
+                fuzzer_id          => $main_target->{id},
+                parallel_fuzz_mode => "parent",
+                resume             => 0
+            }
+        ),
+        pod_fuzz_command(
+            $experiment_name,
+            $subject,
+            $version,
+            $main_target->{waypoints},
+            $main_target->{binary_context},
+            $main_target->{execution_context},
+            {
+                async              => 1,
+                fuzzer_id          => $main_target->{id},
+                parallel_fuzz_mode => "parent",
+                resume             => 1
+            }
+        )
+    );
+
+    #if (! -f "$local_nfs_workspace/$main_target->{id}") {
+    open my $TARGET_SCRIPT, ">", "$local_nfs_subject_directory/$main_target->{id}";
+    print $TARGET_SCRIPT $target_script;
+    close $TARGET_SCRIPT;
+    #}
+
+    system "chmod 755 $local_nfs_subject_directory/$main_target->{id}";
+
+    print "\n";
+
+    my $pod_command = "$container_nfs_subject_directory/$main_target->{id} $run_name" . ($options->{resume} ? " resume" : "");
+    my $pod_create_command = "kuboid/scripts/pod_create -n \"$pod_name\" -s /tmp/sandpuppy.existing -i vivin/sandpuppy $pod_command";
+
+    $log->info("Preparing to create and run kubernetes pod for target...");
+
+    my $id_to_pod_name_and_target_file = "$local_nfs_subject_directory/results/$run_name/id_to_pod_name_and_target.yml";
+    YAML::XS::DumpFile($id_to_pod_name_and_target_file, $id_to_pod_name_and_target);
+
+    #if (1) {
+    #    exit(0);
+    #}
+
+    $log->info("Creating pod $pod_name for target $main_target->{id}");
+    system ($pod_create_command);
+    if ($? != 0) {
+        print "Creating pod failed: $!\n";
+    }
+}
+
+sub sandpuppy_fuzz {
+    my $experiment_name = $_[0];
+    my $subject = $_[1];
+    my $version = $_[2];
+    my $options = $_[3];
+
+    # Generate variables files and build targets using the output from the analysis phase (which should be stored
+    # under the results for the provided execution_context). The analysis phase identifies interesting variables to
+    # instrument, so we will build targets that do just that.
+    my ($main_target, $targets) = build_sandpuppy_targets(
+        $experiment_name,
+        $subject,
+        $version,
+        $options
+    );
+
+    my $num_targets = scalar @{$targets} + 1; # Account for main target
+
+    my $full_subject = $subject . ($version ? "-$version" : "");
+    my $run_name = $options->{run_name};
+
+    my $id_to_pod_name_and_target = {};
+    my $pod_name_to_create_command = {};
+
+    $log->info("Fuzzing using kubernetes requested.\n");
+
+    my $workspace = utils::get_workspace($experiment_name, $subject, $version);
+    my $subject_directory = utils::get_subject_directory($experiment_name, $subject, $version);
+    my $local_nfs_subject_directory = "/mnt/vivin-nfs/vivin/$subject_directory";
+    my $container_nfs_subject_directory = "/private-nfs/vivin/$subject_directory";
+
+    if (! -d $local_nfs_subject_directory) {
+        system("mkdir -p $local_nfs_subject_directory");
+    }
+
+    if (! -d "$local_nfs_subject_directory/results/$run_name") {
+        system("mkdir -p $local_nfs_subject_directory/results/$run_name");
+    }
+
+    if (! -d "$local_nfs_subject_directory/binaries") {
+        system("mkdir $local_nfs_subject_directory/binaries");
+    }
+
+    my $main_target_binary_dir = $main_target->{binary_context};
+    if (! -e -d "$local_nfs_subject_directory/binaries/$main_target_binary_dir") {
+        system("mkdir $local_nfs_subject_directory/binaries/$main_target_binary_dir");
+    }
+
+    my @main_target_files = `find "$workspace/binaries/$main_target_binary_dir" -type f | sed -e 's,^.*/,,'`;
+    foreach my $main_target_file (@main_target_files) {
+        chomp($main_target_file);
+
+        my $local_file_path = "$workspace/binaries/$main_target_binary_dir/$main_target_file";
+        my $nfs_file_path = "$local_nfs_subject_directory/binaries/$main_target_binary_dir/$main_target_file";
+
+        if (-e -f $nfs_file_path) {
+            my $ctime_local_file = stat($local_file_path)->ctime;
+            my $ctime_nfs_file = stat($nfs_file_path)->ctime;
+
+            if ($ctime_nfs_file >= $ctime_local_file) {
+                $log->info("[1/$num_targets] Not copying $main_target_binary_dir/$main_target_file because newer version exists on NFS.");
+            } else {
+                $log->info("[1/$num_targets] Copying $main_target_binary_dir/$main_target_file to NFS as it is newer than the existing one.");
                 system("cp $local_file_path $nfs_file_path")
             }
         } else {
@@ -542,7 +692,7 @@ sub sandpuppy_fuzz {
         }
     }
 
-    my $pod_name = "$experiment_name-$full_subject--$main_target->{id}" . ($options->{use_asan} ? "-asan" : "");
+    my $pod_name = "$experiment_name-$full_subject-$run_name--$main_target->{id}" . ($options->{use_asan} ? "-asan" : "");
     $pod_name =~ s/[\._]/-/g; # pod names have restrictions
 
     $id_to_pod_name_and_target->{$main_target->{id}} = {
@@ -558,7 +708,7 @@ sub sandpuppy_fuzz {
         $pod_name,
         $main_target,
         $options,
-        pod_command(
+        pod_fuzz_command(
             $experiment_name,
             $subject,
             $version,
@@ -568,9 +718,22 @@ sub sandpuppy_fuzz {
             {
                 async              => 1,
                 fuzzer_id          => $main_target->{id},
-                #sync_directory_name => $SANDPUPPY_SYNC_DIRECTORY,
                 parallel_fuzz_mode => "parent",
-                resume             => $options->{resume}
+                resume             => 0
+            }
+        ),
+        pod_fuzz_command(
+            $experiment_name,
+            $subject,
+            $version,
+            $main_target->{waypoints},
+            $main_target->{binary_context},
+            $main_target->{execution_context},
+            {
+                async              => 1,
+                fuzzer_id          => $main_target->{id},
+                parallel_fuzz_mode => "parent",
+                resume             => 1
             }
         )
     );
@@ -585,7 +748,7 @@ sub sandpuppy_fuzz {
 
     print "\n";
 
-    my $pod_command = "$container_nfs_subject_directory/$main_target->{id}";
+    my $pod_command = "$container_nfs_subject_directory/$main_target->{id} $run_name" . ($options->{resume} ? " resume" : "");
     $pod_name_to_create_command->{$pod_name} = {
         target   => $main_target->{id},
         command  => "kuboid/scripts/pod_create -n \"$pod_name\" -s /tmp/sandpuppy.existing -i vivin/sandpuppy $pod_command",
@@ -624,8 +787,8 @@ sub sandpuppy_fuzz {
 
         my $asan_suffix = ($options->{use_asan} ? "-asan" : "");
         $pod_name = $target->{waypoints} eq "vvmax" ?
-            "$experiment_name-$full_subject--$target->{id}$asan_suffix" :
-            "$experiment_name-$full_subject--$target->{id}-$target->{waypoints}$asan_suffix";
+            "$experiment_name-$full_subject-$run_name--$target->{id}$asan_suffix" :
+            "$experiment_name-$full_subject-$run_name--$target->{id}-$target->{waypoints}$asan_suffix";
         $pod_name =~ s/[\._]/-/g; # pod names have restrictions
 
         $id_to_pod_name_and_target->{$target->{id}} = {
@@ -641,7 +804,7 @@ sub sandpuppy_fuzz {
             $pod_name,
             $target,
             $options,
-            pod_command(
+            pod_fuzz_command(
                 $experiment_name,
                 $subject,
                 $version,
@@ -651,9 +814,23 @@ sub sandpuppy_fuzz {
                 {
                     async              => 1,
                     fuzzer_id          => $target->{id},
-                    #sync_directory_name => $SANDPUPPY_SYNC_DIRECTORY,
                     parallel_fuzz_mode => "child",
-                    resume             => $options->{resume}
+                    resume             => 0
+                    #exit_when_done      => 1
+                }
+            ),
+            pod_fuzz_command(
+                $experiment_name,
+                $subject,
+                $version,
+                $target->{waypoints},
+                $target->{binary_context},
+                $target->{execution_context},
+                {
+                    async              => 1,
+                    fuzzer_id          => $target->{id},
+                    parallel_fuzz_mode => "child",
+                    resume             => 1
                     #exit_when_done      => 1
                 }
             )
@@ -667,7 +844,7 @@ sub sandpuppy_fuzz {
             system "chmod 755 $local_nfs_subject_directory/$target->{id}";
         #}
 
-        $pod_command = "$container_nfs_subject_directory/$target->{id}";
+        $pod_command = "$container_nfs_subject_directory/$target->{id} $run_name" . ($options->{resume} ? " resume" : "");
         $pod_name_to_create_command->{$pod_name} = {
             target   => $target->{id},
             command  => "kuboid/scripts/pod_create -n \"$pod_name\" -s /tmp/sandpuppy.existing -i vivin/sandpuppy $pod_command",
@@ -680,7 +857,7 @@ sub sandpuppy_fuzz {
 
     $log->info("Preparing to create and run kubernetes pods for targets...");
 
-    my $id_to_pod_name_and_target_file = "$local_nfs_subject_directory/results/id_to_pod_name_and_target.yml";
+    my $id_to_pod_name_and_target_file = "$local_nfs_subject_directory/results/$run_name/id_to_pod_name_and_target.yml";
     YAML::XS::DumpFile($id_to_pod_name_and_target_file, $id_to_pod_name_and_target);
 
     #if (1) {

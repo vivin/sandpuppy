@@ -1,11 +1,12 @@
 #!/bin/bash
 
-if [[ $# -lt 2 ]]; then
-  echo "$0 <experiment> <maze> [<file-regex>]"
+if [[ $# -lt 3 ]]; then
+  echo "$0 <experiment> <subject> <run-name>"
 fi
 
 EXPERIMENT=$1
 SUBJECT=$2
+RUN_NAME=$3
 if [ "$SUBJECT" == "maze" ]; then
   maze_type=1
 elif [ "$SUBJECT" == "maze_ijon" ]; then
@@ -17,11 +18,6 @@ else
   exit 1
 fi
 
-FILE_REGEX=$3
-if [[ -z "$FILE_REGEX" ]]; then
-  FILE_REGEX=".*id:.*";
-fi
-
 declare -a targets=()
 declare -A target_to_pod_name=()
 declare -A target_to_id=()
@@ -30,7 +26,7 @@ echo "Animating maze \"$SUBJECT\""
 echo "Identifying $SUBJECT targets in experiment $EXPERIMENT..."
 
 SUBJECT_DIR="/mnt/vivin-nfs/vivin/$EXPERIMENT/$SUBJECT"
-id_to_pod_name_and_target_file="$SUBJECT_DIR/results/id_to_pod_name_and_target.yml"
+id_to_pod_name_and_target_file="$SUBJECT_DIR/results/$RUN_NAME/id_to_pod_name_and_target.yml"
 while IFS= read -r -d '' target_script
 do
   # shellcheck disable=SC2001
@@ -42,7 +38,7 @@ do
   targets+=("$target_name")
   target_to_pod_name[$target_name]="$pod_name"
   target_to_id[$target_name]="$id"
-done < <(find "$SUBJECT_DIR" -maxdepth 1 -type f -print0 | sort -z)
+done < <(find "$SUBJECT_DIR/results/$RUN_NAME/sandpuppy-sync" -maxdepth 1 -mindepth 1 -type d -print0 | sort -z)
 
 echo ""
 for i in "${!targets[@]}"; do
@@ -66,10 +62,10 @@ selected_id=${target_to_id[$selected_target]}
 clear;
 sleep 5
 
-INPUTS_DIR="$SUBJECT_DIR/results/sandpuppy-sync/$selected_id/queue";
+INPUTS_DIR="$SUBJECT_DIR/results/$RUN_NAME/sandpuppy-sync/$selected_id/queue";
 while IFS= read -r -d '' input_file_path
 do
   # shellcheck disable=SC2001
   filename=$(echo "$input_file_path" | sed -e 's,^.*/,,')
   resources/maze-anim "$selected_target" "$selected_pod_name" "$filename" "$maze_type" < "$input_file_path"
-done < <(find "$INPUTS_DIR" -maxdepth 1 -type f -regextype posix-extended -regex "$FILE_REGEX" -print0 | sort -z)
+done < <(find "$INPUTS_DIR" -maxdepth 1 -type f -name "id:*" -print0 | sort -z)

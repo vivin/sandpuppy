@@ -1,14 +1,11 @@
 #!/bin/bash
 
 if [[ $# -lt 2 ]]; then
-  echo "$0 <experiment> [<file-regex>]"
+  echo "$0 <experiment> <run-name>"
 fi
 
 EXPERIMENT=$1
-FILE_REGEX=$2
-if [[ -z "$FILE_REGEX" ]]; then
-  FILE_REGEX=".*id:.*";
-fi
+RUN_NAME=$2
 
 declare -a targets=()
 declare -A target_to_pod_name=()
@@ -32,10 +29,10 @@ function format_seconds {
 }
 
 echo "Finding solutions for rarebug"
-echo "Identifying rarebug targets in experiment $EXPERIMENT..."
+echo "Identifying rarebug targets in experiment $EXPERIMENT and run $RUN_NAME ..."
 
 SUBJECT_DIR="/mnt/vivin-nfs/vivin/$EXPERIMENT/rarebug"
-id_to_pod_name_and_target_file="$SUBJECT_DIR/results/id_to_pod_name_and_target.yml"
+id_to_pod_name_and_target_file="$SUBJECT_DIR/results/$RUN_NAME/id_to_pod_name_and_target.yml"
 while IFS= read -r -d '' target_script
 do
   # shellcheck disable=SC2001
@@ -47,11 +44,11 @@ do
   targets+=("$target_name")
   target_to_pod_name[$target_name]="$pod_name"
   target_to_id[$target_name]="$id"
-done < <(find "$SUBJECT_DIR" -maxdepth 1 -type f -print0 | sort -z)
+done < <(find "$SUBJECT_DIR/results/$RUN_NAME/sandpuppy-sync" -maxdepth 1 -mindepth 1 -type d -print0 | sort -z)
 
 echo ""
 
-start_ts=$(cat "$SUBJECT_DIR/results/sandpuppy-sync/start_ts")
+start_ts=$(cat "$SUBJECT_DIR/results/$RUN_NAME/sandpuppy-sync/start_ts")
 
 for i in "${!targets[@]}"; do
   target=${targets[$i]}
@@ -60,10 +57,12 @@ for i in "${!targets[@]}"; do
 
   echo "Checking $target ($id) for solutions..."
   declare -a solutions=()
-  CRASHES_DIR="$SUBJECT_DIR/results/sandpuppy-sync/$id/crashes";
-  BINARY_DIR="$SUBJECT_DIR/binaries/sandpuppy-main-asan"
+  INPUTS_DIR="$SUBJECT_DIR/results/$RUN_NAME/sandpuppy-sync/$id/queue";
+  CRASHES_DIR="$SUBJECT_DIR/results/$RUN_NAME/sandpuppy-sync/$id/crashes";
+
+  fuzz_start_time=$(stat -c '%Y' "$INPUTS_DIR/id:000000,orig:first.txt")
   j=0
-  num_inputs=$(find "$CRASHES_DIR" -maxdepth 1 -type f -regextype posix-extended -regex "$FILE_REGEX" | wc -l)
+  num_inputs=$(find "$CRASHES_DIR" -maxdepth 1 -type f -name "id:*" | wc -l)
   while IFS= read -r -d '' input_file_path
   do
     j=$(( j + 1 ))
@@ -72,17 +71,17 @@ for i in "${!targets[@]}"; do
     # shellcheck disable=SC2001
     filename=$(echo "$input_file_path" | sed -e 's,^.*/,,')
     mtime=$(stat -c '%Y' "$input_file_path")
-    diff=$((mtime - start_ts))
+    diff=$((mtime - fuzz_start_time))
     pretty_diff=$(format_seconds $diff)
 
-    out=$(env ASAN_OPTIONS="abort_on_error=1:detect_leaks=0:symbolize=1:exitcode=86:allocator_may_return_null=1" "$BINARY_DIR/rarebug" < "$input_file_path" 2>&1)
+    out=$(env ASAN_OPTIONS="abort_on_error=1:detect_leaks=0:symbolize=1:exitcode=86:allocator_may_return_null=1" timeout 1 "resources/rarebug-asan" < "$input_file_path" 2>&1)
 
     heap_buffer_overflow=$(echo "$out" | grep "heap-buffer-overflow")
     expected_func_and_line=$(echo "$out" | grep -e "in process_message.*rarebug.c:52:9")
     if [[ -n "$heap_buffer_overflow" ]] && [[ -n "$expected_func_and_line" ]]; then
       solutions+=("$filename (found after $pretty_diff of fuzzing)")
     fi
-  done < <(find "$CRASHES_DIR" -maxdepth 1 -type f -regextype posix-extended -regex "$FILE_REGEX" -print0 | sort -z)
+  done < <(find "$CRASHES_DIR" -maxdepth 1 -type f -name "id:*" -print0 | sort -z)
 
   if [[ "${#solutions[@]}" -gt 0 ]]; then
     for solution in "${solutions[@]}"; do
@@ -91,5 +90,4 @@ for i in "${!targets[@]}"; do
 
     echo ""
   fi
-
 done

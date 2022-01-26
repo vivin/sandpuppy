@@ -287,8 +287,8 @@ sub merge {
 }
 
 sub get_random_fuzzer_id {
-    chomp(my $id = `cat /dev/urandom | tr -dc 'a-z0-9' | fold -w 16 | head -n 1`);
-    return join "-", ($id =~ m/.{4}/g);
+    chomp(my $id = `petname -w 3`);
+    return $id;
 }
 
 sub generate_target_script {
@@ -299,23 +299,26 @@ sub generate_target_script {
     my $target = $_[4];
     my $options = $_[5];
     my $fuzz_command = $_[6];
+    my $fuzz_command_with_resume = $_[7];
 
     my $subject_directory = get_subject_directory($experiment_name, $subject, $version);
     my $container_nfs_subject_directory = "/private-nfs/vivin/$subject_directory";
     my $remote_nfs_subject_directory = "/media/2tb/phd-workspace/nfs/vivin/$subject_directory";
 
-    my $resume = "";
-    if ($options->{resume}) {
-        $resume = "resume";
-    }
-
     my $random_initial_sleep = int(rand(30)) + 1;
     return <<~"HERE";
     #!/bin/bash
 
+    if [[ \$# -lt 1 ]]; then
+      echo "\$0 <run-name> [resume]"
+      exit 1
+    fi
+
+    RUN_NAME=\$1
+    RESUME=\$2
+
     NUM_CORES=\$(lscpu | grep -e "^CPU(s):" | sed -e 's,^.* ,,')
     AVAILABLE_CORES=\$(( NUM_CORES - 2 )) # One for AFL and one for sync() running in the background
-    RESUME="$resume"
 
     SYNC_DELAY=300
     ATTEMPTS_BEFORE_FULL_SYNC=6
@@ -332,14 +335,14 @@ sub generate_target_script {
     }
 
     sync_current_target_to_share() {
-      remote_nfs_sync_directory="$remote_nfs_subject_directory/results/$SANDPUPPY_SYNC_DIRECTORY"
+      remote_nfs_sync_directory="$remote_nfs_subject_directory/results/\$RUN_NAME/$SANDPUPPY_SYNC_DIRECTORY"
 
       rsync -az -e "ssh -S '/home/vivin/.ssh/ctl/$target->{id}\@%h:%p'" \\
             /out/$target->{id} vivin\@vivin.is-a-geek.net:"\$remote_nfs_sync_directory" 2> /tmp/rsync.err
     }
 
     sync_current_target_from_share() {
-      remote_nfs_target_directory="$remote_nfs_subject_directory/results/$SANDPUPPY_SYNC_DIRECTORY/$target->{id}"
+      remote_nfs_target_directory="$remote_nfs_subject_directory/results/\$RUN_NAME/$SANDPUPPY_SYNC_DIRECTORY/$target->{id}"
 
       rsync -az -e "ssh -S '/home/vivin/.ssh/ctl/$target->{id}\@%h:%p'" \\
             vivin\@vivin.is-a-geek.net:"\$remote_nfs_target_directory" /out 2> /tmp/rsync.err
@@ -347,7 +350,7 @@ sub generate_target_script {
 
     sync_target_inputs_from_share() {
       target=\$1
-      remote_nfs_target_directory="$remote_nfs_subject_directory/results/$SANDPUPPY_SYNC_DIRECTORY/\$target"
+      remote_nfs_target_directory="$remote_nfs_subject_directory/results/\$RUN_NAME/$SANDPUPPY_SYNC_DIRECTORY/\$target"
 
       rsync -az -e "ssh -S '/home/vivin/.ssh/ctl/$target->{id}\@%h:%p'" \\
             --include="fuzzer_stats" --include="queue/" \\
@@ -395,7 +398,7 @@ sub generate_target_script {
         if [[ "\$count" -eq "\$ATTEMPTS_BEFORE_FULL_SYNC" ]]; then
           while IFS="" read -r target || [ -n "\$target" ]
           do
-            container_nfs_target_directory="$container_nfs_subject_directory/results/$SANDPUPPY_SYNC_DIRECTORY/\$target"
+            container_nfs_target_directory="$container_nfs_subject_directory/results/\$RUN_NAME/$SANDPUPPY_SYNC_DIRECTORY/\$target"
             if [[ -d "\$container_nfs_target_directory" ]]; then
               log "Syncing \$target inputs"
               sync_with_retry sync_target_inputs_from_share "\$target"
@@ -420,18 +423,19 @@ sub generate_target_script {
 
     echo "Experiment: $experiment_name"
     echo "Subject: ${\($subject . ($version ? "-$version" : ""))}"
+    echo "Run Name: \$RUN_NAME"
     echo "Target name: $target->{name}"
     echo "Pod name: $pod_name"
 
     ln -sf /private-nfs/vivin /home/vivin/Projects/phd/workspace
     mkdir -p /home/vivin/Projects/phd/bin
-    mkdir -p $container_nfs_subject_directory/results/$SANDPUPPY_SYNC_DIRECTORY
+    mkdir -p $container_nfs_subject_directory/results/\$RUN_NAME/$SANDPUPPY_SYNC_DIRECTORY
     mkdir -p /home/vivin/.ssh/ctl
     cp /private-nfs/vivin/sandpuppy-pod-key /home/vivin/sandpuppy-pod-key
 
     # Check to see if the list of other targets exist. If not, make it. We use this list when syncing.
     if [[ ! -f "/out/targets" ]]; then
-      grep -e "^[^- ]" $container_nfs_subject_directory/results/id_to_pod_name_and_target.yml | sed -e 's,:,,' | grep -v "$target->{id}" > /out/targets
+      grep -e "^[^- ]" $container_nfs_subject_directory/results/\$RUN_NAME/id_to_pod_name_and_target.yml | sed -e 's,:,,' | grep -v "$target->{id}" > /out/targets
     fi
 
     # We don't want pods slamming the SSH server at the same time on resume or sync, so we will sleep first before we
@@ -440,7 +444,7 @@ sub generate_target_script {
     sleep $random_initial_sleep
 
     if [[ -z "\$RESUME" ]]; then
-      date +%s >$container_nfs_subject_directory/results/$SANDPUPPY_SYNC_DIRECTORY/start_ts
+      date +%s >"$container_nfs_subject_directory/results/\$RUN_NAME/$SANDPUPPY_SYNC_DIRECTORY/start_ts"
     else
       # Start control SSH session
       ssh -nNf -M -S "/home/vivin/.ssh/ctl/$target->{id}\@%h:%p" -o StrictHostKeyChecking=no -i /home/vivin/sandpuppy-pod-key \\
@@ -453,7 +457,7 @@ sub generate_target_script {
 
       while IFS="" read -r target || [ -n "\$target" ]
       do
-        container_nfs_target_directory="$container_nfs_subject_directory/results/$SANDPUPPY_SYNC_DIRECTORY/\$target"
+        container_nfs_target_directory="$container_nfs_subject_directory/results/\$RUN_NAME/$SANDPUPPY_SYNC_DIRECTORY/\$target"
         if [[ -d "\$container_nfs_target_directory" ]]; then
           log "Syncing existing inputs for \$target"
           sync_with_retry sync_target_inputs_from_share "\$target"
@@ -482,22 +486,18 @@ sub generate_target_script {
     sync &
     SYNC_PID=\$!
 
-    #echo core | sudo tee /proc/sys/kernel/core_pattern &> /dev/null
-    AFL_SKIP_CPUFREQ=1 $fuzz_command
+    if [[ -z "\$RESUME" ]]; then
+      $fuzz_command
+    else
+      $fuzz_command_with_resume
+    fi
 
     kill \$SYNC_PID >/dev/null 2>&1
     HERE
 }
 
-# TODO: convert this into a static script and make sure it is in the docker image. provide subject dir, binary name,
-# TODO: target id (for output dir), and fuzzer name to the script (afl, aflplusplus, qsym). based on fuzzer name it
-# TODO: will find the appropriate binary dir (have a convention; e.g. afl-plain, qsym-plain) also. then it will run
-# TODO: the fuzzer against the binary. so tomorrow install qsym and try running using that in kubernetes. also try
-# TODO: doing aflpluslus with laf-intel and redqueen, and just afl by itself. target is libtins. then we need to try
-# TODO: our approach with libtins as well. after that write the state graph comparison script. we will start off with
-# TODO: state graph generated from the inputs identified by plain afl, aflplusplus (laf-intel and redqueen), and qsym.
-# TODO: keep track of all basic block ids and all transitions. then when generating state graph based on our approach
-# TODO: we will identify all new states and all new transitions. then generate the digraph using graphviz
+# Single target version of the above. Meaning it fuzzes a single target and doesn't try to sync results. Really only
+# used for the main target so that we can fuzz with just vanilla AFL.
 sub generate_single_target_script {
     my $experiment_name = $_[0];
     my $subject = $_[1];
@@ -506,22 +506,26 @@ sub generate_single_target_script {
     my $target = $_[4];
     my $options = $_[5];
     my $fuzz_command = $_[6];
+    my $fuzz_command_with_resume = $_[7];
 
     my $subject_directory = get_subject_directory($experiment_name, $subject, $version);
     my $container_nfs_subject_directory = "/private-nfs/vivin/$subject_directory";
     my $remote_nfs_subject_directory = "/media/2tb/phd-workspace/nfs/vivin/$subject_directory";
 
-    my $resume = "";
-    if ($options->{resume}) {
-        $resume = "resume";
-    }
-
+    my $random_initial_sleep = int(rand(30)) + 1;
     return <<~"PLAIN";
     #!/bin/bash
 
+    if [[ \$# -lt 1 ]]; then
+      echo "\$0 <run-name> [resume]"
+      exit 1
+    fi
+
+    RUN_NAME=\$1
+    RESUME=\$2
+
     NUM_CORES=\$(lscpu | grep -e "^CPU(s):" | sed -e 's,^.* ,,')
-    AVAILABLE_CORES=\$(( NUM_CORES - 2 )) # One for fuzzer and one for sync() running in the background
-    RESUME="$resume"
+    AVAILABLE_CORES=\$(( NUM_CORES - 2 )) # One for AFL and one for sync() running in the background
 
     SYNC_DELAY=300
     ATTEMPTS_BEFORE_FULL_SYNC=6
@@ -538,17 +542,17 @@ sub generate_single_target_script {
     }
 
     sync_current_target_to_share() {
-      remote_nfs_sync_directory="$remote_nfs_subject_directory/results"
+      remote_nfs_sync_directory="$remote_nfs_subject_directory/results/\$RUN_NAME/$SANDPUPPY_SYNC_DIRECTORY"
 
       rsync -az -e "ssh -S '/home/vivin/.ssh/ctl/$target->{id}\@%h:%p'" \\
-            /out/$target->{id} vivin\@vivin.is-a-geek.net:"\$remote_nfs_sync_directory" 2> /dev/null
+            /out/$target->{id} vivin\@vivin.is-a-geek.net:"\$remote_nfs_sync_directory" 2> /tmp/rsync.err
     }
 
     sync_current_target_from_share() {
-      remote_nfs_target_directory="$remote_nfs_subject_directory/results/$target->{id}"
+      remote_nfs_target_directory="$remote_nfs_subject_directory/results/\$RUN_NAME/$SANDPUPPY_SYNC_DIRECTORY/$target->{id}"
 
       rsync -az -e "ssh -S '/home/vivin/.ssh/ctl/$target->{id}\@%h:%p'" \\
-            vivin\@vivin.is-a-geek.net:"\$remote_nfs_target_directory" /out 2> /dev/null
+            vivin\@vivin.is-a-geek.net:"\$remote_nfs_target_directory" /out 2> /tmp/rsync.err
     }
 
     sync_with_retry() {
@@ -560,7 +564,9 @@ sub generate_single_target_script {
       while [[ "\$?" -ne 0 ]]
       do
         calculated_delay=\$(perl -e "print \$DELAY * (\$EXPONENT ** \$attempt)")
-        warn "\$sync_function failed; likely hit limit on open SSH connections. Retrying after sleeping for \$calculated_delay seconds..."
+        warn "\$sync_function failed."
+        cat /tmp/rsync.err
+        warn "Retrying after sleeping for \$calculated_delay seconds..."
         sleep "\$calculated_delay"
 
         attempt=\$(( attempt + 1 ))
@@ -572,6 +578,7 @@ sub generate_single_target_script {
       # Sleep first before we start syncing. This gives AFL time to start up and produce some results.
       sleep "\$SYNC_DELAY"
 
+      count=0
       while :
       do
         # Start control SSH session
@@ -587,22 +594,27 @@ sub generate_single_target_script {
         ssh -O exit -S "/home/vivin/.ssh/ctl/$target->{id}\@%h:%p" vivin\@vivin.is-a-geek.net
 
         sleep "\$SYNC_DELAY"
+        count=\$(( count + 1 ))
       done
     }
 
     echo "Experiment: $experiment_name"
     echo "Subject: ${\($subject . ($version ? "-$version" : ""))}"
+    echo "Run Name: \$RUN_NAME"
     echo "Target name: $target->{name}"
     echo "Pod name: $pod_name"
 
     ln -sf /private-nfs/vivin /home/vivin/Projects/phd/workspace
     mkdir -p /home/vivin/Projects/phd/bin
-    mkdir -p $container_nfs_subject_directory/results/$target->{id}
+    mkdir -p $container_nfs_subject_directory/results/\$RUN_NAME/$SANDPUPPY_SYNC_DIRECTORY
     mkdir -p /home/vivin/.ssh/ctl
     cp /private-nfs/vivin/sandpuppy-pod-key /home/vivin/sandpuppy-pod-key
 
+    log "Sleeping for $random_initial_sleep seconds before starting..."
+    sleep $random_initial_sleep
+
     if [[ -z "\$RESUME" ]]; then
-      date +%s >$container_nfs_subject_directory/results/$target->{id}/start_ts
+      date +%s >"$container_nfs_subject_directory/results/\$RUN_NAME/$SANDPUPPY_SYNC_DIRECTORY/start_ts"
     else
       # Start control SSH session
       ssh -nNf -M -S "/home/vivin/.ssh/ctl/$target->{id}\@%h:%p" -o StrictHostKeyChecking=no -i /home/vivin/sandpuppy-pod-key \\
@@ -630,8 +642,11 @@ sub generate_single_target_script {
     sync &
     SYNC_PID=\$!
 
-    #echo core | sudo tee /proc/sys/kernel/core_pattern &> /dev/null
-    AFL_SKIP_CPUFREQ=1 $fuzz_command
+    if [[ -z "\$RESUME" ]]; then
+      $fuzz_command
+    else
+      $fuzz_command_with_resume
+    fi
 
     kill \$SYNC_PID >/dev/null 2>&1
     PLAIN

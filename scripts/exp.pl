@@ -8,15 +8,16 @@ use Fcntl;
 use tasks;
 
 my $supported_tasks = {
-    build  => 1,
-    fuzz   => 1,
-    spfuzz => 1
+    build         => 1,
+    fuzz          => 1,
+    spfuzz        => 1,
+    spvanillafuzz => 1
 };
 
 if (scalar @ARGV < 3) {
     die "Syntax:\n $0 <experiment> build <subject>[:<version>] with waypoints <waypoints> as <binary-context>" .
         "\n $0 <experiment> fuzz <subject>[:<version>] with waypoints <waypoints> using <binary-context> as <exec-context> [resume]" .
-        "\n $0 <experiment> spfuzz <subject>[:<version>] [with asan]\n";
+        "\n $0 <experiment> spfuzz <subject>[:<version>] as <run-name> [resume | with asan [resume]]\n";
 }
 
 my $experiment_name = $ARGV[0];
@@ -40,6 +41,7 @@ my $binary_context;
 my $execution_context;
 my $use_asan = 0;
 my $resume = 0;
+my $run_name = "";
 if ($task eq "build" or $task eq "fuzz") {
     if ($ARGV[3] ne "with" && $ARGV[4] ne "waypoints") {
         die "Expected \"with waypoints\":\n $0 $experiment_name $task $original_subject with waypoints <waypoints> ...";
@@ -85,26 +87,39 @@ if ($task eq "build" or $task eq "fuzz") {
             $resume = 1;
         }
     }
-} else {
-    if ($ARGV[3] && $ARGV[3] ne "with" && $ARGV[3] ne "resume") {
-        die "Expected \"with\":\n $0 $experiment_name $task $original_subject with asan\n   or   \nExpected \"resume\":\n $0 $experiment_name $task $original_subject resume";
-    } elsif ($ARGV[3] && $ARGV[3] eq "with" && (!$ARGV[4] || $ARGV[4] ne "asan")) {
-        die "Expected \"asan\":\n $0 $experiment_name $task $original_subject with asan";
-    } elsif ($ARGV[3] && $ARGV[3] eq "with") {
+} elsif ($task eq "spfuzz" || $task eq "spvanillafuzz") {
+    if (!$ARGV[3] || $ARGV[3] ne "as") {
+        die "Expected \"as\":\n $0 $experiment_name $task $original_subject as <run-name> [resume | with asan [resume]]\n";
+    } elsif (!$ARGV[4]) {
+        die "Expected <run-name>:\n $0 $experiment_name $task $original_subject as <run-name> [resume | with asan [resume]]\n";
+    }
+
+    $run_name = $ARGV[4];
+
+    if ($ARGV[5] && $ARGV[5] ne "resume" && $ARGV[5] ne "with") {
+        die "Expected \"resume\":\n $0 $experiment_name $task $original_subject as $run_name resume\n   or   \nExpected \"with\":\n $0 $experiment_name $task $original_subject as $run_name with asan [resume]";
+    } elsif ($ARGV[5] && $ARGV[5] eq "with" && (!$ARGV[6] || $ARGV[6] ne "asan")) {
+        die "Expected \"asan\":\n $0 $experiment_name $task $original_subject as <run-name> with asan [resume]\n";
+    } elsif ($ARGV[5] && $ARGV[5] eq "with") {
         $use_asan = 1;
-        if ($ARGV[5] && $ARGV[5] eq "resume") {
+
+        if ($ARGV[7] && $ARGV[7] ne "resume") {
+            die "Expected \"resume\":\n $0 $experiment_name $task $original_subject as <run-name> with asan resume\n";
+        } elsif ($ARGV[7]) {
             $resume = 1;
         }
-    } elsif ($ARGV[3]) {
+    } elsif ($ARGV[5]) {
         $resume = 1;
     }
+} else {
+    die "Unrecognized task: $task\n";
 }
 
 if (!tasks::subject_exists($subject)) {
     die "Unrecognized subject $subject";
 }
 
-if ($task ne "spfuzz" && !tasks::subject_has_task($subject, $task)) {
+if ($task ne "spfuzz" && $task ne "spvanillafuzz" && !tasks::subject_has_task($subject, $task)) {
     die "Subject $subject does not have task $task"
 }
 
@@ -123,15 +138,37 @@ if ($task eq "build") {
         } else {
             tasks::fuzz($experiment_name, $subject, $version, $waypoints, $binary_context, $execution_context, { resume => $resume });
         }
-    } elsif ($task eq "spfuzz") {
-        tasks::sandpuppy_fuzz(
-            $experiment_name,
-            $subject,
-            $version,
-            {
-                use_asan       => $use_asan,
-                resume         => $resume
-            }
-        );
+    } elsif ($task eq "spfuzz" || $task eq "spvanillafuzz") {
+        my $subject_directory = utils::get_subject_directory($experiment_name, $subject, $version);
+        my $local_nfs_subject_directory = "/mnt/vivin-nfs/vivin/$subject_directory";
+
+        if (-d "$local_nfs_subject_directory/results/$run_name" && !$resume) {
+            die "Results directory already exists at $local_nfs_subject_directory/results/$run_name! Maybe try resuming?";
+        }
+
+        if ($task eq "spfuzz") {
+            tasks::sandpuppy_fuzz(
+                $experiment_name,
+                $subject,
+                $version,
+                {
+                    run_name => $run_name,
+                    use_asan => $use_asan,
+                    resume   => $resume
+                }
+            );
+        } else {
+            tasks::sandpuppy_vanilla_fuzz(
+                $experiment_name,
+                $subject,
+                $version,
+                {
+                    run_name => $run_name,
+                    use_asan => $use_asan,
+                    resume   => $resume
+                }
+            );
+        }
+
     }
 }
