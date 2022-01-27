@@ -117,7 +117,7 @@ for i in "${!targets[@]}"; do
 
     if [[ "$end_world_pos" -gt "$max_world_pos" || ("$end_world_pos" -eq "$max_world_pos" && "$end_pos_y" -gt "$max_pos_y") ]]; then
       target_to_max_world_pos[$target]=$end_world_pos
-      target_to_max_world_pos_info[$target]=$(printf "Target: %s (%s)\nPod: %s\nWorld Position: (%s, %s)\n from %s (found after %s of fuzzing)\nCommand:\n resources/smbc %s video < %s" "$target" "$id" "$pod_name" "$end_world_pos" "$end_pos_y" "$filename" "$pretty_diff", "$LEVEL", "$input_file_path")
+      target_to_max_world_pos_info[$target]=$(printf "Target: %s (%s)\nPod: %s\nWorld Position: (%s, %s)\n from %s (found after %s of fuzzing)\nCommand:\n resources/smbc %s video < %s" "$target" "$id" "$pod_name" "$end_world_pos" "$end_pos_y" "$filename" "$pretty_diff" "$LEVEL" "$input_file_path")
       max_world_pos_info="World Position: ($end_world_pos, $end_pos_y) from $filename (found after $pretty_diff of fuzzing)"
       max_world_pos=$end_world_pos
       max_pos_y=$end_pos_y
