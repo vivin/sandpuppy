@@ -1,8 +1,9 @@
 #!/bin/bash
 EXP=$1
 SUB=$2
-BIN=$3
-SYNC_DIR="/mnt/vivin-nfs/vivin/$EXP/$SUB/results/sandpuppy-sync"
+RUN=$3
+BIN=$4
+SYNC_DIR="/mnt/vivin-nfs/vivin/$EXP/$SUB/results/$RUN/sandpuppy-sync"
 BIN_DIR="/home/vivin/Projects/phd/workspace/$EXP/$SUB/binaries"
 if [ ! -d "$BIN_DIR/sandpuppy-main" ]; then
     BINARY="$BIN_DIR/sandpuppy-main-asan/$BIN"
@@ -16,7 +17,7 @@ for dir in `find $SYNC_DIR -mindepth 1 -maxdepth 1 -type d | sed -e 's,^.*/,,'`;
     echo $crash
     echo ""
     #env ASAN_OPTIONS="abort_on_error=1:detect_leaks=0:symbolize=1:exitcode=86:allocator_may_return_null=1" $BINARY < $crash
-    env ASAN_OPTIONS="abort_on_error=1:detect_leaks=0:symbolize=1:exitcode=86:allocator_may_return_null=1" $BINARY $crash
+    env ASAN_OPTIONS="abort_on_error=1:detect_leaks=0:symbolize=1:exitcode=86:allocator_may_return_null=1" $BINARY < $crash
     echo "================================================================="
     echo ""
   done

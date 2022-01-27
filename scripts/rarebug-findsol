@@ -2,6 +2,7 @@
 
 if [[ $# -lt 2 ]]; then
   echo "$0 <experiment> <run-name>"
+  exit 1
 fi
 
 EXPERIMENT=$1
@@ -33,10 +34,10 @@ echo "Identifying rarebug targets in experiment $EXPERIMENT and run $RUN_NAME ..
 
 SUBJECT_DIR="/mnt/vivin-nfs/vivin/$EXPERIMENT/rarebug"
 id_to_pod_name_and_target_file="$SUBJECT_DIR/results/$RUN_NAME/id_to_pod_name_and_target.yml"
-while IFS= read -r -d '' target_script
+while IFS= read -r -d '' target_dir
 do
   # shellcheck disable=SC2001
-  id=$(echo "$target_script" | sed -e 's,^.*/,,')
+  id=$(echo "$target_dir" | sed -e 's,^.*/,,')
   pod_name_and_target=$(grep -A2 "^$id" "$id_to_pod_name_and_target_file" | tail -2)
   pod_name=$(echo "$pod_name_and_target" | head -1 | sed -e 's/^.*pod_name: //')
   target_name=$(echo "$pod_name_and_target" | tail -1 | sed -e 's/^.*target_name: //')
@@ -50,6 +51,12 @@ echo ""
 
 start_ts=$(cat "$SUBJECT_DIR/results/$RUN_NAME/sandpuppy-sync/start_ts")
 
+min_time=""
+min_target=""
+min_id=""
+min_filename=""
+min_pretty_diff=""
+min_diff=""
 for i in "${!targets[@]}"; do
   target=${targets[$i]}
   pod_name=${target_to_pod_name[$target]}
@@ -80,6 +87,15 @@ for i in "${!targets[@]}"; do
     expected_func_and_line=$(echo "$out" | grep -e "in process_message.*rarebug.c:52:9")
     if [[ -n "$heap_buffer_overflow" ]] && [[ -n "$expected_func_and_line" ]]; then
       solutions+=("$filename (found after $pretty_diff of fuzzing)")
+
+      if [[ -z "$min_time" ]] || [[ "$mtime" -lt "$min_time" ]]; then
+        min_time="$mtime"
+        min_target="$target"
+        min_id="$id"
+        min_filename="$filename"
+        min_diff="$diff"
+        min_pretty_diff="$pretty_diff"
+      fi
     fi
   done < <(find "$CRASHES_DIR" -maxdepth 1 -type f -name "id:*" -print0 | sort -z)
 
@@ -91,3 +107,9 @@ for i in "${!targets[@]}"; do
     echo ""
   fi
 done
+
+if [[ -n "$min_target" ]]; then
+  echo "Earliest solution found by $min_target ($min_id):"
+  echo "  $min_filename (found after $min_pretty_diff of fuzzing)"
+  perl -e "print \"  minutes: \" . ($min_diff / 60) . \"\n\";"
+fi

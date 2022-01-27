@@ -1,16 +1,13 @@
 #!/bin/bash
 
 if [[ $# -lt 2 ]]; then
-  echo "$0 <experiment> <level> [<file-regex>]"
+  echo "$0 <experiment> <level> <run-name>"
   exit 1
 fi
 
 EXPERIMENT=$1
 LEVEL=$2
-FILE_REGEX=$3
-if [[ -z "$FILE_REGEX" ]]; then
-  FILE_REGEX=".*id:.*";
-fi
+RUN_NAME=$3
 
 declare -a targets=()
 declare -A target_to_pod_name=()
@@ -35,14 +32,14 @@ function format_seconds {
   echo "$formatted"
 }
 
-echo "Finding maximum world positions for smbc"
-echo "Identifying smbc targets in experiment $EXPERIMENT..."
+echo "Finding maximum world positions for smbc (level: $LEVEL)"
+echo "Identifying smbc targets in experiment $EXPERIMENT (run: $RUN_NAME)..."
 
 STATE_DIR="/home/vivin/.script-state/$(basename "$0")"
 mkdir -p "$STATE_DIR"
 
 SUBJECT_DIR="/mnt/vivin-nfs/vivin/$EXPERIMENT/smbc"
-id_to_pod_name_and_target_file="$SUBJECT_DIR/results/id_to_pod_name_and_target.yml"
+id_to_pod_name_and_target_file="$SUBJECT_DIR/results/$RUN_NAME/id_to_pod_name_and_target.yml"
 while IFS= read -r -d '' target_script
 do
   # shellcheck disable=SC2001
@@ -55,11 +52,11 @@ do
   target_to_pod_name[$target_name]="$pod_name"
   target_to_id[$target_name]="$id"
   target_to_max_world_pos[$target_name]=0
-done < <(find "$SUBJECT_DIR" -maxdepth 1 -type f -print0 | sort -z)
+done < <(find "$SUBJECT_DIR/results/$RUN_NAME/sandpuppy-sync" -maxdepth 1 -mindepth 1 -type d -print0 | sort -z)
 
 echo ""
 
-start_ts=$(cat "$SUBJECT_DIR/results/sandpuppy-sync/start_ts")
+start_ts=$(cat "$SUBJECT_DIR/results/$RUN_NAME/sandpuppy-sync/start_ts")
 
 overall_max_world_pos=0
 for i in "${!targets[@]}"; do
@@ -73,13 +70,15 @@ for i in "${!targets[@]}"; do
 
   echo "Checking $target ($id) for input resulting in maximum world position..."
   saved_max_world_pos_input_filename=""
-  if [[ -f "$STATE_DIR/$id.max" ]]; then
-    saved_max_world_pos_input_filename=$(cat "$STATE_DIR/$id.max")
+  if [[ -f "$STATE_DIR/$RUN_NAME-$id.max" ]]; then
+    saved_max_world_pos_input_filename=$(cat "$STATE_DIR/$RUN_NAME-$id.max")
   fi
 
-  INPUTS_DIR="$SUBJECT_DIR/results/sandpuppy-sync/$id/queue";
+  INPUTS_DIR="$SUBJECT_DIR/results/$RUN_NAME/sandpuppy-sync/$id/queue";
+
+  fuzz_start_time=$(stat -c '%Y' "$INPUTS_DIR/id:000000,orig:first.txt")
   j=0
-  num_inputs=$(find "$INPUTS_DIR" -maxdepth 1 -type f -regextype posix-extended -regex "$FILE_REGEX" | wc -l)
+  num_inputs=$(find "$INPUTS_DIR" -maxdepth 1 -type f \( -name "id:*" ! -name "*,sync:*" \) | wc -l)
   max_world_pos=0
   max_pos_y=0
   max_world_pos_info=""
@@ -93,7 +92,7 @@ for i in "${!targets[@]}"; do
     # Check to see if we have already processed this file. If so, skip it unless it is the file that gave us the
     # maximum world position. The reason we don't skip it is because we want to compare its world position against
     # any new files, and if there aren't any new files, we can just report the previously identified file.
-    if [[ -f "$STATE_DIR/$id-$filename" ]] && [[ "$filename" != "$saved_max_world_pos_input_filename" ]]; then
+    if [[ -f "$STATE_DIR/$RUN_NAME-$id-$filename" ]] && [[ "$filename" != "$saved_max_world_pos_input_filename" ]]; then
       echo -ne "Skipping input file $j of $num_inputs\r";
       continue
 
@@ -102,7 +101,7 @@ for i in "${!targets[@]}"; do
     fi
 
     mtime=$(stat -c '%Y' "$input_file_path")
-    diff=$((mtime - start_ts))
+    diff=$((mtime - fuzz_start_time))
     pretty_diff=$(format_seconds $diff)
 
     end_coordinate=$(resources/smbc "$LEVEL" trace < "$input_file_path" | tail -2 | head -1)
@@ -118,7 +117,7 @@ for i in "${!targets[@]}"; do
       max_world_pos=$end_world_pos
       max_pos_y=$end_pos_y
 
-      echo "$filename" > "$STATE_DIR/$id.max"
+      echo "$filename" > "$STATE_DIR/$RUN_NAME-$id.max"
 
       if [[ "$end_world_pos" -gt "$overall_max_world_pos" ]]; then
         overall_max_world_pos=$end_world_pos
@@ -126,8 +125,8 @@ for i in "${!targets[@]}"; do
     fi
 
     # Create an empty file representing this input file in the state dir, signifying that we have processed it.
-    touch "$STATE_DIR/$id-$filename"
-  done < <(find "$INPUTS_DIR" -maxdepth 1 -type f -regextype posix-extended -regex "$FILE_REGEX" -print0 | sort -z)
+    touch "$STATE_DIR/$RUN_NAME-$id-$filename"
+  done < <(find "$INPUTS_DIR" -maxdepth 1 -type f \( -name "id:*" ! -name "*,sync:*" \) -print0 | sort -z)
 
   printf '%s\n\n' "$max_world_pos_info"
 done
