@@ -45,13 +45,13 @@ fi
 
 SUBJECT_DIR="$BASE_PATH/vivin/$EXPERIMENT/smbc"
 id_to_pod_name_and_target_file="$SUBJECT_DIR/results/$RUN_NAME/id_to_pod_name_and_target.yml"
-while IFS= read -r -d '' target_script
+while IFS= read -r -d '' target_dir
 do
   # shellcheck disable=SC2001
-  id=$(echo "$target_script" | sed -e 's,^.*/,,')
+  id=$(echo "$target_dir" | sed -e 's,^.*/,,')
   pod_name_and_target=$(grep -A2 "^$id" "$id_to_pod_name_and_target_file" | tail -2)
   pod_name=$(echo "$pod_name_and_target" | head -1 | sed -e 's/^.*pod_name: //')
-  target_name=$(echo "$pod_name_and_target" | tail -1 | sed -e 's/^.*target_name: //')
+  target_name=$(echo "$pod_name_and_target" | tail -1 | sed -e 's/^.*target_name: //' | sed -e 's/\.home.*source\././')
 
   targets+=("$target_name")
   target_to_pod_name[$target_name]="$pod_name"
