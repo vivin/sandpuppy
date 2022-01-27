@@ -25,7 +25,12 @@ declare -A target_to_id=()
 echo "Animating maze \"$SUBJECT\""
 echo "Identifying $SUBJECT targets in experiment $EXPERIMENT..."
 
-SUBJECT_DIR="/mnt/vivin-nfs/vivin/$EXPERIMENT/$SUBJECT"
+BASE_PATH="/mnt/vivin-nfs"
+if [[ ! -d "$BASE_PATH" ]]; then
+  BASE_PATH="/media/2tb/phd-workspace/nfs"
+fi
+
+SUBJECT_DIR="$BASE_PATH/vivin/$EXPERIMENT/$SUBJECT"
 id_to_pod_name_and_target_file="$SUBJECT_DIR/results/$RUN_NAME/id_to_pod_name_and_target.yml"
 while IFS= read -r -d '' target_dir
 do

@@ -32,7 +32,12 @@ function format_seconds {
 echo "Finding solutions for rarebug"
 echo "Identifying rarebug targets in experiment $EXPERIMENT and run $RUN_NAME ..."
 
-SUBJECT_DIR="/mnt/vivin-nfs/vivin/$EXPERIMENT/rarebug"
+BASE_PATH="/mnt/vivin-nfs"
+if [[ ! -d "$BASE_PATH" ]]; then
+  BASE_PATH="/media/2tb/phd-workspace/nfs"
+fi
+
+SUBJECT_DIR="$BASE_PATH/vivin/$EXPERIMENT/rarebug"
 id_to_pod_name_and_target_file="$SUBJECT_DIR/results/$RUN_NAME/id_to_pod_name_and_target.yml"
 while IFS= read -r -d '' target_dir
 do

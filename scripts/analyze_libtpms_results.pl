@@ -20,7 +20,7 @@ my $longest_command_sequence = 0;
 my $count = 0;
 
 my $BASE_PATH = "/mnt/vivin-nfs";
-if (-d "/media/2tb") {
+if (! -d $BASE_PATH) {
     $BASE_PATH = "/media/2tb/phd-workspace/nfs";
 }
 

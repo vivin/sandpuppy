@@ -38,7 +38,12 @@ echo "Identifying smbc targets in experiment $EXPERIMENT (run: $RUN_NAME)..."
 STATE_DIR="/home/vivin/.script-state/$(basename "$0")"
 mkdir -p "$STATE_DIR"
 
-SUBJECT_DIR="/mnt/vivin-nfs/vivin/$EXPERIMENT/smbc"
+BASE_PATH="/mnt/vivin-nfs"
+if [[ ! -d "$BASE_PATH" ]]; then
+  BASE_PATH="/media/2tb/phd-workspace/nfs"
+fi
+
+SUBJECT_DIR="$BASE_PATH/vivin/$EXPERIMENT/smbc"
 id_to_pod_name_and_target_file="$SUBJECT_DIR/results/$RUN_NAME/id_to_pod_name_and_target.yml"
 while IFS= read -r -d '' target_script
 do
