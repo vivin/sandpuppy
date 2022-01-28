@@ -23,5 +23,5 @@ while (1) {
   }
 
   system "mv $output_file.tmp $output_file";
-  sleep 600;
+  sleep 300;
 }
