@@ -573,6 +573,7 @@ sub sandpuppy_vanilla_fuzz {
                 async              => 1,
                 fuzzer_id          => $main_target->{id},
                 parallel_fuzz_mode => "parent",
+                run_name           => $run_name,
                 resume             => 0
             }
         ),
@@ -587,22 +588,21 @@ sub sandpuppy_vanilla_fuzz {
                 async              => 1,
                 fuzzer_id          => $main_target->{id},
                 parallel_fuzz_mode => "parent",
+                run_name           => $run_name,
                 resume             => 1
             }
         )
     );
 
-    #if (! -f "$local_nfs_workspace/$main_target->{id}") {
-    open my $TARGET_SCRIPT, ">", "$local_nfs_subject_directory/$main_target->{id}";
+    open my $TARGET_SCRIPT, ">", "$local_nfs_subject_directory/$main_target->{id}.$run_name";
     print $TARGET_SCRIPT $target_script;
     close $TARGET_SCRIPT;
-    #}
 
-    system "chmod 755 $local_nfs_subject_directory/$main_target->{id}";
+    system "chmod 755 $local_nfs_subject_directory/$main_target->{id}.$run_name";
 
     print "\n";
 
-    my $pod_command = "$container_nfs_subject_directory/$main_target->{id} $run_name" . ($options->{resume} ? " resume" : "");
+    my $pod_command = "$container_nfs_subject_directory/$main_target->{id}.$run_name $run_name" . ($options->{resume} ? " resume" : "");
     my $pod_create_command = "kuboid/scripts/pod_create -n \"$pod_name\" -s /tmp/sandpuppy.existing -i vivin/sandpuppy $pod_command";
 
     $log->info("Preparing to create and run kubernetes pod for target...");
@@ -719,6 +719,7 @@ sub sandpuppy_fuzz {
                 async              => 1,
                 fuzzer_id          => $main_target->{id},
                 parallel_fuzz_mode => "parent",
+                run_name           => $run_name,
                 resume             => 0
             }
         ),
@@ -733,22 +734,21 @@ sub sandpuppy_fuzz {
                 async              => 1,
                 fuzzer_id          => $main_target->{id},
                 parallel_fuzz_mode => "parent",
+                run_name           => $run_name,
                 resume             => 1
             }
         )
     );
 
-    #if (! -f "$local_nfs_workspace/$main_target->{id}") {
-        open my $TARGET_SCRIPT, ">", "$local_nfs_subject_directory/$main_target->{id}";
-        print $TARGET_SCRIPT $target_script;
-        close $TARGET_SCRIPT;
-    #}
+    open my $TARGET_SCRIPT, ">", "$local_nfs_subject_directory/$main_target->{id}.$run_name";
+    print $TARGET_SCRIPT $target_script;
+    close $TARGET_SCRIPT;
 
-    system "chmod 755 $local_nfs_subject_directory/$main_target->{id}";
+    system "chmod 755 $local_nfs_subject_directory/$main_target->{id}.$run_name";
 
     print "\n";
 
-    my $pod_command = "$container_nfs_subject_directory/$main_target->{id} $run_name" . ($options->{resume} ? " resume" : "");
+    my $pod_command = "$container_nfs_subject_directory/$main_target->{id}.$run_name $run_name" . ($options->{resume} ? " resume" : "");
     $pod_name_to_create_command->{$pod_name} = {
         target   => $main_target->{id},
         command  => "kuboid/scripts/pod_create -n \"$pod_name\" -s /tmp/sandpuppy.existing -i vivin/sandpuppy $pod_command",
@@ -815,6 +815,7 @@ sub sandpuppy_fuzz {
                     async              => 1,
                     fuzzer_id          => $target->{id},
                     parallel_fuzz_mode => "child",
+                    run_name           => $run_name,
                     resume             => 0
                     #exit_when_done      => 1
                 }
@@ -830,21 +831,20 @@ sub sandpuppy_fuzz {
                     async              => 1,
                     fuzzer_id          => $target->{id},
                     parallel_fuzz_mode => "child",
+                    run_name           => $run_name,
                     resume             => 1
                     #exit_when_done      => 1
                 }
             )
         );
 
-        #if (! -f "$local_nfs_workspace/$target->{id}") {
-            open $TARGET_SCRIPT, ">", "$local_nfs_subject_directory/$target->{id}";
-            print $TARGET_SCRIPT $target_script;
-            close $TARGET_SCRIPT;
+        open $TARGET_SCRIPT, ">", "$local_nfs_subject_directory/$target->{id}.$run_name";
+        print $TARGET_SCRIPT $target_script;
+        close $TARGET_SCRIPT;
 
-            system "chmod 755 $local_nfs_subject_directory/$target->{id}";
-        #}
+        system "chmod 755 $local_nfs_subject_directory/$target->{id}.$run_name";
 
-        $pod_command = "$container_nfs_subject_directory/$target->{id} $run_name" . ($options->{resume} ? " resume" : "");
+        $pod_command = "$container_nfs_subject_directory/$target->{id}.$run_name $run_name" . ($options->{resume} ? " resume" : "");
         $pod_name_to_create_command->{$pod_name} = {
             target   => $target->{id},
             command  => "kuboid/scripts/pod_create -n \"$pod_name\" -s /tmp/sandpuppy.existing -i vivin/sandpuppy $pod_command",
@@ -1086,7 +1086,8 @@ sub build_sandpuppy_targets {
             my $second_variable = $variables_entry->{second_variable};
             my $second_min = $variables_entry->{second_min};
             my $second_max = $variables_entry->{second_max};
-            foreach my $slot_size (1, 4, 8, 16, 32, 64) {
+            foreach my $slot_size (1, 4) {
+            #foreach my $slot_size (1, 4, 8, 16, 32, 64) {
                 # If both the maximum and minimum values of the second variable end up being in the same slot, let's
                 # skip this pair because it's no different than maximizing the first variable by itself.
                 next if (int $second_min / $slot_size) == (int $second_max / $slot_size);

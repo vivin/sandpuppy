@@ -1,0 +1,66 @@
+smbc:
+  exec_or_run_matching:
+    "^l0-":
+      binary_arguments: 0
+    "^l2-":
+      binary_arguments: 2
+    "^l3-":
+      binary_arguments: 3
+    "^l4-":
+      binary_arguments: 4
+    "^l5-":
+      binary_arguments: 5
+    "^l7-":
+      binary_arguments: 7
+    "^l8-":
+      binary_arguments: 8
+    "^l9-":
+      binary_arguments: 9
+    "^l10-":
+      binary_arguments: 10
+    "^l11-":
+      binary_arguments: 11
+    "^l12-":
+      binary_arguments: 12
+    "^l13-":
+      binary_arguments: 13
+    "^l14-":
+      binary_arguments: 14
+    "^l16-":
+      binary_arguments: 16
+    "^l17-":
+      binary_arguments: 17
+    "^l18-":
+      binary_arguments: 18
+    "^l19-":
+      binary_arguments: 19
+    "^l20-":
+      binary_arguments: 20
+    "^l21-":
+      binary_arguments: 21
+    "^l22-":
+      binary_arguments: 22
+    "^l23-":
+      binary_arguments: 23
+    "^l24-":
+      binary_arguments: 24
+    "^l25-":
+      binary_arguments: 25
+    "^l26-":
+      binary_arguments: 26
+    "^l27-":
+      binary_arguments: 27
+    "^l29-":
+      binary_arguments: 29
+    "^l30-":
+      binary_arguments: 30
+    "^l31-":
+      binary_arguments: 31
+    "^l32-":
+      binary_arguments: 32
+    "^l33-":
+      binary_arguments: 33
+    "^l34-":
+      binary_arguments: 34
+    "^l35-":
+      binary_arguments: 35

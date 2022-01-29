@@ -4,6 +4,7 @@ use strict;
 use warnings FATAL => 'all';
 use Log::Simple::Color;
 use File::Path qw(make_path);
+use YAML::XS;
 use utils;
 
 my $log = Log::Simple::Color->new;
@@ -90,6 +91,27 @@ sub get_fuzz_command {
     my $exec_context = $_[5];
     my $options = $_[6];
 
+    my $exec_or_run = $exec_context;
+    if(defined $options->{run_name}) {
+        $exec_or_run = $options->{run_name};
+    }
+
+    my $fuzz_config = YAML::XS::LoadFile("$RESOURCES/fuzz_config.yml");
+    my $exec_or_run_matching = $fuzz_config->{smbc}->{exec_or_run_matching};
+
+    my $binary_arguments;
+    foreach my $pattern(sort keys(%{$exec_or_run_matching})) {
+        if ($exec_or_run =~ /$pattern/) {
+            $binary_arguments = $exec_or_run_matching->{$pattern}->{binary_arguments};
+        }
+
+        last if defined $binary_arguments;
+    }
+
+    if (! defined $binary_arguments) {
+        $binary_arguments = 0; # Default to Level 1 (World 1-1)
+    }
+
     utils::build_fuzz_command(
         $experiment_name,
         $subject,
@@ -98,8 +120,8 @@ sub get_fuzz_command {
         $binary_context,
         $exec_context,
         utils::merge($options, {
-            binary_arguments => "0",
-            hang_timeout     => $waypoints =~ /vvdump/ ? "100000+" : 17500,
+            binary_arguments => "$binary_arguments",
+            hang_timeout     => $waypoints =~ /vvdump/ ? "100000+" : "100000+",
             slow_target      => $waypoints =~ /vvdump/,
             no_arithmetic    => $waypoints =~ /vvdump/,
             seeds_directory  => "$RESOURCES/seeds/smbc"
@@ -108,10 +130,3 @@ sub get_fuzz_command {
 }
 
 1;
-
-#smartdsf-smbc--yoif-iks3-v2ro-wvcw-vvmax2
-#smartdsf-smbc--u9nc-26vb-i7t9-dx5l-vvmax2
-#smartdsf-smbc--pa9i-umb6-a9n8-kudz-vvmax2
-#smartdsf-smbc--80hx-0w9i-gt71-xnid-vvmax2
-#smartdsf-smbc--7zv5-fuvr-3koj-6sy6-vvmax2
-#smartdsf-smbc--4cs6-29o3-3v8q-deic-vvmax2

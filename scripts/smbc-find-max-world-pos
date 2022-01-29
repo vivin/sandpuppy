@@ -115,7 +115,8 @@ for i in "${!targets[@]}"; do
     # shellcheck disable=SC2001
     end_pos_y=$(echo "$end_coordinate" | sed -e 's/^.*,//' | sed -e 's,\s,,g')
 
-    if [[ "$end_world_pos" -gt "$max_world_pos" || ("$end_world_pos" -eq "$max_world_pos" && "$end_pos_y" -gt "$max_pos_y") ]]; then
+    # if [[ "$end_world_pos" -gt "$max_world_pos" || ("$end_world_pos" -eq "$max_world_pos" && "$end_pos_y" -gt "$max_pos_y") ]]; then
+    if [[ "$end_world_pos" -gt "$max_world_pos" ]]; then
       target_to_max_world_pos[$target]=$end_world_pos
       target_to_max_world_pos_info[$target]=$(printf "Target: %s (%s)\nPod: %s\nLevel: %s\nRun: %s\nMaximum World Position: (%s, %s)\n from %s (found after %s of fuzzing)\nCommand:\n resources/smbc %s video < %s" "$target" "$id" "$pod_name" "$LEVEL" "$RUN_NAME" "$end_world_pos" "$end_pos_y" "$filename" "$pretty_diff" "$LEVEL" "$input_file_path")
       max_world_pos_info="World Position: ($end_world_pos, $end_pos_y) from $filename (found after $pretty_diff of fuzzing)"
