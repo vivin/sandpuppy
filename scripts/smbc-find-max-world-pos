@@ -73,7 +73,7 @@ for i in "${!targets[@]}"; do
   pod_name=${target_to_pod_name[$target]}
   id=${target_to_id[$target]}
 
-  echo "Checking $target ($id) for input resulting in maximum world position..."
+  echo "[$((i + 1))/${#targets[@]}] Checking $target ($id) for input resulting in maximum world position..."
   saved_max_world_pos_input_filename=""
   if [[ -f "$STATE_DIR/$RUN_NAME-$id.max" ]]; then
     saved_max_world_pos_input_filename=$(cat "$STATE_DIR/$RUN_NAME-$id.max")
