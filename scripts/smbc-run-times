@@ -1,0 +1,74 @@
+#!/bin/bash
+
+if [[ $# -lt 2 ]]; then
+  echo "$0 <experiment> <level> <run-name>"
+  exit 1
+fi
+
+EXPERIMENT=$1
+LEVEL=$2
+RUN_NAME=$3
+
+declare -a targets=()
+declare -A target_to_pod_name=()
+declare -A target_to_id=()
+
+echo "Finding input runtimes (level: $LEVEL)"
+echo "Identifying smbc targets in experiment $EXPERIMENT (run: $RUN_NAME)..."
+
+STATE_DIR="/home/vivin/.script-state/$(basename "$0")"
+mkdir -p "$STATE_DIR"
+
+BASE_PATH="/mnt/vivin-nfs"
+if [[ ! -d "$BASE_PATH" ]]; then
+  BASE_PATH="/media/2tb/phd-workspace/nfs"
+fi
+
+SUBJECT_DIR="$BASE_PATH/vivin/$EXPERIMENT/smbc"
+id_to_pod_name_and_target_file="$SUBJECT_DIR/results/$RUN_NAME/id_to_pod_name_and_target.yml"
+while IFS= read -r -d '' target_dir
+do
+  # shellcheck disable=SC2001
+  id=$(echo "$target_dir" | sed -e 's,^.*/,,')
+  pod_name_and_target=$(grep -A2 "^$id" "$id_to_pod_name_and_target_file" | tail -2)
+  pod_name=$(echo "$pod_name_and_target" | head -1 | sed -e 's/^.*pod_name: //')
+  target_name=$(echo "$pod_name_and_target" | tail -1 | sed -e 's/^.*target_name: //' | sed -e 's/\.home.*source\././')
+
+  targets+=("$target_name")
+  target_to_pod_name[$target_name]="$pod_name"
+  target_to_id[$target_name]="$id"
+done < <(find "$SUBJECT_DIR/results/$RUN_NAME/sandpuppy-sync" -maxdepth 1 -mindepth 1 -type d -print0 | sort -z)
+
+echo ""
+
+for i in "${!targets[@]}"; do
+  target=${targets[$i]}
+  if [[ "$target" =~ "sleep:" ]] && [[ "$target" =~ "idle:" ]]; then # These take for EVER and are unlikely to contain solutions anyway
+    continue
+  fi
+
+  pod_name=${target_to_pod_name[$target]}
+  id=${target_to_id[$target]}
+
+  echo "[$((i + 1))/${#targets[@]}] Checking $target ($id) for input run times..."
+
+  INPUTS_DIR="$SUBJECT_DIR/results/$RUN_NAME/sandpuppy-sync/$id/queue";
+
+  j=0
+  num_inputs=$(find "$INPUTS_DIR" -maxdepth 1 -type f -name "id:*" | wc -l)
+  while IFS= read -r -d '' input_file_path
+  do
+    j=$(( j + 1 ))
+
+    echo -n "[$j/$num_inputs] Level: $LEVEL "
+    # shellcheck disable=SC2001
+    run_time=$(/usr/bin/time -f "%e" resources/smbc "$LEVEL" < "$input_file_path" 2>&1 | grep "^[1-9]")
+    if [[ -n "$run_time" ]]; then
+      echo "time=$run_time; $input_file_path"
+    else
+      echo -ne "\r"
+    fi
+  done < <(find "$INPUTS_DIR" -maxdepth 1 -type f -name "id:*" -print0 | sort -z)
+
+  echo ""
+done
