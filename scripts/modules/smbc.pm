@@ -121,7 +121,7 @@ sub get_fuzz_command {
         $exec_context,
         utils::merge($options, {
             binary_arguments => "$binary_arguments",
-            hang_timeout     => $waypoints =~ /vvdump/ ? "100000+" : "100000+",
+            hang_timeout     => $waypoints =~ /vvdump/ ? "100000+" : 1000,
             slow_target      => $waypoints =~ /vvdump/,
             no_arithmetic    => $waypoints =~ /vvdump/,
             seeds_directory  => "$RESOURCES/seeds/smbc"
