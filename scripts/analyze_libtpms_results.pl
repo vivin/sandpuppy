@@ -9,6 +9,7 @@ if (scalar @ARGV < 1) {
 my %command_edges = ();
 my %command_sequences = ();
 my %seq_length_counts = ();
+my %unique_seq_length_counts = ();
 my %unique_sequences = (
     1 => {},
     2 => {},
@@ -43,7 +44,7 @@ if ($fuzzer eq "sandpuppy") {
 
             if ($file =~ /id:/ && $file !~ /,sync:/) {
                 print "Processing input " . (++$count) . " of $num_files\r";
-                get_basic_blocks_and_commands_for_input("$dir/queue/$file");
+                get_commands_for_input("$dir/queue/$file");
             }
         }
         close FILES;
@@ -69,7 +70,7 @@ if ($fuzzer eq "sandpuppy") {
 
         if ($file =~ /id:/ && $file !~ /,sync:/) {
             print "Processing input " . (++$count) . " of $num_files\r";
-            get_basic_blocks_and_commands_for_input("$dir/$file");
+            get_commands_for_input("$dir/$file");
         }
     }
     close FILES;
@@ -86,6 +87,11 @@ print OUT "Longest command sequence: $longest_command_sequence\n";
 foreach my $sequence_length(sort { $a <=> $b } (keys %seq_length_counts)) {
     print "Command sequences of length $sequence_length: " . $seq_length_counts{$sequence_length} . "\n";
     print OUT "Command sequences of length $sequence_length: " . $seq_length_counts{$sequence_length} . "\n";
+}
+
+foreach my $sequence_length(sort { $a <=> $b } (keys %unique_seq_length_counts)) {
+    print "Unique command sequences of length $sequence_length: " . $unique_seq_length_counts{$sequence_length} . "\n";
+    print OUT "Unique command sequences of length $sequence_length: " . $unique_seq_length_counts{$sequence_length} . "\n";
 }
 
 print "Unique full command sequences: " . scalar (keys %command_sequences) . "\n";
@@ -111,7 +117,7 @@ print "Generating PS file out of graphviz file...";
 system "dot -Tps $BASE_PATH/vivin/smartdsf/libtpms/aggregated/$fuzzer.dot -o $BASE_PATH/vivin/smartdsf/libtpms/aggregated/$fuzzer.ps";
 print "done\n";
 
-sub get_basic_blocks_and_commands_for_input {
+sub get_commands_for_input {
     my $file = $_[0];
 
     my $prev_line_is_startup = 0;
@@ -140,25 +146,36 @@ sub get_basic_blocks_and_commands_for_input {
         $previous_command = $command;
     }
 
-    $command_sequences{join ".", @commands} = 1;
-    if (!$seq_length_counts{scalar @commands}) {
-        $seq_length_counts{scalar @commands} = 0;
+    my $command_seq_length = scalar @commands;
+    my $command_seq = join ".", @commands;
+    if (!$command_sequences{$command_seq}) {
+        $command_sequences{$command_seq} = 1;
+
+        if (!$unique_seq_length_counts{$command_seq_length}) {
+            $unique_seq_length_counts{$command_seq_length} = 0;
+        }
+
+        $unique_seq_length_counts{$command_seq_length}++;
     }
 
-    $seq_length_counts{scalar @commands}++;
+    if (!$seq_length_counts{$command_seq_length}) {
+        $seq_length_counts{$command_seq_length} = 0;
+    }
+
+    $seq_length_counts{$command_seq_length}++;
 
     # Extract sequences of length 1, 2, 3, and 4 respectively (as long as the sequences as long enough) to identify
     # unique ones.
     foreach my $seq_length(1, 2, 3, 4) {
-        last if scalar @commands < $seq_length;
+        last if $command_seq_length < $seq_length;
 
-        for(my $i = 0; $i <= scalar @commands - $seq_length; $i++) {
+        for(my $i = 0; $i <= $command_seq_length - $seq_length; $i++) {
             my @sequence = @commands[$i..($i + $seq_length - 1)];
             $unique_sequences{$seq_length}->{join ".", @sequence} = 1;
         }
     }
 
-    if (scalar @commands > $longest_command_sequence) {
-        $longest_command_sequence = scalar @commands;
+    if ($command_seq_length > $longest_command_sequence) {
+        $longest_command_sequence = $command_seq_length;
     }
 }
