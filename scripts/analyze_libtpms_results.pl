@@ -97,8 +97,8 @@ foreach my $sequence_length(sort { $a <=> $b } (keys %unique_seq_length_counts))
 print "Unique full command sequences: " . scalar (keys %command_sequences) . "\n";
 print OUT "Unique full command sequences: " . scalar (keys %command_sequences) . "\n";
 foreach my $sequence_length(sort { $a <=> $b } (keys %unique_sequences)) {
-    print "Unique command sequences of length $sequence_length: " . scalar (keys %{$unique_sequences{$sequence_length}}) . "\n";
-    print OUT "Unique command sequences of length $sequence_length: " . scalar (keys %{$unique_sequences{$sequence_length}}) . "\n";
+    print "Unique command subsequences of length $sequence_length: " . scalar (keys %{$unique_sequences{$sequence_length}}) . "\n";
+    print OUT "Unique command subsequences of length $sequence_length: " . scalar (keys %{$unique_sequences{$sequence_length}}) . "\n";
 }
 
 close OUT;
