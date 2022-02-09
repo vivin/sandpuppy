@@ -56,7 +56,6 @@ echo ""
 
 start_ts=$(cat "$SUBJECT_DIR/results/$RUN_NAME/sandpuppy-sync/start_ts")
 
-min_time=""
 min_target=""
 min_id=""
 min_filename=""
@@ -93,8 +92,7 @@ for i in "${!targets[@]}"; do
     if [[ -n "$heap_buffer_overflow" ]] && [[ -n "$expected_func_and_line" ]]; then
       solutions+=("$filename (found after $pretty_diff of fuzzing)")
 
-      if [[ -z "$min_time" ]] || [[ "$mtime" -lt "$min_time" ]]; then
-        min_time="$mtime"
+      if [[ -z "$min_diff" ]] || [[ "$diff" -lt "$min_diff" ]]; then
         min_target="$target"
         min_id="$id"
         min_filename="$filename"

@@ -142,8 +142,8 @@ if ($task eq "build") {
         my $subject_directory = utils::get_subject_directory($experiment_name, $subject, $version);
         my $local_nfs_subject_directory = "/mnt/vivin-nfs/vivin/$subject_directory";
 
-        if (-d "$local_nfs_subject_directory/results/$run_name" && !$resume) {
-            die "Results directory already exists at $local_nfs_subject_directory/results/$run_name! Maybe try resuming?";
+        if (-d "$local_nfs_subject_directory/results/$run_name/sandpuppy-sync" && !$resume) {
+            die "Results directory already exists at $local_nfs_subject_directory/results/$run_name/sandpuppy-sync! Maybe try resuming?";
         }
 
         if ($task eq "spfuzz") {
