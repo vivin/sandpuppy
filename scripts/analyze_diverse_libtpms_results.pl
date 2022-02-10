@@ -25,6 +25,10 @@ my @fuzzers = ("afl-plain", "aflplusplus-plain", "aflplusplus-lafintel", "aflplu
 
 my $fuzzer_stats = {};
 my $fuzzer_stats_filename = "$RUN_DIR/fuzzer_stats.dat";
+if ($print && ! -e -f $fuzzer_stats_filename) {
+    die "Cannot print because saved stats file $fuzzer_stats_filename does not exist\n";
+}
+
 if (-e -f $fuzzer_stats_filename) {
     $fuzzer_stats = retrieve $fuzzer_stats_filename;
 } else {
@@ -42,6 +46,12 @@ if (-e -f $fuzzer_stats_filename) {
                 4 => {}
             }
         }
+    }
+}
+
+if ($print) {
+    foreach my $fuzzer(keys %{$fuzzer_stats}) {
+        output_fuzzer_stats($fuzzer);
     }
 }
 
@@ -75,7 +85,7 @@ foreach my $fuzzer(@fuzzers) {
         my $dir = "$fuzzer_dir/$session/queue";
         next if ! -e -d $dir;
 
-        print "[$i/$num_sessions] Processing inputs in session $session...\b";
+        print "[$i/$num_sessions] Processing inputs in session $session...\n";
 
         chomp (my $num_files = `ls -f $dir | grep -v "^\\." | grep -v ",sync:" | wc -l`);
         my $count = 0;
@@ -114,12 +124,18 @@ sub output_fuzzer_stats {
 
     open OUT, ">", "$RUN_DIR/aggregated/$fuzzer.txt";
 
-    print "Longest command sequence: $$longest_command_sequence_ref\n";
-    print OUT "Longest command sequence: $$longest_command_sequence_ref\n";
+    print "Results for fuzzer $fuzzer\n\n";
+    print OUT "Results for fuzzer $fuzzer\n\n";
+
+    print "  Longest command sequence: $$longest_command_sequence_ref\n\n";
+    print OUT "  Longest command sequence: $$longest_command_sequence_ref\n\n";
     foreach my $sequence_length(sort { $a <=> $b } (keys %{$seq_length_counts})) {
-        print "Command sequences of length $sequence_length: " . $seq_length_counts->{$sequence_length} . "\n";
-        print OUT "Command sequences of length $sequence_length: " . $seq_length_counts->{$sequence_length} . "\n";
+        print "  Command sequences of length $sequence_length: " . $seq_length_counts->{$sequence_length} . "\n";
+        print OUT "  Command sequences of length $sequence_length: " . $seq_length_counts->{$sequence_length} . "\n";
     }
+
+    print "\n";
+    print OUT "\n";
 
     open UNIQUE_SEQ_COUNTS, ">", "$RUN_DIR/aggregated/$fuzzer-unique-seq-counts.dat";
     my @unique_seq_counts = ();
@@ -131,12 +147,18 @@ sub output_fuzzer_stats {
     print UNIQUE_SEQ_COUNTS "[" . (join ", ", @unique_seq_counts) . "]";
     close UNIQUE_SEQ_COUNTS;
 
-    print "Unique full command sequences: " . scalar (keys %{$command_sequences}) . "\n";
-    print OUT "Unique full command sequences: " . scalar (keys %{$command_sequences}) . "\n";
+    print "\n";
+    print OUT "\n";
+
+    print "Unique full command sequences: " . scalar (keys %{$command_sequences}) . "\n\n";
+    print OUT "Unique full command sequences: " . scalar (keys %{$command_sequences}) . "\n\n";
     foreach my $sequence_length(sort { $a <=> $b } (keys %{$unique_subsequences})) {
         print "Unique command subsequences of length $sequence_length: " . scalar (keys %{$unique_subsequences->{$sequence_length}}) . "\n";
         print OUT "Unique command subsequences of length $sequence_length: " . scalar (keys %{$unique_subsequences->{$sequence_length}}) . "\n";
     }
+
+    print "\n";
+    print OUT "\n";
 
     close OUT;
 
