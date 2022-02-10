@@ -94,7 +94,7 @@ foreach my $fuzzer(@fuzzers) {
             chomp $file;
 
             my $state_file = "$STATE_DIR/$session-$file";
-            if (-e $state_file) {
+            if (-e -f $state_file) {
                 print "Skipping input " . (++$count) . " of $num_files (already processed)\r";
             } elsif ($file =~ /id:/ && $file !~ /,sync:/) {
                 print "Processing input " . (++$count) . " of $num_files                   \r";
