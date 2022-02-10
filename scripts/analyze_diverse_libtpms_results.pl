@@ -139,8 +139,8 @@ sub output_fuzzer_stats {
     open UNIQUE_SEQ_COUNTS, ">", "$RESULTS_DIR/$fuzzer-unique-seq-counts.dat" if !$print_only;
     my @unique_seq_counts = ();
     foreach my $sequence_length(sort { $a <=> $b } (keys %{$unique_seq_length_counts})) {
-        print "Unique command sequences of length $sequence_length: " . $unique_seq_length_counts->{$sequence_length} . "\n";
-        print OUT "Unique command sequences of length $sequence_length: " . $unique_seq_length_counts->{$sequence_length} . "\n" if !$print_only;
+        print "  Unique command sequences of length $sequence_length: " . $unique_seq_length_counts->{$sequence_length} . "\n";
+        print OUT "  Unique command sequences of length $sequence_length: " . $unique_seq_length_counts->{$sequence_length} . "\n" if !$print_only;
         push @unique_seq_counts, $unique_seq_length_counts->{$sequence_length};
     }
     print UNIQUE_SEQ_COUNTS "[" . (join ", ", @unique_seq_counts) . "]" if !$print_only;
@@ -149,11 +149,11 @@ sub output_fuzzer_stats {
     print "\n";
     print OUT "\n" if !$print_only;
 
-    print "Unique full command sequences: " . scalar (keys %{$command_sequences}) . "\n\n";
-    print OUT "Unique full command sequences: " . scalar (keys %{$command_sequences}) . "\n\n" if !$print_only;
+    print "  Unique full command sequences: " . scalar (keys %{$command_sequences}) . " ($command_sequences) and unique_subsequences hash is ($unique_subsequences)\n\n";
+    print OUT "  Unique full command sequences: " . scalar (keys %{$command_sequences}) . "\n\n" if !$print_only;
     foreach my $sequence_length(sort { $a <=> $b } (keys %{$unique_subsequences})) {
-        print "Unique command subsequences of length $sequence_length: " . scalar (keys %{$unique_subsequences->{$sequence_length}}) . "\n";
-        print OUT "Unique command subsequences of length $sequence_length: " . scalar (keys %{$unique_subsequences->{$sequence_length}}) . "\n" if !$print_only;
+        print "  Unique command subsequences of length $sequence_length: " . scalar (keys %{$unique_subsequences->{$sequence_length}}) . "\n";
+        print OUT "  Unique command subsequences of length $sequence_length: " . scalar (keys %{$unique_subsequences->{$sequence_length}}) . "\n" if !$print_only;
     }
 
     print "\n";
