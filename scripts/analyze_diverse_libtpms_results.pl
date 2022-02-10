@@ -20,11 +20,13 @@ if (! -d $BASE_PATH) {
 }
 
 my $RUN_DIR = "$BASE_PATH/vivin/smartdsf/libtpms/results/di-ec-run";
+my $RESULTS_DIR = "$RUN_DIR/aggregated";
+make_path $RESULTS_DIR;
 
 my @fuzzers = ("afl-plain", "aflplusplus-plain", "aflplusplus-lafintel", "aflplusplus-redqueen", "sandpuppy");
 
 my $fuzzer_stats = {};
-my $fuzzer_stats_filename = "$RUN_DIR/fuzzer_stats.dat";
+my $fuzzer_stats_filename = "$RESULTS_DIR/fuzzer_stats.dat";
 if ($print_only && ! -e -f $fuzzer_stats_filename) {
     die "Cannot print because saved stats file $fuzzer_stats_filename does not exist\n";
 }
@@ -57,8 +59,6 @@ if ($print_only) {
 
 foreach my $fuzzer(@fuzzers) {
     print "Processing libtpms results for fuzzer $fuzzer...\n\n";
-
-    make_path "$RUN_DIR/aggregated";
 
     my $fuzzer_dir = "$RUN_DIR/$fuzzer-sync";
     next if ! -e -d $fuzzer_dir;
@@ -121,7 +121,7 @@ sub output_fuzzer_stats {
     my $unique_seq_length_counts = $fuzzer_stats->{$fuzzer}->{unique_seq_length_counts};
     my $unique_subsequences = $fuzzer_stats->{$fuzzer}->{unique_subsequences};
 
-    open OUT, ">", "$RUN_DIR/aggregated/$fuzzer.txt" if !$print_only;
+    open OUT, ">", "$RESULTS_DIR/$fuzzer.txt" if !$print_only;
 
     print "Results for fuzzer $fuzzer\n\n";
     print OUT "Results for fuzzer $fuzzer\n\n" if !$print_only;
@@ -136,7 +136,7 @@ sub output_fuzzer_stats {
     print "\n";
     print OUT "\n" if !$print_only;
 
-    open UNIQUE_SEQ_COUNTS, ">", "$RUN_DIR/aggregated/$fuzzer-unique-seq-counts.dat" if !$print_only;
+    open UNIQUE_SEQ_COUNTS, ">", "$RESULTS_DIR/$fuzzer-unique-seq-counts.dat" if !$print_only;
     my @unique_seq_counts = ();
     foreach my $sequence_length(sort { $a <=> $b } (keys %{$unique_seq_length_counts})) {
         print "Unique command sequences of length $sequence_length: " . $unique_seq_length_counts->{$sequence_length} . "\n";
@@ -164,7 +164,7 @@ sub output_fuzzer_stats {
         close OUT;
 
         print "Creating graphviz file ($fuzzer.dot)...";
-        open GRAPHVIZ, ">", "$RUN_DIR/aggregated/$fuzzer.dot";
+        open GRAPHVIZ, ">", "$RESULTS_DIR/$fuzzer.dot";
         print GRAPHVIZ "digraph state_graph {\n";
         foreach my $edge(keys %{$command_edges}) {
             print GRAPHVIZ "  $edge\n";
@@ -174,11 +174,11 @@ sub output_fuzzer_stats {
         print "done\n";
 
         print "Generating PS file out of graphviz file...";
-        system "dot -Tps $BASE_PATH/vivin/smartdsf/libtpms/aggregated/$fuzzer.dot -o $BASE_PATH/vivin/smartdsf/libtpms/aggregated/$fuzzer.ps";
+        system "dot -Tps $RESULTS_DIR/$fuzzer.dot -o $RESULTS_DIR/$fuzzer.ps";
         print "done\n";
 
         print "Generating PNG file out of graphviz file...";
-        system "dot -Tpng $BASE_PATH/vivin/smartdsf/libtpms/aggregated/$fuzzer.dot -o $BASE_PATH/vivin/smartdsf/libtpms/aggregated/$fuzzer.png";
+        system "dot -Tpng $RESULTS_DIR/$fuzzer.dot -o $RESULTS_DIR/$fuzzer.png";
         print "done\n\n";
     }
 }
