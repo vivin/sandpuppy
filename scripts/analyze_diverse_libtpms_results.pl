@@ -107,6 +107,7 @@ foreach my $fuzzer(@fuzzers) {
         lock_store $fuzzer_stats, $fuzzer_stats_filename;
     }
 
+    print "\n";
     output_fuzzer_stats($fuzzer);
 }
 
@@ -178,7 +179,7 @@ sub output_fuzzer_stats {
 
         print "Generating PNG file out of graphviz file...";
         system "dot -Tpng $BASE_PATH/vivin/smartdsf/libtpms/aggregated/$fuzzer.dot -o $BASE_PATH/vivin/smartdsf/libtpms/aggregated/$fuzzer.png";
-        print "done\n";
+        print "done\n\n";
     }
 }
 
