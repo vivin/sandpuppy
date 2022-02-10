@@ -35,10 +35,10 @@ if (-e -f $fuzzer_stats_filename) {
     foreach my $fuzzer(@fuzzers) {
         $fuzzer_stats->{$fuzzer} = {
             longest_command_sequence => 0,
-            command_edges            => [],
-            command_sequences        => [],
-            seq_length_counts        => [],
-            unique_seq_length_counts => [],
+            command_edges            => {},
+            command_sequences        => {},
+            seq_length_counts        => {},
+            unique_seq_length_counts => {},
             unique_subsequences      => {
                 1 => {},
                 2 => {},
