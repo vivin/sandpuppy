@@ -107,7 +107,7 @@ foreach my $fuzzer(@fuzzers) {
         lock_store $fuzzer_stats, $fuzzer_stats_filename;
     }
 
-    print "\n";
+    print (" " x 120) . "\n";
     output_fuzzer_stats($fuzzer);
 }
 
