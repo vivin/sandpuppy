@@ -2,11 +2,11 @@
 use strict;
 use warnings FATAL => 'all';
 use File::Path qw(make_path);
-use Storable;
+use Storable qw{lock_store lock_retrieve};
 
-my $print;
+my $print_only;
 if ($ARGV[0] && $ARGV[0] eq "print") {
-   $print = 1;
+   $print_only = 1;
 } elsif ($ARGV[0]) {
     die "Usage: $0 sandpuppy | afl-plain | aflplusplus-(plain | lafintel | redqueen)\n";
 }
@@ -25,12 +25,12 @@ my @fuzzers = ("afl-plain", "aflplusplus-plain", "aflplusplus-lafintel", "aflplu
 
 my $fuzzer_stats = {};
 my $fuzzer_stats_filename = "$RUN_DIR/fuzzer_stats.dat";
-if ($print && ! -e -f $fuzzer_stats_filename) {
+if ($print_only && ! -e -f $fuzzer_stats_filename) {
     die "Cannot print because saved stats file $fuzzer_stats_filename does not exist\n";
 }
 
 if (-e -f $fuzzer_stats_filename) {
-    $fuzzer_stats = retrieve $fuzzer_stats_filename;
+    $fuzzer_stats = lock_retrieve $fuzzer_stats_filename;
 } else {
     foreach my $fuzzer(@fuzzers) {
         $fuzzer_stats->{$fuzzer} = {
@@ -49,7 +49,7 @@ if (-e -f $fuzzer_stats_filename) {
     }
 }
 
-if ($print) {
+if ($print_only) {
     foreach my $fuzzer(keys %{$fuzzer_stats}) {
         output_fuzzer_stats($fuzzer);
     }
@@ -85,7 +85,7 @@ foreach my $fuzzer(@fuzzers) {
         my $dir = "$fuzzer_dir/$session/queue";
         next if ! -e -d $dir;
 
-        print "[$i/$num_sessions] Processing inputs in session $session...\n";
+        print "[" . (++$i) . "/$num_sessions] Processing inputs in session $session...\n";
 
         chomp (my $num_files = `ls -f $dir | grep -v "^\\." | grep -v ",sync:" | wc -l`);
         my $count = 0;
@@ -98,15 +98,13 @@ foreach my $fuzzer(@fuzzers) {
                 print "Skipping input " . (++$count) . " of $num_files (already processed)\r";
             } elsif ($file =~ /id:/ && $file !~ /,sync:/) {
                 print "Processing input " . (++$count) . " of $num_files                   \r";
-                process_commands_for_input("$dir/$file");
+                process_commands_for_input("$dir/$file", $fuzzer);
                 system "touch $state_file";
             }
         }
         close FILES;
 
-        store $fuzzer_stats, $fuzzer_stats_filename;
-
-        $i++;
+        lock_store $fuzzer_stats, $fuzzer_stats_filename;
     }
 
     output_fuzzer_stats($fuzzer);
@@ -122,63 +120,66 @@ sub output_fuzzer_stats {
     my $unique_seq_length_counts = $fuzzer_stats->{$fuzzer}->{unique_seq_length_counts};
     my $unique_subsequences = $fuzzer_stats->{$fuzzer}->{unique_subsequences};
 
-    open OUT, ">", "$RUN_DIR/aggregated/$fuzzer.txt";
+    open OUT, ">", "$RUN_DIR/aggregated/$fuzzer.txt" if !$print_only;
 
     print "Results for fuzzer $fuzzer\n\n";
-    print OUT "Results for fuzzer $fuzzer\n\n";
+    print OUT "Results for fuzzer $fuzzer\n\n" if !$print_only;
 
     print "  Longest command sequence: $$longest_command_sequence_ref\n\n";
-    print OUT "  Longest command sequence: $$longest_command_sequence_ref\n\n";
+    print OUT "  Longest command sequence: $$longest_command_sequence_ref\n\n" if !$print_only;
     foreach my $sequence_length(sort { $a <=> $b } (keys %{$seq_length_counts})) {
         print "  Command sequences of length $sequence_length: " . $seq_length_counts->{$sequence_length} . "\n";
-        print OUT "  Command sequences of length $sequence_length: " . $seq_length_counts->{$sequence_length} . "\n";
+        print OUT "  Command sequences of length $sequence_length: " . $seq_length_counts->{$sequence_length} . "\n" if !$print_only;
     }
 
     print "\n";
-    print OUT "\n";
+    print OUT "\n" if !$print_only;
 
-    open UNIQUE_SEQ_COUNTS, ">", "$RUN_DIR/aggregated/$fuzzer-unique-seq-counts.dat";
+    open UNIQUE_SEQ_COUNTS, ">", "$RUN_DIR/aggregated/$fuzzer-unique-seq-counts.dat" if !$print_only;
     my @unique_seq_counts = ();
     foreach my $sequence_length(sort { $a <=> $b } (keys %{$unique_seq_length_counts})) {
         print "Unique command sequences of length $sequence_length: " . $unique_seq_length_counts->{$sequence_length} . "\n";
-        print OUT "Unique command sequences of length $sequence_length: " . $unique_seq_length_counts->{$sequence_length} . "\n";
+        print OUT "Unique command sequences of length $sequence_length: " . $unique_seq_length_counts->{$sequence_length} . "\n" if !$print_only;
         push @unique_seq_counts, $unique_seq_length_counts->{$sequence_length};
     }
-    print UNIQUE_SEQ_COUNTS "[" . (join ", ", @unique_seq_counts) . "]";
-    close UNIQUE_SEQ_COUNTS;
+    print UNIQUE_SEQ_COUNTS "[" . (join ", ", @unique_seq_counts) . "]" if !$print_only;
+    close UNIQUE_SEQ_COUNTS if !$print_only;
 
     print "\n";
-    print OUT "\n";
+    print OUT "\n" if !$print_only;
 
     print "Unique full command sequences: " . scalar (keys %{$command_sequences}) . "\n\n";
-    print OUT "Unique full command sequences: " . scalar (keys %{$command_sequences}) . "\n\n";
+    print OUT "Unique full command sequences: " . scalar (keys %{$command_sequences}) . "\n\n" if !$print_only;
     foreach my $sequence_length(sort { $a <=> $b } (keys %{$unique_subsequences})) {
         print "Unique command subsequences of length $sequence_length: " . scalar (keys %{$unique_subsequences->{$sequence_length}}) . "\n";
-        print OUT "Unique command subsequences of length $sequence_length: " . scalar (keys %{$unique_subsequences->{$sequence_length}}) . "\n";
+        print OUT "Unique command subsequences of length $sequence_length: " . scalar (keys %{$unique_subsequences->{$sequence_length}}) . "\n" if !$print_only;
     }
 
     print "\n";
-    print OUT "\n";
 
-    close OUT;
+    if (!$print_only) {
+        print OUT "\n";
 
-    print "Creating graphviz file ($fuzzer.dot)...";
-    open GRAPHVIZ, ">", "$RUN_DIR/aggregated/$fuzzer.dot";
-    print GRAPHVIZ "digraph state_graph {\n";
-    foreach my $edge(keys %{$command_edges}) {
-        print GRAPHVIZ "  $edge\n";
+        close OUT;
+
+        print "Creating graphviz file ($fuzzer.dot)...";
+        open GRAPHVIZ, ">", "$RUN_DIR/aggregated/$fuzzer.dot";
+        print GRAPHVIZ "digraph state_graph {\n";
+        foreach my $edge(keys %{$command_edges}) {
+            print GRAPHVIZ "  $edge\n";
+        }
+        print GRAPHVIZ "}\n";
+        close GRAPHVIZ;
+        print "done\n";
+
+        print "Generating PS file out of graphviz file...";
+        system "dot -Tps $BASE_PATH/vivin/smartdsf/libtpms/aggregated/$fuzzer.dot -o $BASE_PATH/vivin/smartdsf/libtpms/aggregated/$fuzzer.ps";
+        print "done\n";
+
+        print "Generating PNG file out of graphviz file...";
+        system "dot -Tpng $BASE_PATH/vivin/smartdsf/libtpms/aggregated/$fuzzer.dot -o $BASE_PATH/vivin/smartdsf/libtpms/aggregated/$fuzzer.png";
+        print "done\n";
     }
-    print GRAPHVIZ "}\n";
-    close GRAPHVIZ;
-    print "done\n";
-
-    print "Generating PS file out of graphviz file...";
-    system "dot -Tps $BASE_PATH/vivin/smartdsf/libtpms/aggregated/$fuzzer.dot -o $BASE_PATH/vivin/smartdsf/libtpms/aggregated/$fuzzer.ps";
-    print "done\n";
-
-    print "Generating PNG file out of graphviz file...";
-    system "dot -Tpng $BASE_PATH/vivin/smartdsf/libtpms/aggregated/$fuzzer.dot -o $BASE_PATH/vivin/smartdsf/libtpms/aggregated/$fuzzer.png";
-    print "done\n";
 }
 
 sub process_commands_for_input {
