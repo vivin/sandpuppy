@@ -39,7 +39,6 @@ if (-e -f $fuzzer_stats_filename) {
             longest_command_sequence => 0,
             command_edges            => {},
             command_sequences        => {},
-            seq_length_counts        => {},
             unique_seq_length_counts => {},
             unique_subsequences      => {
                 1 => {},
@@ -117,7 +116,6 @@ sub output_fuzzer_stats {
     my $longest_command_sequence_ref = \$fuzzer_stats->{$fuzzer}->{longest_command_sequence};
     my $command_edges = $fuzzer_stats->{$fuzzer}->{command_edges};
     my $command_sequences = $fuzzer_stats->{$fuzzer}->{command_sequences};
-    my $seq_length_counts = $fuzzer_stats->{$fuzzer}->{seq_length_counts};
     my $unique_seq_length_counts = $fuzzer_stats->{$fuzzer}->{unique_seq_length_counts};
     my $unique_subsequences = $fuzzer_stats->{$fuzzer}->{unique_subsequences};
 
@@ -128,13 +126,6 @@ sub output_fuzzer_stats {
 
     print "  Longest command sequence: $$longest_command_sequence_ref\n\n";
     print OUT "  Longest command sequence: $$longest_command_sequence_ref\n\n" if !$print_only;
-    foreach my $sequence_length(sort { $a <=> $b } (keys %{$seq_length_counts})) {
-        print "  Command sequences of length $sequence_length: " . $seq_length_counts->{$sequence_length} . "\n";
-        print OUT "  Command sequences of length $sequence_length: " . $seq_length_counts->{$sequence_length} . "\n" if !$print_only;
-    }
-
-    print "\n";
-    print OUT "\n" if !$print_only;
 
     open UNIQUE_SEQ_COUNTS, ">", "$RESULTS_DIR/$fuzzer-unique-seq-counts.dat" if !$print_only;
     my @unique_seq_counts = ();
@@ -190,7 +181,6 @@ sub process_commands_for_input {
     my $longest_command_sequence_ref = \$fuzzer_stats->{$fuzzer}->{longest_command_sequence};
     my $command_edges = $fuzzer_stats->{$fuzzer}->{command_edges};
     my $command_sequences = $fuzzer_stats->{$fuzzer}->{command_sequences};
-    my $seq_length_counts = $fuzzer_stats->{$fuzzer}->{seq_length_counts};
     my $unique_seq_length_counts = $fuzzer_stats->{$fuzzer}->{unique_seq_length_counts};
     my $unique_subsequences = $fuzzer_stats->{$fuzzer}->{unique_subsequences};
 
@@ -231,12 +221,6 @@ sub process_commands_for_input {
 
         $unique_seq_length_counts->{$command_seq_length}++;
     }
-
-    if (!$seq_length_counts->{$command_seq_length}) {
-        $seq_length_counts->{$command_seq_length} = 0;
-    }
-
-    $seq_length_counts->{$command_seq_length}++;
 
     # Extract sequences of length 1, 2, 3, and 4 respectively (as long as the sequences as long enough) to identify
     # unique ones.
