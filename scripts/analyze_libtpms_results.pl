@@ -44,7 +44,7 @@ if ($fuzzer eq "sandpuppy") {
 
             if ($file =~ /id:/ && $file !~ /,sync:/) {
                 print "Processing input " . (++$count) . " of $num_files\r";
-                get_commands_for_input("$dir/queue/$file");
+                process_commands_for_input("$dir/queue/$file");
             }
         }
         close FILES;
@@ -70,7 +70,7 @@ if ($fuzzer eq "sandpuppy") {
 
         if ($file =~ /id:/ && $file !~ /,sync:/) {
             print "Processing input " . (++$count) . " of $num_files\r";
-            get_commands_for_input("$dir/$file");
+            process_commands_for_input("$dir/$file");
         }
     }
     close FILES;
@@ -117,7 +117,7 @@ print "Generating PS file out of graphviz file...";
 system "dot -Tps $BASE_PATH/vivin/smartdsf/libtpms/aggregated/$fuzzer.dot -o $BASE_PATH/vivin/smartdsf/libtpms/aggregated/$fuzzer.ps";
 print "done\n";
 
-sub get_commands_for_input {
+sub process_commands_for_input {
     my $file = $_[0];
 
     my $prev_line_is_startup = 0;

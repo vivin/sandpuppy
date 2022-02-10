@@ -8,9 +8,12 @@ use List::Util qw(reduce);
 use POSIX;
 
 my $log = Log::Simple::Color->new;
-my $BASEPATH = glob "~/Projects/phd";
-my $BASEWORKSPACEPATH = "$BASEPATH/workspace";
-my $TOOLS = "$BASEPATH/tools";
+my $BASE_PATH = glob "~/Projects/phd";
+my $BASE_WORKSPACE_PATH = "$BASE_PATH/workspace";
+my $BASE_NFS_PATH = "/mnt/vivin-nfs/vivin";
+my $BASE_REMOTE_NFS_PATH = "/media/2tb/phd-workspace/nfs/vivin";
+my $BASE_CONTAINER_NFS_PATH = "/private-nfs/vivin";
+my $TOOLS = "$BASE_PATH/tools";
 
 my $SANDPUPPY_SYNC_DIRECTORY = "sandpuppy-sync";
 
@@ -30,20 +33,29 @@ sub get_clang_asan_static_lib {
     return get_clang_library_path() . "/libclang_rt.asan-x86_64.a";
 }
 
-sub get_subject_directory {
-    my $experiment_name = $_[0];
-    my $subject = $_[1];
-    my $version = $_[2];
-
-    return "$experiment_name/$subject" . ($version ? "-$version" : "");
+sub __get_subject_directory_for_root {
+    my ($root, $experiment_name, $subject, $version) = @_;
+    return "$root/$experiment_name/$subject" . ($version ? "-$version" : "");
 }
 
-sub get_workspace {
-    my $experiment_name = $_[0];
-    my $subject = $_[1];
-    my $version = $_[2];
+sub get_subject_directory {
+    unshift @_, $BASE_WORKSPACE_PATH;
+    return __get_subject_directory_for_root(@_);
+}
 
-    return "$BASEWORKSPACEPATH/$experiment_name/$subject" . ($version ? "-$version" : "");
+sub get_nfs_subject_directory {
+    unshift @_, $BASE_NFS_PATH;
+    return __get_subject_directory_for_root(@_);
+}
+
+sub get_remote_nfs_subject_directory {
+    unshift @_, $BASE_REMOTE_NFS_PATH;
+    return __get_subject_directory_for_root(@_);
+}
+
+sub get_container_nfs_subject_directory {
+    unshift @_, $BASE_CONTAINER_NFS_PATH;
+    return __get_subject_directory_for_root(@_);
 }
 
 sub create_binary_dir {
@@ -160,8 +172,8 @@ sub build_fuzz_command {
         die "If any of fuzzer_id, sync_directory_name, or parallel_fuzz_mode is provided, all must be provided";
     }
 
-    my $workspace = get_workspace($experiment_name, $subject, $version);
-    my $results_base = "$workspace/results";
+    my $subject_directory = get_subject_directory($experiment_name, $subject, $version);
+    my $results_base = "$subject_directory/results";
     my $results_dir;
     if ($use_kubernetes) {
         $results_dir = $parallel_fuzz_mode ? "/out" : "/out/$fuzzer_id";
@@ -175,7 +187,7 @@ sub build_fuzz_command {
         die "Cannot resume because cannot find results dir at $results_dir" if !$use_kubernetes;
     }
 
-    my $binary = "$workspace/binaries/$binary_context/$binary_name";
+    my $binary = "$subject_directory/binaries/$binary_context/$binary_name";
     if (! -e $binary) {
         die "Could not find binary for binary context $binary_context at $binary";
     }
@@ -195,7 +207,7 @@ sub build_fuzz_command {
     if ($resume) {
         $fuzz_command .= " -i-"
     } elsif ($seeds_directory) {
-        my $subdir = ($waypoints eq "vvdump") ? "tracegen" : "fuzz";
+        my $subdir = ($waypoints eq "vvdump") ? "tracegen" : "diverse";
         $fuzz_command .= " -i $seeds_directory/$subdir";
 
         if ($dictionary_file) {
@@ -291,7 +303,7 @@ sub get_random_fuzzer_id {
     return $id;
 }
 
-sub generate_target_script {
+sub generate_startup_script {
     my $experiment_name = $_[0];
     my $subject = $_[1];
     my $version = $_[2];
@@ -301,11 +313,9 @@ sub generate_target_script {
     my $fuzz_command = $_[6];
     my $fuzz_command_with_resume = $_[7];
 
-    my $subject_directory = get_subject_directory($experiment_name, $subject, $version);
-    my $container_nfs_subject_directory = "/private-nfs/vivin/$subject_directory";
-    my $remote_nfs_subject_directory = "/media/2tb/phd-workspace/nfs/vivin/$subject_directory";
+    my $container_nfs_subject_directory = get_container_nfs_subject_directory($experiment_name, $subject, $version);
+    my $remote_nfs_subject_directory = get_remote_nfs_subject_directory($experiment_name, $subject, $version);
 
-    my $random_initial_sleep = int(rand(30)) + 1;
     return <<~"HERE";
     #!/bin/bash
 
@@ -440,8 +450,9 @@ sub generate_target_script {
 
     # We don't want pods slamming the SSH server at the same time on resume or sync, so we will sleep first before we
     # do anything. This value is generated randomly.
-    log "Sleeping for $random_initial_sleep seconds before starting..."
-    sleep $random_initial_sleep
+    SLEEP=\$((1 + RANDOM % 10))
+    log "Sleeping for \$SLEEP seconds before starting..."
+    sleep \$SLEEP
 
     if [[ -z "\$RESUME" ]]; then
       date +%s >"$container_nfs_subject_directory/results/\$RUN_NAME/$SANDPUPPY_SYNC_DIRECTORY/start_ts"
@@ -496,9 +507,9 @@ sub generate_target_script {
     HERE
 }
 
-# Single target version of the above. Meaning it fuzzes a single target and doesn't try to sync results. Really only
-# used for the main target so that we can fuzz with just vanilla AFL.
-sub generate_single_target_script {
+# Similar to above, but doesn't try to import results from other targets for syncing. Only used for the main target so
+# so that we can fuzz with just vanilla AFL.
+sub generate_startup_script_without_import_sync {
     my $experiment_name = $_[0];
     my $subject = $_[1];
     my $version = $_[2];
@@ -508,11 +519,9 @@ sub generate_single_target_script {
     my $fuzz_command = $_[6];
     my $fuzz_command_with_resume = $_[7];
 
-    my $subject_directory = get_subject_directory($experiment_name, $subject, $version);
-    my $container_nfs_subject_directory = "/private-nfs/vivin/$subject_directory";
-    my $remote_nfs_subject_directory = "/media/2tb/phd-workspace/nfs/vivin/$subject_directory";
+    my $container_nfs_subject_directory = get_container_nfs_subject_directory($experiment_name, $subject, $version);
+    my $remote_nfs_subject_directory = get_remote_nfs_subject_directory($experiment_name, $subject, $version);
 
-    my $random_initial_sleep = int(rand(30)) + 1;
     return <<~"PLAIN";
     #!/bin/bash
 
@@ -610,8 +619,11 @@ sub generate_single_target_script {
     mkdir -p /home/vivin/.ssh/ctl
     cp /private-nfs/vivin/sandpuppy-pod-key /home/vivin/sandpuppy-pod-key
 
-    log "Sleeping for $random_initial_sleep seconds before starting..."
-    sleep $random_initial_sleep
+    # We don't want pods slamming the SSH server at the same time on resume or sync, so we will sleep first before we
+    # do anything. This value is generated randomly.
+    SLEEP=\$((1 + RANDOM % 10))
+    log "Sleeping for \$SLEEP seconds before starting..."
+    sleep \$SLEEP
 
     if [[ -z "\$RESUME" ]]; then
       date +%s >"$container_nfs_subject_directory/results/\$RUN_NAME/$SANDPUPPY_SYNC_DIRECTORY/start_ts"

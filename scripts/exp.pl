@@ -124,12 +124,12 @@ if ($task ne "spfuzz" && $task ne "spvanillafuzz" && !tasks::subject_has_task($s
 }
 
 if ($task eq "build") {
-    tasks::initialize_workspace($experiment_name, $subject, $version);
+    tasks::initialize_subject_directory($experiment_name, $subject, $version);
     tasks::build($experiment_name, $subject, $version, $waypoints, $binary_context, {});
 } else {
-    my $workspace = utils::get_workspace($experiment_name, $subject, $version);
-    if (! -d $workspace) {
-        die "Cannot run $task because experiment and subject workspace $workspace does not exist";
+    my $subject_directory = utils::get_subject_directory($experiment_name, $subject, $version);
+    if (! -d $subject_directory) {
+        die "Cannot run $task because subject directory $subject_directory does not exist";
     }
 
     if ($task eq "fuzz") {
@@ -139,11 +139,9 @@ if ($task eq "build") {
             tasks::fuzz($experiment_name, $subject, $version, $waypoints, $binary_context, $execution_context, { resume => $resume });
         }
     } elsif ($task eq "spfuzz" || $task eq "spvanillafuzz") {
-        my $subject_directory = utils::get_subject_directory($experiment_name, $subject, $version);
-        my $local_nfs_subject_directory = "/mnt/vivin-nfs/vivin/$subject_directory";
-
-        if (-d "$local_nfs_subject_directory/results/$run_name/sandpuppy-sync" && !$resume) {
-            die "Results directory already exists at $local_nfs_subject_directory/results/$run_name/sandpuppy-sync! Maybe try resuming?";
+        my $nfs_subject_directory = utils::get_nfs_subject_directory($experiment_name, $subject, $version);
+        if (-d "$nfs_subject_directory/results/$run_name/sandpuppy-sync" && !$resume) {
+            die "Results directory already exists at $nfs_subject_directory/results/$run_name/sandpuppy-sync! Maybe try resuming?";
         }
 
         if ($task eq "spfuzz") {

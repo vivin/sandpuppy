@@ -8,10 +8,10 @@ use YAML::XS;
 use utils;
 
 my $log = Log::Simple::Color->new;
-my $BASEPATH = glob "~/Projects/phd";
-my $TOOLS = "$BASEPATH/tools";
-my $RESOURCES = "$BASEPATH/resources";
-my $SUBJECTS = "$BASEPATH/subjects";
+my $BASE_PATH = glob "~/Projects/phd";
+my $TOOLS = "$BASE_PATH/tools";
+my $RESOURCES = "$BASE_PATH/resources";
+my $SUBJECTS = "$BASE_PATH/subjects";
 
 sub build {
     my $experiment_name = $_[0];
@@ -21,9 +21,9 @@ sub build {
     my $binary_context = $_[4];
     my $options = $_[5];
 
-    my $workspace = utils::get_workspace($experiment_name, $subject, $version);
+    my $subject_directory = utils::get_subject_directory($experiment_name, $subject, $version);
 
-    my $binary_base = "$workspace/binaries";
+    my $binary_base = "$subject_directory/binaries";
     my $binary_dir =  "$binary_base/$binary_context";
     my $binary_name = "smbc";
     utils::create_binary_dir({
@@ -121,7 +121,7 @@ sub get_fuzz_command {
         $exec_context,
         utils::merge($options, {
             binary_arguments => "$binary_arguments",
-            hang_timeout     => $waypoints =~ /vvdump/ ? "100000+" : 1000,
+            hang_timeout     => $waypoints =~ /vvdump/ ? "100000+" : "500",
             slow_target      => $waypoints =~ /vvdump/,
             no_arithmetic    => $waypoints =~ /vvdump/,
             seeds_directory  => "$RESOURCES/seeds/smbc"

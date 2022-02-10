@@ -25,8 +25,8 @@ use libtins;
 
 my $log = Log::Simple::Color->new;
 
-my $BASEPATH = glob "~/Projects/phd";
-my $TOOLS = "$BASEPATH/tools";
+my $BASE_PATH = glob "~/Projects/phd";
+my $TOOLS = "$BASE_PATH/tools";
 
 my $WAYPOINTS_NONE = "none";
 my $SANDPUPPY_MAIN_TARGET_NAME = "sandpuppy-main";
@@ -235,7 +235,7 @@ sub create_fuzz_task {
     }
 }
 
-sub initialize_workspace {
+sub initialize_subject_directory {
     my $experiment_name = $_[0];
     my $subject = $_[1];
     my $version = $_[2];
@@ -244,20 +244,20 @@ sub initialize_workspace {
         die "No subject named $subject";
     }
 
-    my $workspace = utils::get_workspace($experiment_name, $subject, $version);
-    if (!-d $workspace) {
-        $log->info("Creating $workspace");
-        make_path($workspace);
+    my $subject_directory = utils::get_subject_directory($experiment_name, $subject, $version);
+    if (!-d $subject_directory) {
+        $log->info("Creating $subject_directory");
+        make_path($subject_directory);
     }
 
-    if (!-d "$workspace/binaries") {
-        $log->info("Creating $workspace/binaries");
-        make_path("$workspace/binaries");
+    if (!-d "$subject_directory/binaries") {
+        $log->info("Creating $subject_directory/binaries");
+        make_path("$subject_directory/binaries");
     }
 
-    if (!-d "$workspace/results") {
-        $log->info("Creating $workspace/results");
-        make_path("$workspace/results");
+    if (!-d "$subject_directory/results") {
+        $log->info("Creating $subject_directory/results");
+        make_path("$subject_directory/results");
     }
 }
 
@@ -280,8 +280,8 @@ sub build {
         die "Both backup and use_existing cannot be set";
     }
 
-    my $workspace = utils::get_workspace($experiment_name, $subject, $version);
-    my $binary = "$workspace/binaries/$binary_context/$subjects->{$subject}->{binary_name}";
+    my $subject_directory = utils::get_subject_directory($experiment_name, $subject, $version);
+    my $binary = "$subject_directory/binaries/$binary_context/$subjects->{$subject}->{binary_name}";
 
     my $build_anyway = 0;
     if ($options->{use_existing} && ! -e $binary) {
@@ -298,7 +298,7 @@ sub build {
         my $tasks = $subjects->{$subject}->{tasks};
         $tasks->{build}->($experiment_name, $subject, $version, $waypoints, $binary_context, $options);
 
-        chdir $BASEPATH;
+        chdir $BASE_PATH;
     }
 }
 
@@ -468,156 +468,30 @@ sub vvdump_fuzz {
     }
 }
 
-sub sandpuppy_vanilla_fuzz {
+sub initialize_nfs_subject_directory {
     my $experiment_name = $_[0];
     my $subject = $_[1];
     my $version = $_[2];
-    my $options = $_[3];
+    my $run_name = $_[3];
 
-    # Build main target. This is just vanilla AFL instrumentation.
-    my $main_target = {
-        id                => "vanilla-$SANDPUPPY_MAIN_TARGET_NAME",
-        name              => "vanilla-$SANDPUPPY_MAIN_TARGET_NAME",
-        experiment_name   => $experiment_name,
-        subject           => $subject,
-        version           => $version,
-        waypoints         => $WAYPOINTS_NONE,
-        binary_context    => $SANDPUPPY_MAIN_TARGET_NAME . ($options->{use_asan} ? "-asan" : ""),
-        execution_context => $SANDPUPPY_MAIN_TARGET_NAME . ($options->{use_asan} ? "-asan" : "")
-    };
-    build(
-        $experiment_name,
-        $subject,
-        $version,
-        $main_target->{waypoints},
-        $main_target->{binary_context},
-        { use_existing => 1, backup => 0, m32 => $options->{use_asan} }
-    );
-
-    my $full_subject = $subject . ($version ? "-$version" : "");
-    my $run_name = $options->{run_name};
-
-    my $id_to_pod_name_and_target = {};
-
-    $log->info("Vanilla AFL fuzzing using kubernetes requested.\n");
-
-    my $workspace = utils::get_workspace($experiment_name, $subject, $version);
-    my $subject_directory = utils::get_subject_directory($experiment_name, $subject, $version);
-    my $local_nfs_subject_directory = "/mnt/vivin-nfs/vivin/$subject_directory";
-    my $container_nfs_subject_directory = "/private-nfs/vivin/$subject_directory";
-
-    if (! -d $local_nfs_subject_directory) {
-        system("mkdir -p $local_nfs_subject_directory");
+    if (!$subjects->{$subject}) {
+        die "No subject named $subject";
     }
 
-    if (! -d "$local_nfs_subject_directory/results/$run_name") {
-        system("mkdir -p $local_nfs_subject_directory/results/$run_name");
+    my $nfs_subject_directory = utils::get_nfs_subject_directory($experiment_name, $subject, $version);
+    if (!-d $nfs_subject_directory) {
+        $log->info("Creating $nfs_subject_directory");
+        make_path($nfs_subject_directory);
     }
 
-    if (! -d "$local_nfs_subject_directory/binaries") {
-        system("mkdir $local_nfs_subject_directory/binaries");
+    if (!-d "$nfs_subject_directory/binaries") {
+        $log->info("Creating $nfs_subject_directory/binaries");
+        make_path("$nfs_subject_directory/binaries");
     }
 
-    my $main_target_binary_dir = $main_target->{binary_context};
-    if (! -e -d "$local_nfs_subject_directory/binaries/$main_target_binary_dir") {
-        system("mkdir $local_nfs_subject_directory/binaries/$main_target_binary_dir");
-    }
-
-    my @main_target_files = `find "$workspace/binaries/$main_target_binary_dir" -type f | sed -e 's,^.*/,,'`;
-    foreach my $main_target_file (@main_target_files) {
-        chomp($main_target_file);
-
-        my $local_file_path = "$workspace/binaries/$main_target_binary_dir/$main_target_file";
-        my $nfs_file_path = "$local_nfs_subject_directory/binaries/$main_target_binary_dir/$main_target_file";
-
-        if (-e -f $nfs_file_path) {
-            my $ctime_local_file = stat($local_file_path)->ctime;
-            my $ctime_nfs_file = stat($nfs_file_path)->ctime;
-
-            if ($ctime_nfs_file >= $ctime_local_file) {
-                $log->info("Not copying $main_target_binary_dir/$main_target_file because newer version exists on NFS.");
-            } else {
-                $log->info("Copying $main_target_binary_dir/$main_target_file to NFS as it is newer than the existing one.");
-                system("cp $local_file_path $nfs_file_path")
-            }
-        } else {
-            $log->info("Copying $main_target_binary_dir/$main_target_file to NFS.");
-            system("cp $local_file_path $nfs_file_path")
-        }
-    }
-
-    my $pod_name = "$experiment_name-$full_subject-$run_name--$main_target->{id}" . ($options->{use_asan} ? "-asan" : "");
-    $pod_name =~ s/[\._]/-/g; # pod names have restrictions
-
-    $id_to_pod_name_and_target->{$main_target->{id}} = {
-        pod_name    => $pod_name,
-        target_name => $main_target->{name}
-    };
-
-    $log->info("Creating target script for main target...");
-    my $target_script = utils::generate_single_target_script(
-        $experiment_name,
-        $subject,
-        $version,
-        $pod_name,
-        $main_target,
-        $options,
-        pod_fuzz_command(
-            $experiment_name,
-            $subject,
-            $version,
-            $main_target->{waypoints},
-            $main_target->{binary_context},
-            $main_target->{execution_context},
-            {
-                async              => 1,
-                fuzzer_id          => $main_target->{id},
-                parallel_fuzz_mode => "parent",
-                run_name           => $run_name,
-                resume             => 0
-            }
-        ),
-        pod_fuzz_command(
-            $experiment_name,
-            $subject,
-            $version,
-            $main_target->{waypoints},
-            $main_target->{binary_context},
-            $main_target->{execution_context},
-            {
-                async              => 1,
-                fuzzer_id          => $main_target->{id},
-                parallel_fuzz_mode => "parent",
-                run_name           => $run_name,
-                resume             => 1
-            }
-        )
-    );
-
-    open my $TARGET_SCRIPT, ">", "$local_nfs_subject_directory/$main_target->{id}.$run_name";
-    print $TARGET_SCRIPT $target_script;
-    close $TARGET_SCRIPT;
-
-    system "chmod 755 $local_nfs_subject_directory/$main_target->{id}.$run_name";
-
-    print "\n";
-
-    my $pod_command = "$container_nfs_subject_directory/$main_target->{id}.$run_name $run_name" . ($options->{resume} ? " resume" : "");
-    my $pod_create_command = "kuboid/scripts/pod_create -n \"$pod_name\" -s /tmp/sandpuppy.existing -i vivin/sandpuppy $pod_command";
-
-    $log->info("Preparing to create and run kubernetes pod for target...");
-
-    my $id_to_pod_name_and_target_file = "$local_nfs_subject_directory/results/$run_name/id_to_pod_name_and_target.yml";
-    YAML::XS::DumpFile($id_to_pod_name_and_target_file, $id_to_pod_name_and_target);
-
-    #if (1) {
-    #    exit(0);
-    #}
-
-    $log->info("Creating pod $pod_name for target $main_target->{id}");
-    system ($pod_create_command);
-    if ($? != 0) {
-        print "Creating pod failed: $!\n";
+    if (!-d "$nfs_subject_directory/results/$run_name") {
+        $log->info("Creating $nfs_subject_directory/results");
+        make_path("$nfs_subject_directory/results/$run_name");
     }
 }
 
@@ -626,6 +500,10 @@ sub sandpuppy_fuzz {
     my $subject = $_[1];
     my $version = $_[2];
     my $options = $_[3];
+
+    my $run_name = $options->{run_name};
+    my $id_to_pod_name_and_target = {};
+    my $pod_information = {};
 
     # Generate variables files and build targets using the output from the analysis phase (which should be stored
     # under the results for the provided execution_context). The analysis phase identifies interesting variables to
@@ -637,261 +515,82 @@ sub sandpuppy_fuzz {
         $options
     );
 
-    my $num_targets = scalar @{$targets} + 1; # Account for main target
-
-    my $full_subject = $subject . ($version ? "-$version" : "");
-    my $run_name = $options->{run_name};
-
-    my $id_to_pod_name_and_target = {};
-    my $pod_name_to_create_command = {};
+    # Add main target to targets array. We don't need to treat it differently.
+    unshift @{$targets}, $main_target;
+    my $num_targets = scalar @{$targets};
 
     $log->info("Fuzzing using kubernetes requested.\n");
 
-    my $workspace = utils::get_workspace($experiment_name, $subject, $version);
-    my $subject_directory = utils::get_subject_directory($experiment_name, $subject, $version);
-    my $local_nfs_subject_directory = "/mnt/vivin-nfs/vivin/$subject_directory";
-    my $container_nfs_subject_directory = "/private-nfs/vivin/$subject_directory";
+    initialize_nfs_subject_directory($experiment_name, $subject, $version, $run_name);
 
-    if (! -d $local_nfs_subject_directory) {
-        system("mkdir -p $local_nfs_subject_directory");
-    }
-
-    if (! -d "$local_nfs_subject_directory/results/$run_name") {
-        system("mkdir -p $local_nfs_subject_directory/results/$run_name");
-    }
-
-    if (! -d "$local_nfs_subject_directory/binaries") {
-        system("mkdir $local_nfs_subject_directory/binaries");
-    }
-
-    my $main_target_binary_dir = $main_target->{binary_context};
-    if (! -e -d "$local_nfs_subject_directory/binaries/$main_target_binary_dir") {
-        system("mkdir $local_nfs_subject_directory/binaries/$main_target_binary_dir");
-    }
-
-    my @main_target_files = `find "$workspace/binaries/$main_target_binary_dir" -type f | sed -e 's,^.*/,,'`;
-    foreach my $main_target_file (@main_target_files) {
-        chomp($main_target_file);
-
-        my $local_file_path = "$workspace/binaries/$main_target_binary_dir/$main_target_file";
-        my $nfs_file_path = "$local_nfs_subject_directory/binaries/$main_target_binary_dir/$main_target_file";
-
-        if (-e -f $nfs_file_path) {
-            my $ctime_local_file = stat($local_file_path)->ctime;
-            my $ctime_nfs_file = stat($nfs_file_path)->ctime;
-
-            if ($ctime_nfs_file >= $ctime_local_file) {
-                $log->info("[1/$num_targets] Not copying $main_target_binary_dir/$main_target_file because newer version exists on NFS.");
-            } else {
-                $log->info("[1/$num_targets] Copying $main_target_binary_dir/$main_target_file to NFS as it is newer than the existing one.");
-                system("cp $local_file_path $nfs_file_path")
-            }
-        } else {
-            $log->info("[1/$num_targets] Copying $main_target_binary_dir/$main_target_file to NFS.");
-            system("cp $local_file_path $nfs_file_path")
-        }
-    }
-
-    my $pod_name = "$experiment_name-$full_subject-$run_name--$main_target->{id}" . ($options->{use_asan} ? "-asan" : "");
-    $pod_name =~ s/[\._]/-/g; # pod names have restrictions
-
-    $id_to_pod_name_and_target->{$main_target->{id}} = {
-        pod_name    => $pod_name,
-        target_name => $main_target->{name}
-    };
-
-    $log->info("[1/$num_targets] Creating target script for main target...");
-    my $target_script = utils::generate_target_script(
-        $experiment_name,
-        $subject,
-        $version,
-        $pod_name,
-        $main_target,
-        $options,
-        pod_fuzz_command(
-            $experiment_name,
-            $subject,
-            $version,
-            $main_target->{waypoints},
-            $main_target->{binary_context},
-            $main_target->{execution_context},
-            {
-                async              => 1,
-                fuzzer_id          => $main_target->{id},
-                parallel_fuzz_mode => "parent",
-                run_name           => $run_name,
-                resume             => 0
-            }
-        ),
-        pod_fuzz_command(
-            $experiment_name,
-            $subject,
-            $version,
-            $main_target->{waypoints},
-            $main_target->{binary_context},
-            $main_target->{execution_context},
-            {
-                async              => 1,
-                fuzzer_id          => $main_target->{id},
-                parallel_fuzz_mode => "parent",
-                run_name           => $run_name,
-                resume             => 1
-            }
-        )
-    );
-
-    open my $TARGET_SCRIPT, ">", "$local_nfs_subject_directory/$main_target->{id}.$run_name";
-    print $TARGET_SCRIPT $target_script;
-    close $TARGET_SCRIPT;
-
-    system "chmod 755 $local_nfs_subject_directory/$main_target->{id}.$run_name";
-
-    print "\n";
-
-    my $pod_command = "$container_nfs_subject_directory/$main_target->{id}.$run_name $run_name" . ($options->{resume} ? " resume" : "");
-    $pod_name_to_create_command->{$pod_name} = {
-        target   => $main_target->{id},
-        command  => "kuboid/scripts/pod_create -n \"$pod_name\" -s /tmp/sandpuppy.existing -i vivin/sandpuppy $pod_command",
-        sort_key => "a" # so that it always shows up first
-    };
-
-    my $i = 2; # Account for main target
+    my $i = 1;
     foreach my $target (@{$targets}) {
-        my $target_binary_dir = $target->{binary_context};
-        if (! -e -d "$local_nfs_subject_directory/binaries/$target_binary_dir") {
-            system("mkdir $local_nfs_subject_directory/binaries/$target_binary_dir");
-        }
+        $log->info("[$i/$num_targets] Copying $target->{binary_context} ($target->{id}) files...");
+        copy_target_files_to_nfs($experiment_name, $subject, $version, $target);
+        print "\n";
 
-        my @target_files = `find "$workspace/binaries/$target_binary_dir" -type f | sed -e 's,^.*/,,'`;
-        foreach my $target_file (@target_files) {
-            chomp($target_file);
-
-            my $local_file_path = "$workspace/binaries/$target_binary_dir/$target_file";
-            my $nfs_file_path = "$local_nfs_subject_directory/binaries/$target_binary_dir/$target_file";
-
-            if (-e -f $nfs_file_path) {
-                my $ctime_local_file = stat($local_file_path)->ctime;
-                my $ctime_nfs_file = stat($nfs_file_path)->ctime;
-
-                if ($ctime_nfs_file >= $ctime_local_file) {
-                    $log->info("[$i/$num_targets] Not copying $target_binary_dir/$target_file because it already exists on NFS and is newer.");
-                } else {
-                    $log->info("[$i/$num_targets] Copying $target_binary_dir/$target_file to NFS as it is newer than the existing one..");
-                    system("cp $local_file_path $nfs_file_path")
-                }
-            } else {
-                $log->info("[$i/$num_targets] Copying $target_binary_dir/$target_file to NFS.");
-                system("cp $local_file_path $nfs_file_path")
-            }
-        }
-
-        my $asan_suffix = ($options->{use_asan} ? "-asan" : "");
-        $pod_name = $target->{waypoints} eq "vvmax" ?
-            "$experiment_name-$full_subject-$run_name--$target->{id}$asan_suffix" :
-            "$experiment_name-$full_subject-$run_name--$target->{id}-$target->{waypoints}$asan_suffix";
-        $pod_name =~ s/[\._]/-/g; # pod names have restrictions
+        $log->info("[$i/$num_targets] Generating pod information for $target->{name} ($target->{id})...");
+        my ($pod_name, $target_pod_information) = generate_pod_information_for_target(
+            $experiment_name,
+            $subject,
+            $version,
+            $target,
+            $options
+        );
 
         $id_to_pod_name_and_target->{$target->{id}} = {
             pod_name    => $pod_name,
             target_name => $target->{name}
         };
+        $pod_information->{$pod_name} = $target_pod_information;
 
-        $log->info("[$i/$num_targets] Creating target script for $target->{name}...");
-        $target_script = utils::generate_target_script(
-            $experiment_name,
-            $subject,
-            $version,
-            $pod_name,
-            $target,
-            $options,
-            pod_fuzz_command(
-                $experiment_name,
-                $subject,
-                $version,
-                $target->{waypoints},
-                $target->{binary_context},
-                $target->{execution_context},
-                {
-                    async              => 1,
-                    fuzzer_id          => $target->{id},
-                    parallel_fuzz_mode => "child",
-                    run_name           => $run_name,
-                    resume             => 0
-                    #exit_when_done      => 1
-                }
-            ),
-            pod_fuzz_command(
-                $experiment_name,
-                $subject,
-                $version,
-                $target->{waypoints},
-                $target->{binary_context},
-                $target->{execution_context},
-                {
-                    async              => 1,
-                    fuzzer_id          => $target->{id},
-                    parallel_fuzz_mode => "child",
-                    run_name           => $run_name,
-                    resume             => 1
-                    #exit_when_done      => 1
-                }
-            )
-        );
-
-        open $TARGET_SCRIPT, ">", "$local_nfs_subject_directory/$target->{id}.$run_name";
-        print $TARGET_SCRIPT $target_script;
-        close $TARGET_SCRIPT;
-
-        system "chmod 755 $local_nfs_subject_directory/$target->{id}.$run_name";
-
-        $pod_command = "$container_nfs_subject_directory/$target->{id}.$run_name $run_name" . ($options->{resume} ? " resume" : "");
-        $pod_name_to_create_command->{$pod_name} = {
-            target   => $target->{id},
-            command  => "kuboid/scripts/pod_create -n \"$pod_name\" -s /tmp/sandpuppy.existing -i vivin/sandpuppy $pod_command",
-            sort_key => $target->{name}
-        };
-
-        print "\n";
         $i++;
+        print "\n";
     }
 
     $log->info("Preparing to create and run kubernetes pods for targets...");
 
-    my $id_to_pod_name_and_target_file = "$local_nfs_subject_directory/results/$run_name/id_to_pod_name_and_target.yml";
+    my $nfs_subject_directory = utils::get_nfs_subject_directory($experiment_name, $subject, $version);
+    my $id_to_pod_name_and_target_file = "$nfs_subject_directory/results/$run_name/id_to_pod_name_and_target.yml";
     YAML::XS::DumpFile($id_to_pod_name_and_target_file, $id_to_pod_name_and_target);
-
-    #if (1) {
-    #    exit(0);
-    #}
 
     $log->info("Getting list of existing pods (so that we don't recreate)...");
     system ("kuboid/scripts/pod_names > /tmp/sandpuppy.existing");
 
     my $existing_pods = 0;
     $i = 1;
-    foreach $pod_name (sort { $pod_name_to_create_command->{$a}->{sort_key} cmp $pod_name_to_create_command->{$b}->{sort_key} } keys %{$pod_name_to_create_command}) {
-        my $target = $pod_name_to_create_command->{$pod_name}->{target};
-        my $command = $pod_name_to_create_command->{$pod_name}->{command};
+    foreach my $pod_name (sort { $pod_information->{$a}->{sort_key} cmp $pod_information->{$b}->{sort_key} } keys %{$pod_information}) {
+        my $target_id = $pod_information->{$pod_name}->{target_id};
+        my $startup_script = $pod_information->{$pod_name}->{startup_script};
+        my $startup_script_name = $pod_information->{$pod_name}->{startup_script_name};
+        my $create_command = $pod_information->{$pod_name}->{create_command};
 
         # Check to see if the pod already exists. If it does, we don't want to create it
         system("kubectl get pod $pod_name >/dev/null 2>&1");
         if ($? != 0) {
-            $log->info("[$i/$num_targets] Creating pod $pod_name for target $target");
-            system ($command);
+            $log->info("[$i/$num_targets] Writing out startup script for pod $pod_name (target $target_id)...");
+
+            open my $TARGET_SCRIPT, ">", "$nfs_subject_directory/$startup_script_name";
+            print $TARGET_SCRIPT $startup_script;
+            close $TARGET_SCRIPT;
+
+            system "chmod 755 $nfs_subject_directory/$startup_script_name";
+
+            $log->info("[$i/$num_targets] Creating pod $pod_name for target $target_id");
+            system $create_command;
             if ($? != 0) {
-                print "[$i/$num_targets] Creating pod failed: $!\n";
+                $log->error("[$i/$num_targets] Creating pod failed: $!");
             }
         } else {
-            $log->info("[$i/$num_targets] Skipping existing pod $pod_name for target $target");
+            $log->info("[$i/$num_targets] Skipping existing pod $pod_name for target $target_id");
             $existing_pods++;
         }
 
         print "\n";
-
         $i++;
     }
 
-    my $requested_pods = (scalar @{$targets} + 1) - $existing_pods;
+    my $requested_pods = (scalar @{$targets}) - $existing_pods;
     my $num_finished = 0;
     until ($num_finished == $requested_pods) {
         my $status_counts = {};
@@ -915,14 +614,93 @@ sub sandpuppy_fuzz {
     }
 }
 
+sub sandpuppy_vanilla_fuzz {
+    my $experiment_name = $_[0];
+    my $subject = $_[1];
+    my $version = $_[2];
+    my $options = $_[3];
+
+    my $run_name = $options->{run_name};
+    my $id_to_pod_name_and_target = {};
+
+    # Build main target. This is just vanilla AFL instrumentation.
+    my $main_target = {
+        id                => "vanilla-$SANDPUPPY_MAIN_TARGET_NAME",
+        name              => "vanilla-$SANDPUPPY_MAIN_TARGET_NAME",
+        experiment_name   => $experiment_name,
+        subject           => $subject,
+        version           => $version,
+        waypoints         => $WAYPOINTS_NONE,
+        binary_context    => $SANDPUPPY_MAIN_TARGET_NAME . ($options->{use_asan} ? "-asan" : ""),
+        execution_context => $SANDPUPPY_MAIN_TARGET_NAME . ($options->{use_asan} ? "-asan" : "")
+    };
+    build(
+        $experiment_name,
+        $subject,
+        $version,
+        $main_target->{waypoints},
+        $main_target->{binary_context},
+        { use_existing => 1, backup => 0, m32 => $options->{use_asan} }
+    );
+
+    $log->info("Vanilla AFL fuzzing using kubernetes requested.\n");
+
+    initialize_nfs_subject_directory($experiment_name, $subject, $version, $run_name);
+
+    $log->info("Copying $main_target->{binary_context} ($main_target->{id}) files...");
+    copy_target_files_to_nfs($experiment_name, $subject, $version, $main_target);
+    print "\n";
+
+    $log->info("Generating pod information for $main_target->{name} ($main_target->{id})...");
+    my ($pod_name, $target_pod_information) = generate_pod_information_for_target(
+        $experiment_name,
+        $subject,
+        $version,
+        $main_target,
+        $options
+    );
+    print "\n";
+
+    $id_to_pod_name_and_target->{$main_target->{id}} = {
+        pod_name    => $pod_name,
+        target_name => $main_target->{name}
+    };
+
+    my $nfs_subject_directory = utils::get_nfs_subject_directory($experiment_name, $subject, $version);
+    my $id_to_pod_name_and_target_file = "$nfs_subject_directory/results/$run_name/id_to_pod_name_and_target.yml";
+    YAML::XS::DumpFile($id_to_pod_name_and_target_file, $id_to_pod_name_and_target);
+
+    my $startup_script = $target_pod_information->{startup_script};
+    my $startup_script_name = $target_pod_information->{startup_script_name};
+    my $create_command = $target_pod_information->{create_command};
+
+    $log->info("Writing out startup script for pod $pod_name (target $main_target->{id})...");
+
+    open my $TARGET_SCRIPT, ">", "$nfs_subject_directory/$startup_script_name";
+    print $TARGET_SCRIPT $startup_script;
+    close $TARGET_SCRIPT;
+
+    system "chmod 755 $nfs_subject_directory/$startup_script_name";
+
+    #if (1) {
+    #    exit(0);
+    #}
+
+    $log->info("Creating pod $pod_name for target $main_target->{id}");
+    system $create_command;
+    if ($? != 0) {
+        $log->error("Creating pod failed: $!");
+    }
+}
+
 sub build_sandpuppy_targets {
     my $experiment_name = $_[0];
     my $subject = $_[1];
     my $version = $_[2];
     my $options = $_[3];
 
-    my $workspace = utils::get_workspace($experiment_name, $subject, $version);
-    my $results_dir = "$workspace/results";
+    my $subject_directory = utils::get_subject_directory($experiment_name, $subject, $version);
+    my $results_dir = "$subject_directory/results";
     if (! -d $results_dir) {
         die "Could not find results directory $results_dir to use for sandpuppy fuzzing.";
     }
@@ -1086,8 +864,8 @@ sub build_sandpuppy_targets {
             my $second_variable = $variables_entry->{second_variable};
             my $second_min = $variables_entry->{second_min};
             my $second_max = $variables_entry->{second_max};
-            foreach my $slot_size (1, 4) {
-            #foreach my $slot_size (1, 4, 8, 16, 32, 64) {
+            #foreach my $slot_size (1, 4) {
+            foreach my $slot_size (1, 4, 8, 16, 32, 64) {
                 # If both the maximum and minimum values of the second variable end up being in the same slot, let's
                 # skip this pair because it's no different than maximizing the first variable by itself.
                 next if (int $second_min / $slot_size) == (int $second_max / $slot_size);
@@ -1129,19 +907,7 @@ sub build_sandpuppy_targets {
         }
     }
 
-    # Set AFL_INST_RATIO to 1. We will turn off regular AFL instrumentation completely because we already have an
-    # AFL-instrumented version that will be used in the parent fuzzer. The only instrumentation for binaries that will
-    # be fuzzed on child fuzzers will be vvmax, vvperm, or vvhash depending on what variables were identified as
-    # interesting.
-    # $ENV{"AFL_INST_RATIO"} = 1;
-
-    # We will combine all the grouped targets above into a single array. We interleave vvperm and vvhash targets just
-    # so that when we fuzz, both groups get a chance at the beginning, as we have a limited number of cores. There is no
-    # real performance advantage versus running one group after the other, but we will at least be able to see how both
-    # groups are performing without waiting for one to finish. Right now we will use this array to build our targets
-    # and then return it so that we can use it to maintain information about the corresponding child fuzzer processes
-    # that we will spawn, allowing us to track how well they are doing.
-    #my @targets = @{utils::interleave($grouped_targets->{perm}, $grouped_targets->{hash})};
+    # We combine all the grouped targets above into a single array.
     my @targets = (@{$grouped_targets->{perm}}, @{$grouped_targets->{hash}}, @{$grouped_targets->{max2}});
     unshift @targets, $grouped_targets->{max} if $grouped_targets->{max};
 
@@ -1172,13 +938,126 @@ sub build_sandpuppy_targets {
     return $main_target, \@targets;
 }
 
+sub copy_target_files_to_nfs {
+    my $experiment_name = $_[0];
+    my $subject = $_[1];
+    my $version = $_[2];
+    my $target = $_[3];
+
+    my $nfs_subject_directory = utils::get_nfs_subject_directory($experiment_name, $subject, $version);
+    my $nfs_target_binary_directory = "$nfs_subject_directory/binaries/$target->{binary_context}";
+    if (! -e -d $nfs_target_binary_directory) {
+        make_path($nfs_target_binary_directory);
+    }
+
+    my $subject_directory = utils::get_subject_directory($experiment_name, $subject, $version);
+    my $target_binary_directory = "$subject_directory/binaries/$target->{binary_context}";
+    my @target_files = `find "$target_binary_directory" -type f | sed -e 's,^.*/,,'`;
+    foreach my $target_file (@target_files) {
+        chomp($target_file);
+
+        my $target_file_path = "$target_binary_directory/$target_file";
+        my $nfs_target_file_path = "$nfs_target_binary_directory/$target_file";
+
+        if (-e -f $nfs_target_file_path) {
+            my $ctime_local_target_file = stat($target_file_path)->ctime;
+            my $ctime_nfs_target_file = stat($nfs_target_file_path)->ctime;
+
+            if ($ctime_nfs_target_file >= $ctime_local_target_file) {
+                $log->info("  Not copying $target_file because it already exists on the NFS and is newer.");
+            } else {
+                $log->info("  Copying $target_file to the NFS as it is newer than the existing one..");
+                system "cp $target_file_path $nfs_target_file_path";
+            }
+        } else {
+            $log->info("  Copying $target_file to the NFS.");
+            system "cp $target_file_path $nfs_target_file_path";
+        }
+    }
+}
+
+sub generate_pod_information_for_target {
+    my $experiment_name = $_[0];
+    my $subject = $_[1];
+    my $version = $_[2];
+    my $target = $_[3];
+    my $options = $_[4];
+
+    my $is_main_target = ($target->{name} =~ /$SANDPUPPY_MAIN_TARGET_NAME$/);
+    my $full_subject = $subject . ($version ? "-$version" : "");
+    my $run_name = $options->{run_name};
+    my $asan_suffix = ($options->{use_asan} ? "-asan" : "");
+
+    my $pod_name;
+    if ($is_main_target == 1) {
+        $pod_name = "$experiment_name-$full_subject-$run_name--$target->{id}$asan_suffix";
+    } else {
+        $pod_name = $target->{waypoints} eq "vvmax" ?
+            "$experiment_name-$full_subject-$run_name--$target->{id}$asan_suffix" :
+            "$experiment_name-$full_subject-$run_name--$target->{id}-$target->{waypoints}$asan_suffix";
+    }
+
+    $pod_name =~ s/[\._]/-/g; # pod names have restrictions
+
+    my $startup_script = utils::generate_startup_script(
+        $experiment_name,
+        $subject,
+        $version,
+        $pod_name,
+        $target,
+        $options,
+        pod_fuzz_command(
+            $experiment_name,
+            $subject,
+            $version,
+            $target->{waypoints},
+            $target->{binary_context},
+            $target->{execution_context},
+            {
+                async              => 1,
+                fuzzer_id          => $target->{id},
+                parallel_fuzz_mode => ($is_main_target ? "parent" : "child"),
+                run_name           => $run_name,
+                resume             => 0
+                #exit_when_done      => 1
+            }
+        ),
+        pod_fuzz_command(
+            $experiment_name,
+            $subject,
+            $version,
+            $target->{waypoints},
+            $target->{binary_context},
+            $target->{execution_context},
+            {
+                async              => 1,
+                fuzzer_id          => $target->{id},
+                parallel_fuzz_mode => ($is_main_target ? "parent" : "child"),
+                run_name           => $run_name,
+                resume             => 1
+                #exit_when_done      => 1
+            }
+        )
+    );
+
+    my $container_nfs_subject_directory = utils::get_container_nfs_subject_directory($experiment_name, $subject, $version);
+    my $pod_command = "$container_nfs_subject_directory/$target->{id}.$run_name $run_name" . ($options->{resume} ? " resume" : "");
+    return $pod_name, {
+        target_id           => $target->{id},
+        startup_script      => $startup_script,
+        startup_script_name => "$target->{id}.$run_name",
+        create_command      => "kuboid/scripts/pod_create -n \"$pod_name\" -s /tmp/sandpuppy.existing -i vivin/sandpuppy $pod_command",
+        sort_key            => ($is_main_target ? "a" : $target->{name}) # "a" so that main target is always first
+    };
+}
+
 sub can_resume {
     my $experiment_name = $_[0];
     my $subject = $_[1];
     my $version = $_[2];
 
-    my $workspace = utils::get_workspace($experiment_name, $subject, $version);
-    my $results_dir = "$workspace/results";
+    my $subject_directory = utils::get_subject_directory($experiment_name, $subject, $version);
+    my $results_dir = "$subject_directory/results";
     my $sync_dir = "$results_dir/$SANDPUPPY_SYNC_DIRECTORY";
     if (! -d $sync_dir) {
         return 0;
