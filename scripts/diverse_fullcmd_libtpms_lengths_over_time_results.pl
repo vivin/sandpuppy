@@ -42,7 +42,7 @@ if (-e -f $fuzzer_stats_filename) {
 
         foreach my $hour(0..120) {
             $fuzzer_stats->{$fuzzer}->{command_sequence_lengths_over_time}->{$hour} = [];
-            $fuzzer_stats->{$fuzzer}->{unique_sequences_over_time}->{$hour} = 0;
+            $fuzzer_stats->{$fuzzer}->{unique_sequences_found_over_time}->{$hour} = 0;
         }
     }
 }
