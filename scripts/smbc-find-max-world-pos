@@ -35,7 +35,7 @@ function format_seconds {
 echo "Finding maximum world positions for smbc (level: $LEVEL)"
 echo "Identifying smbc targets in experiment $EXPERIMENT (run: $RUN_NAME)..."
 
-STATE_DIR="/home/vivin/.script-state/$(basename "$0")"
+STATE_DIR="/home/vivin/.script-state/$(basename "$0")/$RUN_NAME"
 mkdir -p "$STATE_DIR"
 
 BASE_PATH="/mnt/vivin-nfs"
@@ -75,8 +75,8 @@ for i in "${!targets[@]}"; do
 
   echo "[$((i + 1))/${#targets[@]}] Checking $target ($id) for input resulting in maximum world position..."
   saved_max_world_pos_input_filename=""
-  if [[ -f "$STATE_DIR/$RUN_NAME-$id.max" ]]; then
-    saved_max_world_pos_input_filename=$(cat "$STATE_DIR/$RUN_NAME-$id.max")
+  if [[ -f "$STATE_DIR/$id.max" ]]; then
+    saved_max_world_pos_input_filename=$(cat "$STATE_DIR/$id.max")
   fi
 
   INPUTS_DIR="$SUBJECT_DIR/results/$RUN_NAME/sandpuppy-sync/$id/queue";
@@ -97,7 +97,7 @@ for i in "${!targets[@]}"; do
     # Check to see if we have already processed this file. If so, skip it unless it is the file that gave us the
     # maximum world position. The reason we don't skip it is because we want to compare its world position against
     # any new files, and if there aren't any new files, we can just report the previously identified file.
-    if [[ -f "$STATE_DIR/$RUN_NAME-$id-$filename" ]] && [[ "$filename" != "$saved_max_world_pos_input_filename" ]]; then
+    if [[ -f "$STATE_DIR/$id-$filename" ]] && [[ "$filename" != "$saved_max_world_pos_input_filename" ]]; then
       echo -ne "Skipping input file $j of $num_inputs\r";
       continue
 
@@ -123,7 +123,7 @@ for i in "${!targets[@]}"; do
       max_world_pos=$end_world_pos
       max_pos_y=$end_pos_y
 
-      echo "$filename" > "$STATE_DIR/$RUN_NAME-$id.max"
+      echo "$filename" > "$STATE_DIR/$id.max"
 
       if [[ "$end_world_pos" -gt "$overall_max_world_pos" ]]; then
         overall_max_world_pos=$end_world_pos
@@ -131,7 +131,7 @@ for i in "${!targets[@]}"; do
     fi
 
     # Create an empty file representing this input file in the state dir, signifying that we have processed it.
-    touch "$STATE_DIR/$RUN_NAME-$id-$filename"
+    touch "$STATE_DIR/$id-$filename"
   done < <(find "$INPUTS_DIR" -maxdepth 1 -type f \( -name "id:*" ! -name "*,sync:*" \) -print0 | sort -z)
 
   printf '%s\n\n' "$max_world_pos_info"
