@@ -109,7 +109,9 @@ sub output_fuzzer_stats {
     my $fuzzer = $_[0];
 
     my $command_sequence_lengths_over_time = $fuzzer_stats->{$fuzzer}->{command_sequence_lengths_over_time};
-    my @average_command_sequence_lengths_over_time = map { mean @{$command_sequence_lengths_over_time->{$_}} } (0..120);
+    my @average_command_sequence_lengths_over_time = map {
+        scalar @{$command_sequence_lengths_over_time->{$_}} > 0 ? mean @{$command_sequence_lengths_over_time->{$_}} : 0
+    } (0..120);
     my @unique_sequences_found_over_time = map { $fuzzer_stats->{$fuzzer}->{unique_sequences_found_over_time}->{$_} } (0..120);
 
     open OUT, ">", "$RESULTS_DIR/$fuzzer" . "-lengths.txt" if !$print_only;
@@ -129,7 +131,7 @@ sub process_commands_for_input {
     my $start_time = $_[2];
 
     chomp(my $input_found_time = `stat -c '%Y' "$file"`);
-    my $hour = floor ($input_found_time - $start_time) / (60 * 60);
+    my $hour = floor (($input_found_time - $start_time) / (60 * 60));
 
     my $command_sequences = $fuzzer_stats->{$fuzzer}->{command_sequences};
     my $command_sequence_lengths_for_hour = $fuzzer_stats->{$fuzzer}->{command_sequence_lengths_over_time}->{$hour};
