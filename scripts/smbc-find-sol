@@ -111,17 +111,18 @@ for i in "${!targets[@]}"; do
 
     if [[ "$end_world_pos" -ge "$world_solution_pos" && ("$diff" -lt "$solution_found_time" || "$filename" == "$saved_world_solution_pos_input_filename") ]]; then
       solution_info=$(printf "Target: %s (%s)\nPod: %s\nLevel: %s\nRun: %s\nMaximum World Position: (%s, %s)\n from %s (found after %s of fuzzing)\nCommand:\n resources/smbc %s video < %s" "$target" "$id" "$pod_name" "$LEVEL" "$RUN_NAME" "$end_world_pos" "$end_pos_y" "$filename" "$pretty_diff" "$LEVEL" "$input_file_path")
-      max_world_pos_info="World Position: ($end_world_pos, $end_pos_y) from $filename (found after $pretty_diff of fuzzing)"
+      world_pos_info="World Position: ($end_world_pos, $end_pos_y) from $filename (found after $pretty_diff of fuzzing)"
 
       echo "$filename" > "$STATE_DIR/l$LEVEL.solution"
       echo "$diff" > "$STATE_DIR/l$LEVEL.solution_found_time"
+
+
+      printf '%s\n\n' "$world_pos_info"
     fi
 
     # Create an empty file representing this input file in the state dir, signifying that we have processed it.
     touch "$STATE_DIR/$id-$filename"
   done < <(find "$INPUTS_DIR" -maxdepth 1 -type f \( -name "id:*" ! -name "*,sync:*" \) -print0 | sort -z)
-
-  printf '%s\n\n' "$max_world_pos_info"
 done
 
 printf '%s\n\n' "$solution_info"
