@@ -127,3 +127,4 @@ for i in "${!targets[@]}"; do
 done
 
 printf '%s\n\n' "$solution_info"
+echo "$solution_info" > "$SUBJECT_DIR/results/solution.$RUN_NAME"
