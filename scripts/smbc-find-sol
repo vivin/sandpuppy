@@ -59,7 +59,7 @@ done < <(find "$SUBJECT_DIR/results/$RUN_NAME/sandpuppy-sync" -maxdepth 1 -minde
 
 echo ""
 
-world_solution_pos=$(grep "$LEVEL:" resources/level-solution-pos.txt | sed -e 's,^.*:,,')
+world_solution_pos=$(grep "^$LEVEL:" resources/level-solution-pos.txt | sed -e 's,^.*:,,')
 solution_info=""
 saved_world_solution_pos_input_filename=""
 solution_found_time=99999999
