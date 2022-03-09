@@ -110,7 +110,8 @@ for i in "${!targets[@]}"; do
     end_pos_y=$(echo "$end_coordinate" | sed -e 's/^.*,//' | sed -e 's,\s,,g')
 
     if [[ "$end_world_pos" -ge "$world_solution_pos" && ("$diff" -lt "$solution_found_time" || "$filename" == "$saved_world_solution_pos_input_filename") ]]; then
-      solution_found_time=$diff 
+      echo "solution found time is $solution_found_time and this diff is $diff"
+      solution_found_time=$diff
       solution_info=$(printf "Target: %s (%s)\nPod: %s\nLevel: %s\nRun: %s\nMaximum World Position: (%s, %s)\n from %s (found after %s of fuzzing)\nCommand:\n resources/smbc %s video < %s" "$target" "$id" "$pod_name" "$LEVEL" "$RUN_NAME" "$end_world_pos" "$end_pos_y" "$filename" "$pretty_diff" "$LEVEL" "$input_file_path")
       world_pos_info="World Position: ($end_world_pos, $end_pos_y) from $filename (found after $pretty_diff of fuzzing)"
 
