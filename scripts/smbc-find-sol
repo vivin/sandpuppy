@@ -1,0 +1,128 @@
+#!/bin/bash
+
+if [[ $# -lt 2 ]]; then
+  echo "$0 <experiment> <level> <run-name>"
+  exit 1
+fi
+
+EXPERIMENT=$1
+LEVEL=$2
+RUN_NAME=$3
+
+declare -a targets=()
+declare -A target_to_pod_name=()
+declare -A target_to_id=()
+
+function format_seconds {
+  local formatted=""
+
+  local T=$1
+  local D=$((T/60/60/24))
+  local H=$((T/60/60%24))
+  local M=$((T/60%60))
+  local S=$((T%60))
+  (( $D > 0 )) && formatted="$D days "
+  (( $H > 0 )) && formatted="$formatted$H hours "
+  (( $M > 0 )) && formatted="$formatted$M minutes"
+  (( $D > 0 || $H > 0 || $M > 0 )) && formatted="$formatted and "
+  formatted="$formatted$S seconds"
+
+  echo "$formatted"
+}
+
+echo "Finding solutions for smbc (level: $LEVEL)"
+echo "Identifying smbc targets in experiment $EXPERIMENT (run: $RUN_NAME)..."
+
+STATE_DIR="/home/vivin/.script-state/$(basename "$0")/$RUN_NAME"
+BASE_PATH="/mnt/vivin-nfs"
+if [[ ! -d "$BASE_PATH" ]]; then
+  BASE_PATH="/media/2tb/phd-workspace/nfs"
+  STATE_DIR="/media/2tb/phd-workspace/script-data/$(basename "$0")/$RUN_NAME"
+fi
+
+mkdir -p "$STATE_DIR"
+
+SUBJECT_DIR="$BASE_PATH/vivin/$EXPERIMENT/smbc"
+id_to_pod_name_and_target_file="$SUBJECT_DIR/results/$RUN_NAME/id_to_pod_name_and_target.yml"
+while IFS= read -r -d '' target_dir
+do
+  # shellcheck disable=SC2001
+  id=$(echo "$target_dir" | sed -e 's,^.*/,,')
+  pod_name_and_target=$(grep -A2 "^$id" "$id_to_pod_name_and_target_file" | tail -2)
+  pod_name=$(echo "$pod_name_and_target" | head -1 | sed -e 's/^.*pod_name: //')
+  target_name=$(echo "$pod_name_and_target" | tail -1 | sed -e 's/^.*target_name: //' | sed -e 's/\.home.*source\././')
+
+  targets+=("$target_name")
+  target_to_pod_name[$target_name]="$pod_name"
+  target_to_id[$target_name]="$id"
+done < <(find "$SUBJECT_DIR/results/$RUN_NAME/sandpuppy-sync" -maxdepth 1 -mindepth 1 -type d -print0 | sort -z)
+
+echo ""
+
+world_solution_pos=$(grep "$LEVEL:" resources/level-solution-pos.txt | sed -e 's,^.*:,,')
+solution_info=""
+saved_world_solution_pos_input_filename=""
+solution_found_time=99999999
+if [[ -f "$STATE_DIR/l$LEVEL.solution" ]]; then
+  saved_world_solution_pos_input_filename=$(cat "$STATE_DIR/l$LEVEL.solution")
+  solution_found_time=$(cat "$STATE_DIR/l$LEVEL.solution_found_time")
+fi
+
+for i in "${!targets[@]}"; do
+  target=${targets[$i]}
+  if [[ "$target" =~ "sleep:" ]] && [[ "$target" =~ "idle:" ]]; then # These take for EVER and are unlikely to contain solutions anyway
+    continue
+  fi
+
+  pod_name=${target_to_pod_name[$target]}
+  id=${target_to_id[$target]}
+
+  echo "[$((i + 1))/${#targets[@]}] Checking $target ($id) for solutions..."
+
+  INPUTS_DIR="$SUBJECT_DIR/results/$RUN_NAME/sandpuppy-sync/$id/queue";
+  fuzz_start_time=$(stat -c '%Y' "$INPUTS_DIR/id:000000,orig:first.txt")
+  j=0
+  num_inputs=$(find "$INPUTS_DIR" -maxdepth 1 -type f \( -name "id:*" ! -name "*,sync:*" \) | wc -l)
+  while IFS= read -r -d '' input_file_path
+  do
+    j=$(( j + 1 ))
+
+    # Check to see if we have already processed this file. If so, skip it unless it is the file that gave us the
+    # maximum world position. The reason we don't skip it is because we want to compare its world position against
+    # any new files, and if there aren't any new files, we can just report the previously identified file.
+    if [[ -f "$STATE_DIR/$id-$filename" ]] && [[ "$filename" != "$saved_world_solution_pos_input_filename" ]]; then
+      echo -ne "Skipping input file $j of $num_inputs\r";
+      continue
+
+    else
+      echo -ne "Checking input file $j of $num_inputs\r";
+    fi
+
+    # shellcheck disable=SC2001
+    filename=$(basename "$input_file_path")
+    mtime=$(stat -c '%Y' "$input_file_path")
+    diff=$((mtime - fuzz_start_time))
+    pretty_diff=$(format_seconds $diff)
+
+    end_coordinate=$(resources/smbc "$LEVEL" trace < "$input_file_path" | tail -2 | head -1)
+    # shellcheck disable=SC2001
+    end_world_pos=$(echo "$end_coordinate" | sed -e 's/,.*$//')
+    # shellcheck disable=SC2001
+    end_pos_y=$(echo "$end_coordinate" | sed -e 's/^.*,//' | sed -e 's,\s,,g')
+
+    if [[ "$end_world_pos" -ge "$world_solution_pos" && ("$diff" -lt "$solution_found_time" || "$filename" == "$saved_world_solution_pos_input_filename") ]]; then
+      solution_info=$(printf "Target: %s (%s)\nPod: %s\nLevel: %s\nRun: %s\nMaximum World Position: (%s, %s)\n from %s (found after %s of fuzzing)\nCommand:\n resources/smbc %s video < %s" "$target" "$id" "$pod_name" "$LEVEL" "$RUN_NAME" "$end_world_pos" "$end_pos_y" "$filename" "$pretty_diff" "$LEVEL" "$input_file_path")
+      max_world_pos_info="World Position: ($end_world_pos, $end_pos_y) from $filename (found after $pretty_diff of fuzzing)"
+
+      echo "$filename" > "$STATE_DIR/l$LEVEL.solution"
+      echo "$diff" > "$STATE_DIR/l$LEVEL.solution_found_time"
+    fi
+
+    # Create an empty file representing this input file in the state dir, signifying that we have processed it.
+    touch "$STATE_DIR/$id-$filename"
+  done < <(find "$INPUTS_DIR" -maxdepth 1 -type f \( -name "id:*" ! -name "*,sync:*" \) -print0 | sort -z)
+
+  printf '%s\n\n' "$max_world_pos_info"
+done
+
+printf '%s\n\n' "$solution_info"
