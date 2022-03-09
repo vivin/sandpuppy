@@ -90,16 +90,15 @@ for i in "${!targets[@]}"; do
     # Check to see if we have already processed this file. If so, skip it unless it is the file that gave us the
     # maximum world position. The reason we don't skip it is because we want to compare its world position against
     # any new files, and if there aren't any new files, we can just report the previously identified file.
+    filename=$(basename "$input_file_path")
     if [[ -f "$STATE_DIR/$id-$filename" ]] && [[ "$filename" != "$saved_world_solution_pos_input_filename" ]]; then
       echo -ne "Skipping input file $j of $num_inputs\r";
       continue
-
     else
       echo -ne "Checking input file $j of $num_inputs\r";
     fi
 
     # shellcheck disable=SC2001
-    filename=$(basename "$input_file_path")
     mtime=$(stat -c '%Y' "$input_file_path")
     diff=$((mtime - fuzz_start_time))
     pretty_diff=$(format_seconds $diff)
