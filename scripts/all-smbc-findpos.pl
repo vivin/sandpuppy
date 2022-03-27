@@ -8,11 +8,13 @@ if (! -d $BASE_PATH) {
 }
 
 my $output_file = "$BASE_PATH/vivin/smartdsf/smbc/results/max_world_pos.txt";
-while (1) {
-  foreach my $level(0, 2, 3, 4, 5, 7) {
+#while (1) {
+  foreach my $level(2, 3, 4) {
     print "Level: $level\n";
 
     foreach my $run(1, 2, 3, 4, 5) {
+      next if ! -d "$BASE_PATH/vivin/smartdsf/smbc/results/l$level-run-$run";
+
       print " Run: $run\n";
 
       system "scripts/smbc-find-max-world-pos smartdsf $level l$level-run-$run >> $output_file.tmp 2>&1";
@@ -22,6 +24,7 @@ while (1) {
     print "\n";
   }
 
-  system "mv $output_file.tmp $output_file";
-  sleep 300;
-}
+  system "cp $output_file.tmp $output_file";
+  system "truncate -s 0 $output_file.tmp";
+  #  sleep 60;
+  #}

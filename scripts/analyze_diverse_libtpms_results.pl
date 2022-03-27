@@ -11,8 +11,8 @@ if ($ARGV[0] && $ARGV[0] eq "print") {
     die "Usage: $0 sandpuppy | afl-plain | aflplusplus-(plain | lafintel | redqueen)\n";
 }
 
-my $STATE_DIR = glob "~/.script-state/$0";
-make_path $STATE_DIR;
+#my $STATE_DIR = glob "~/.script-state/$0";
+#make_path $STATE_DIR;
 
 my $BASE_PATH = "/mnt/vivin-nfs";
 if (! -d $BASE_PATH) {
@@ -92,13 +92,15 @@ foreach my $fuzzer(@fuzzers) {
         while (my $file = <FILES>) {
             chomp $file;
 
-            my $state_file = "$STATE_DIR/$session-$file";
-            if (-e -f $state_file) {
-                print "Skipping input " . (++$count) . " of $num_files (already processed)\r";
-            } elsif ($file =~ /id:/ && $file !~ /,sync:/) {
+            #my $state_file = "$STATE_DIR/$session-$file";
+            #if (-e -f $state_file) {
+            #    print "Skipping input " . (++$count) . " of $num_files (already processed)\r";
+            #} els
+            
+            if ($file =~ /id:/ && $file !~ /,sync:/) {
                 print "Processing input " . (++$count) . " of $num_files                   \r";
                 process_commands_for_input("$dir/$file", $fuzzer);
-                system "touch $state_file";
+                #system "touch $state_file";
             }
         }
         close FILES;
