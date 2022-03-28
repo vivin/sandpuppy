@@ -23,11 +23,11 @@ make_path $OUTPUT_RESULTS_DIR;
 my @runs = (
     "minus-vvhash",
     "minus-vvmax",
-    "minus-vvmax",
+    "minus-vvmax2",
     "minus-vvperm",
     "only-vvhash",
     "only-vvmax",
-    "only-vvmax",
+    "only-vvmax2",
     "only-vvperm",
     "sp-original",
     "sp-random"
