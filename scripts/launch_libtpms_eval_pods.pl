@@ -10,9 +10,9 @@ foreach my $fuzzer("afl-plain", "aflplusplus-plain", "aflplusplus-lafintel", "af
         $sync_prefix = "aflplusplus-redq";
     }
 
-    system "kuboid/scripts/pod_create -n \"smartdsf-libtpms-di-ec-run--$fuzzer-main\" -i vivin/sandpuppy /private-nfs/vivin/smartdsf/libtpms/diverse-seeds-$fuzzer di-ec-run $sync_prefix-main\n";
+    system "kuboid/scripts/pod_create -n \"smartdsf-libtpms-di-ec-run--$fuzzer-main\" -i vivin/sandpuppy /private-nfs/vivin/smartdsf/libtpms/diverse-seeds-$fuzzer di-ec-run $sync_prefix-main";
     foreach my $child(1..48) {
-        system "kuboid/scripts/pod_create -n \"smartdsf-libtpms-di-ec-run--$fuzzer-child-$child\" -i vivin/sandpuppy /private-nfs/vivin/smartdsf/libtpms/diverse-seeds-$fuzzer di-ec-run $sync_prefix-c$child\n";
+        system "kuboid/scripts/pod_create -n \"smartdsf-libtpms-di-ec-run--$fuzzer-child-$child\" -i vivin/sandpuppy /private-nfs/vivin/smartdsf/libtpms/diverse-seeds-$fuzzer di-ec-run $sync_prefix-c$child";
     }
 }
 

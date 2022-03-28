@@ -28,6 +28,8 @@ def graph_classes(path, variables, classes):
     if len(variables) == 0:
         return
 
+    plt.rcParams["font.family"] = "Times New Roman"
+
     def scatter_plot_feature(dataset, feature_name, dimension_reduction_method, graph_type):
         print(f"Plotting {dimension_reduction_method} {graph_type} scatter-plot graph for {feature_name} "
               f"colored by its value")
@@ -100,17 +102,16 @@ def graph_classes(path, variables, classes):
         if clustering_method == "kmeans":
             title_clustering_method = "k-means"
 
-        formatted_title = f"Variables classified using {title_clustering_method} " \
-                          f"after {dimension_reduction_method} Projection"
+        formatted_title = f"{title_clustering_method} clustering after {dimension_reduction_method} Projection"
         if clustering_method == "manual":
-            formatted_title = f"Variables classified manually and projected using {dimension_reduction_method}"
+            formatted_title = f"Classified manually and projected using {dimension_reduction_method}"
 
         if graph_type == "2d":
             ax = fig.add_subplot()
         else:
             ax = fig.add_subplot(projection='3d')
 
-        ax.set_title(formatted_title)
+        ax.set_title(formatted_title, size=16)
 
         for label, group in grouped_by_label:
             if graph_type == "2d":
@@ -125,7 +126,8 @@ def graph_classes(path, variables, classes):
 
         # Put a legend to the right of the current axis
         if graph_type == "2d":
-            ax.legend(loc='center left', bbox_to_anchor=(1.025, 0.5))
+            #ax.legend(loc='center left', bbox_to_anchor=(1.025, 0.5))
+            ax.legend(loc='lower right', bbox_to_anchor=(0.5, 0., 0.5, 0.5), prop={'size': 12})
         else:
             ax.legend(loc='center left', bbox_to_anchor=(1.05, 0.5))
 
@@ -148,7 +150,7 @@ def graph_classes(path, variables, classes):
 
         plt.savefig(
             f"{clustering_path}/{dimension_reduction_method}_{graph_type}_{clustering_method}.png",
-            bbox_inches="tight"
+            bbox_inches="tight", pad_inches=0.03
         )
         plt.close(fig)
 

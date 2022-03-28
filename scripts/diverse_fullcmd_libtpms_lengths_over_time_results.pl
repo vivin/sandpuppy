@@ -48,9 +48,11 @@ if (-e -f $fuzzer_stats_filename) {
 }
 
 if ($print_only) {
-    foreach my $fuzzer(keys %{$fuzzer_stats}) {
+    foreach my $fuzzer(sort {$a cmp $b} keys %{$fuzzer_stats}) {
         output_fuzzer_stats($fuzzer);
     }
+
+    exit 0;
 }
 
 foreach my $fuzzer(@fuzzers) {
@@ -111,18 +113,30 @@ sub output_fuzzer_stats {
     my $command_sequence_lengths_over_time = $fuzzer_stats->{$fuzzer}->{command_sequence_lengths_over_time};
     my @average_command_sequence_lengths_over_time = map {
         scalar @{$command_sequence_lengths_over_time->{$_}} > 0 ? mean @{$command_sequence_lengths_over_time->{$_}} : 0
-    } (0..120);
-    my @unique_sequences_found_over_time = map { $fuzzer_stats->{$fuzzer}->{unique_sequences_found_over_time}->{$_} } (0..120);
+    } (0..110);
+    my @unique_sequences_found_over_time = map { $fuzzer_stats->{$fuzzer}->{unique_sequences_found_over_time}->{$_} } (0..110);
 
-    open OUT, ">", "$RESULTS_DIR/$fuzzer" . "-lengths.txt" if !$print_only;
+    open OUT, ">", "$RESULTS_DIR/$fuzzer" . "-lengths.txt";
 
     print "Results for fuzzer $fuzzer\n\n";
-    print OUT "Results for fuzzer $fuzzer\n\n" if !$print_only;
+    print OUT "Results for fuzzer $fuzzer\n\n";
 
     print "  Average command sequence lengths over time: [" . (join ", ", @average_command_sequence_lengths_over_time) . "]\n";
-    print OUT "  Average command sequence lengths over time: [" . (join ", ", @average_command_sequence_lengths_over_time) . "]\n" if !$print_only;
+    print OUT "  Average command sequence lengths over time: [" . (join ", ", @average_command_sequence_lengths_over_time) . "]\n";
+
     print "  Unique sequences found over time: [" . (join ", ", @unique_sequences_found_over_time) . "]\n\n";
-    print OUT "  Unique sequences found over time: [" . (join ", ", @unique_sequences_found_over_time) . "]\n\n" if !$print_only;
+    print OUT "  Unique sequences found over time: [" . (join ", ", @unique_sequences_found_over_time) . "]\n\n";
+
+    close OUT;
+
+    print "Writing command sequence lengths over time to $RESULTS_DIR/$fuzzer-cslot.dat...";
+    open CSLOT, ">", "$RESULTS_DIR/$fuzzer" . "-cslot.dat";
+    foreach my $hour(0..110) {
+        print CSLOT join " ", @{$command_sequence_lengths_over_time->{$hour}};
+        print CSLOT "\n";
+    }
+    close CSLOT;
+    print "done\n\n";
 }
 
 sub process_commands_for_input {

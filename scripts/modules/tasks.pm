@@ -515,6 +515,8 @@ sub sandpuppy_fuzz {
         $options
     );
 
+    #if (1) { exit(0); }
+
     # Add main target to targets array. We don't need to treat it differently.
     unshift @{$targets}, $main_target;
     my $num_targets = scalar @{$targets};
@@ -550,6 +552,7 @@ sub sandpuppy_fuzz {
 
     $log->info("Preparing to create and run kubernetes pods for targets...");
 
+    my $subject_directory = utils::get_subject_directory($experiment_name, $subject, $version);
     my $nfs_subject_directory = utils::get_nfs_subject_directory($experiment_name, $subject, $version);
     my $id_to_pod_name_and_target_file = "$nfs_subject_directory/results/$run_name/id_to_pod_name_and_target.yml";
     YAML::XS::DumpFile($id_to_pod_name_and_target_file, $id_to_pod_name_and_target);
@@ -576,11 +579,21 @@ sub sandpuppy_fuzz {
 
             system "chmod 755 $nfs_subject_directory/$startup_script_name";
 
+            $log->info("[$i/$num_targets] Writing out pod-creation script.");
+
+            open my $POD_CREATION_SCRIPT, ">", "$subject_directory/$startup_script_name.create";
+            print $POD_CREATION_SCRIPT "$create_command\n";
+            close $POD_CREATION_SCRIPT;
+
+            system "chmod 755 $subject_directory/$startup_script_name.create";
+
             $log->info("[$i/$num_targets] Creating pod $pod_name for target $target_id");
             system $create_command;
             if ($? != 0) {
                 $log->error("[$i/$num_targets] Creating pod failed: $!");
             }
+
+
         } else {
             $log->info("[$i/$num_targets] Skipping existing pod $pod_name for target $target_id");
             $existing_pods++;
@@ -666,6 +679,7 @@ sub sandpuppy_vanilla_fuzz {
         target_name => $main_target->{name}
     };
 
+    my $subject_directory = utils::get_subject_directory($experiment_name, $subject, $version);
     my $nfs_subject_directory = utils::get_nfs_subject_directory($experiment_name, $subject, $version);
     my $id_to_pod_name_and_target_file = "$nfs_subject_directory/results/$run_name/id_to_pod_name_and_target.yml";
     YAML::XS::DumpFile($id_to_pod_name_and_target_file, $id_to_pod_name_and_target);
@@ -681,6 +695,14 @@ sub sandpuppy_vanilla_fuzz {
     close $TARGET_SCRIPT;
 
     system "chmod 755 $nfs_subject_directory/$startup_script_name";
+
+    $log->info("Writing out pod creation script for pod $pod_name (target $main_target->{id})...");
+
+    open my $POD_CREATION_SCRIPT, ">", "$subject_directory/$startup_script_name.create";
+    print $POD_CREATION_SCRIPT "$create_command\n";
+    close $POD_CREATION_SCRIPT;
+
+    system "chmod 755 $subject_directory/$startup_script_name.create";
 
     #if (1) {
     #    exit(0);
@@ -746,6 +768,7 @@ sub build_sandpuppy_targets {
     my $interesting_variables = YAML::XS::LoadFile($interesting_variables_file);
     if (scalar @{$interesting_variables->{hash}} == 0 &&
         scalar @{$interesting_variables->{max}} == 0 &&
+        scalar @{$interesting_variables->{max2}} == 0 &&
         scalar @{$interesting_variables->{perm}} == 0) {
         die "No targeted variables in file $interesting_variables_file";
     }
@@ -864,8 +887,8 @@ sub build_sandpuppy_targets {
             my $second_variable = $variables_entry->{second_variable};
             my $second_min = $variables_entry->{second_min};
             my $second_max = $variables_entry->{second_max};
-            #foreach my $slot_size (1, 4) {
-            foreach my $slot_size (1, 4, 8, 16, 32, 64) {
+            foreach my $slot_size (1) {#, 4) {
+            #foreach my $slot_size (1, 4, 8, 16, 32, 64) {
                 # If both the maximum and minimum values of the second variable end up being in the same slot, let's
                 # skip this pair because it's no different than maximizing the first variable by itself.
                 next if (int $second_min / $slot_size) == (int $second_max / $slot_size);

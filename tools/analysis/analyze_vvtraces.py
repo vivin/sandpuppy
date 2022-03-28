@@ -6,6 +6,7 @@ import warnings
 import concurrent.futures
 import yaml
 import bz2
+import random
 import pickle
 import _pickle as c_pickle
 
@@ -92,6 +93,14 @@ def main(experiment: str, subject: str, binary: str, execution: str, action: str
         interesting_variables = identify_interesting_variables(variables_by_filename_and_function)
         with open(f"{base_results_path}/sandpuppy_interesting_variables.yml", "w") as f:
             yaml.dump(interesting_variables, f, default_flow_style=False, indent=2)
+    elif action == "random_variable_instrumentation":
+        print("Identifying random set of variables to instrument...")
+        print("")
+
+        variables_by_filename_and_function = load_classification_results(analysis_data_path, "classification_results")
+        random_variables = random_variable_instrumentation(variables_by_filename_and_function)
+        with open(f"{base_results_path}/sandpuppy_interesting_variables_random.yml", "w") as f:
+            yaml.dump(random_variables, f, default_flow_style=False, indent=2)
     else:
         start_time = datetime.now()
 
@@ -141,14 +150,100 @@ def main(experiment: str, subject: str, binary: str, execution: str, action: str
         print(f"Finished in {hours} hours, {minutes} minutes, and {seconds} seconds")
 
 
+def connect_to_cassandra():
+    auth_provider = PlainTextAuthProvider(username='phd', password='phd')
+    cluster = Cluster(protocol_version=4, auth_provider=auth_provider)
+    session = cluster.connect('phd')
+
+    return session
+
+
+def random_variable_instrumentation(variables_by_filename_and_function):
+    retrieved_variables = []
+    for filename in variables_by_filename_and_function:
+        for function in variables_by_filename_and_function[filename]:
+            retrieved_variables += variables_by_filename_and_function[filename][function]['variables']
+
+    random.shuffle(retrieved_variables)
+
+    interesting_variables = {
+        'max': [],
+        'perm': [],
+        'hash': [],
+        'max2': []
+    }
+
+    # 10 random variables for vvmax
+    for variable in random.sample(retrieved_variables, 10):
+        filename = variable['filename']
+        function = variable['function']
+        interesting_variables['max'].append(f"{filename}:{function}:{variable['name']}:{variable['declared_line']}")
+
+    # 10 random variables for vvperm
+    for variable in random.sample(retrieved_variables, 10):
+        filename = variable['filename']
+        function = variable['function']
+        interesting_variables['perm'].append({
+            'variable': f"{filename}:{function}:{variable['name']}:{variable['declared_line']}",
+            'max': variable['features']['most_max_value'],
+            'min': variable['features']['most_min_value']
+        })
+
+    # 5 random pairs for hash and max2
+    num_pairs_identified = 0
+    while num_pairs_identified < 5:
+        filename = random.sample(variables_by_filename_and_function.keys(), 1)[0]
+        function = random.sample(variables_by_filename_and_function[filename].keys(), 1)[0]
+
+        # Function needs to have at least two variables
+        if len(variables_by_filename_and_function[filename][function]['variables']) < 2:
+            continue
+
+        pair = random.sample(variables_by_filename_and_function[filename][function]['variables'], 2)
+
+        first_variable = f"{filename}:{function}:{pair[0]['name']}:{pair[0]['declared_line']}"
+        first_min = pair[0]['features']['most_min_value']
+        first_max = pair[0]['features']['most_max_value']
+
+        second_variable = f"{filename}:{function}:{pair[1]['name']}:{pair[1]['declared_line']}"
+        second_min = pair[1]['features']['most_min_value']
+        second_max = pair[1]['features']['most_max_value']
+
+        # We may end up with constants, but we don't care because this is a random sampling. Since the orchestrator
+        # tries to be smart about it as far as generating targets based on the max, min and slot sizes, let us make
+        # sure it does not ignore situations where we have constants.
+        if first_min == first_max:
+            first_max = first_min + 1
+        if second_min == second_max:
+            second_max = second_min + 1
+
+        interesting_variables['hash'].append([first_variable, second_variable])
+
+        # Two entries per pair: maximize variable 1 with respect to variable 2 and
+        # variable 2 with respect to variable 1.
+        interesting_variables['max2'] += [{
+            'first_variable': first_variable,
+            'second_variable': second_variable,
+            'second_min': second_min,
+            'second_max': second_max
+        }, {
+            'first_variable': second_variable,
+            'second_variable': first_variable,
+            'second_min': first_min,
+            'second_max': first_max
+        }]
+
+        num_pairs_identified += 1
+
+    return interesting_variables
+
+
 def classify_variables(experiment: str, subject: str, binary: str, execution: str, action: str):
     base_results_path = f"{BASE_WORKSPACE_PATH}/{experiment}/{subject}/results"
     results_path = f"{base_results_path}/{execution}"
     analysis_data_path = f"{results_path}/analysis_data"
 
-    auth_provider = PlainTextAuthProvider(username='phd', password='phd')
-    cluster = Cluster(protocol_version=4, auth_provider=auth_provider)
-    session = cluster.connect('phd')
+    session = connect_to_cassandra()
 
     print("Identifying files, functions, and variables...")
     retrieved_variables, variables_by_filename_and_function = retrieve_variables(session, subject)
@@ -418,7 +513,7 @@ def load_classification_results(path, filename):
 def save_classification_results(path, filename, classification_results):
     classification_results_file = f"{path}/{filename}.pbz2"
     with bz2.BZ2File(classification_results_file, "w") as f:
-        c_pickle.dump(classification_results, f);
+        c_pickle.dump(classification_results, f)
 
     print(f"Saved classification results to {classification_results_file}")
 
