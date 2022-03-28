@@ -15,38 +15,38 @@ my %levels_with_solutions = (
 );
 
 my %level_to_world = (
-    0  => "1-1",
-    2  => "1-2",
-    3  => "1-3",
-    4  => "1-4", # solution is when position >= 2236
-    5  => "2-1",
+    0  => "1-1", # solution is when position >= 3142
+    2  => "1-2", # 2664 or thereabouts
+    3  => "1-3", # 2409
+    4  => "1-4", # solution is when position >= 2234
+    5  => "2-1", # solution is when position >= 3009 (2, 3 running)
     7  => "2-2", # solution is when position >= 3013
-    8  => "2-3", # solution is when position >= 3574
-    9  => "2-4", # solution is when position >= 2251
-    10 => "3-1",
-    11 => "3-2",
-    12 => "3-3",
-    13 => "3-4",
-    14 => "4-1",
-    16 => "4-2",
-    17 => "4-3",
-    18 => "4-4",
-    19 => "5-1",
-    20 => "5-2",
-    21 => "5-3",
-    22 => "5-4",
-    23 => "6-1",
-    24 => "6-2",
-    25 => "6-3",
-    26 => "6-4",
-    27 => "7-1",
-    29 => "7-2",
-    30 => "7-3",
-    31 => "7-4",
-    32 => "8-1",
-    33 => "8-2",
-    34 => "8-3",
-    35 => "8-4"
+    8  => "2-3", # solution is when position >= 3572
+    9  => "2-4", # solution is when position >= 2234
+    10 => "3-1", # solution is when position >= 3174 (run 2, 3 ongoing)
+    11 => "3-2", # solution is when position >= 3317
+    12 => "3-3", # solution is when position >= 2393
+    13 => "3-4", # solution is when position >= 2234
+    14 => "4-1", # solution is when position >= 3572
+    16 => "4-2", # 3556 warp zone. lower is likely for actual solution
+    17 => "4-3", # solution is when position >= 2329
+    18 => "4-4", # no solution
+    19 => "5-1", # solution is when position >= 3158
+    20 => "5-2", # solution is when position >= 3174
+    21 => "5-3", # solution is when position >= 2409
+    22 => "5-4", # solution is when position >= 2234 (or thereabouts)
+    23 => "6-1", # solution is when position >= 2951
+    24 => "6-2", # solution is when position >= 3429 (run 3 ongoing)
+    25 => "6-3", # solution is when position >= 2648
+    26 => "6-4", # solution is when position >= 2234 (or thereabouts)
+    27 => "7-1", # solution is when position >= 2839
+    29 => "7-2", # solution is when position >= 3013
+    30 => "7-3", # solution is when position >= 3572
+    31 => "7-4", # solution is when position >= 3276 (or thereabouts)
+    32 => "8-1", # need 1, 2, 3
+    33 => "8-2", # 3429 (1/3)
+    34 => "8-3", # solution is when position >= 3397
+    35 => "8-4"  # solution is when position >= 4784,4809
 );
 my $level_to_best_sandpuppy_results = {};
 my $level_to_best_vanilla_results = {};
@@ -97,7 +97,7 @@ while (my $line = <RESULTS>) {
 
     if (!$level_to_best_results->{$level}) {
         $level_to_best_results->{$level} = {
-            max_world_pos    => 0,
+            max_world_pos    => -1,
             target           => "",
             run              => "",
             coordinate       => "",

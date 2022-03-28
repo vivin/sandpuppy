@@ -19,7 +19,7 @@ for (my $i = 0; $i < $num_test_files; $i ++) {
     my $filename = `head /dev/urandom | tr -dc A-Za-z0-9 | head -c13`;
 
     my %used_files = ();
-    my $num_commands = 3 + int(rand(2));
+    my $num_commands = 5 + int(rand(6));
     for (my $j = 0; $j < $num_commands; $j ++) {
         my $file = $files[int(rand($total_files))];
         while ($used_files{$file}) {

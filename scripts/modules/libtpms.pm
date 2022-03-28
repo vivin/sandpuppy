@@ -132,7 +132,8 @@ sub build {
     }
 
     # Use -Xlinker -rpath <path> instead of -Wl,-rpath,<path> because the latter breaks when paths contain commas.
-    system ("$build_command $libtpms_resources/readtpmc.c -I$libtpms_src_dir/include -L$safe_binary_dir -lb64 -ltpms -Xlinker -rpath $safe_binary_dir -o $binary_dir/$binary_name\n");
+    #system ("$build_command $libtpms_resources/readtpmc.c -I$libtpms_src_dir/include $libtpms_src_dir/src/.libs/libtpms.a $libtpms_src_dir/src/.libs/libtpms_tpm2.a $binary_dir/libb64.a -lcrypto -lssl -o $binary_dir/$binary_name");
+    system ("$build_command $libtpms_resources/readtpmc.c -I$libtpms_src_dir/include -L$safe_binary_dir -lb64 -ltpms -Xlinker -rpath $safe_binary_dir -o $binary_dir/$binary_name");
     if ($? != 0) {
         delete $ENV{"AFL_USE_ASAN"};
         die "Building readtpmc failed";

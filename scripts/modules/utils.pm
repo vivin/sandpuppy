@@ -207,7 +207,7 @@ sub build_fuzz_command {
     if ($resume) {
         $fuzz_command .= " -i-"
     } elsif ($seeds_directory) {
-        my $subdir = ($waypoints eq "vvdump") ? "tracegen" : "diverse";
+        my $subdir = ($waypoints eq "vvdump") ? "tracegen" : "fuzz";
         $fuzz_command .= " -i $seeds_directory/$subdir";
 
         if ($dictionary_file) {
@@ -364,7 +364,7 @@ sub generate_startup_script {
 
       rsync -az -e "ssh -S '/home/vivin/.ssh/ctl/$target->{id}\@%h:%p'" \\
             --include="fuzzer_stats" --include="queue/" \\
-            --exclude="hangs*/" --exclude="crashes*/" --exclude=".synced/" --exclude="fuzz_bitmap" \\
+            --exclude="hangs*/" --exclude="crashes*/" --exclude=".synced/" --exclude=".state/" --exclude="fuzz_bitmap" \\
             --exclude=".cur_input" --exclude="plot_data" --exclude="fuzzfactory.log" \\
             vivin\@vivin.is-a-geek.net:"\$remote_nfs_target_directory" /out 2> /tmp/rsync.err
     }

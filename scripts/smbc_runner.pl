@@ -22,12 +22,12 @@ foreach my $level(@levels) {
         system "scripts/exp.pl smartdsf spfuzz smbc as l$level-run-$run $resume";
 
         print "Waiting on $total_pods pods to be ready...\n";
-        sleep 5;
+        sleep 3;
 
         chomp(my $ready = `pod_names | grep "l$level-run-$run" | xargs -I% kubectl logs % | grep "All set\\|Copying previous" | wc -l`);
         while ($ready < $total_pods) {
             print "Waiting on " . ($total_pods - $ready) . " pods to be ready...\n";
-            sleep 5;
+            sleep 3;
 
             chomp($ready = `pod_names | grep "l$level-run-$run" | xargs -I% kubectl logs % | grep "All set\\|Copying previous" | wc -l`);
         }
@@ -35,14 +35,14 @@ foreach my $level(@levels) {
         system "scripts/exp.pl smartdsf spvanillafuzz smbc as l$level-vanilla-run-$run $resume";
 
         print "Waiting on $vanilla_pods pods to be ready...\n";
-        sleep 5;
+        sleep 3;
 
         chomp($ready = `pod_names | grep "l$level-vanilla-run-$run" | xargs -I% kubectl logs % | grep "All set\\|Copying previous" | wc -l`);
         while ($ready < $vanilla_pods) {
-            print "Waiting on $vanilla_pods pods to be ready...\n";
-            sleep 5;
+            print "Waiting on $vanilla_pods pod to be ready...\n";
+            sleep 3;
 
-            chomp($ready = `pod_names | grep "l$level-vanilla-run-$run" | xargs -I% kubectl logs % | grep "All set\\|Copying previous" | wc -l`);
+            chomp($ready = `pod_names | grep "l$level-vanilla-run-$run" | xargs -I% kubectl logs % 2> /dev/null | grep "All set\\|Copying previous" | wc -l`);
         }
     }
 }
