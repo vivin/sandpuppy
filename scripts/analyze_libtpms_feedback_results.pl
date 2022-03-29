@@ -25,10 +25,10 @@ my @runs = (
     "minus-vvmax",
     "minus-vvmax2",
     "minus-vvperm",
-#    "only-vvhash",
-#    "only-vvmax",
-#    "only-vvmax2",
-#    "only-vvperm",
+    "only-vvhash",
+    "only-vvmax",
+    "only-vvmax2",
+    "only-vvperm",
     "sp-original",
     "sp-random"
 );
