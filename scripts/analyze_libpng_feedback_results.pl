@@ -3,6 +3,7 @@ use strict;
 use warnings FATAL => 'all';
 use File::Path qw(make_path);
 use Storable qw{lock_store lock_retrieve};
+use POSIX qw{floor};
 use Statistics::Lite qw(mean);
 
 my $print_only;
