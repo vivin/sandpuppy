@@ -61,6 +61,5 @@ target/
 *.iml
 *.tar.gz
 *.tar.bz2
-resources/libpng*
 resources/binutils*
 *.pyc
