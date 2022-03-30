@@ -23,16 +23,16 @@ my $OUTPUT_RESULTS_DIR = "$RESULTS_DIR/feedback";
 make_path $OUTPUT_RESULTS_DIR;
 
 my @runs = (
-    "minus-vvhash",
-    "minus-vvmax",
-    "minus-vvmax2",
-    "minus-vvperm",
-    "only-vvhash",
+    #"minus-vvhash",
+    #"minus-vvmax",
+    #"minus-vvmax2",
+    #"minus-vvperm",
+    #"only-vvhash",
     "only-vvmax",
-    "only-vvmax2",
-    "only-vvperm",
-    "sp-original",
-    "sp-random"
+    #"only-vvmax2",
+    #"only-vvperm",
+    #"sp-original",
+    #"sp-random"
 );
 
 my $feedback_stats = {};
@@ -58,7 +58,12 @@ if ($print_only) {
     }
 }
 
-chomp(my $total_basic_blocks = `cat resources/libpng-basic-blocks.txt | wc -l`);
+open BBS, '<', "resources/libpng-basic-blocks.txt";
+chomp(my @basic_blocks = <BBS>);
+close BBS;
+
+my $total_basic_blocks = scalar @basic_blocks;
+
 foreach my $run(@runs) {
     print "Processing libpng feedback results for run $run...\n\n";
 
@@ -108,6 +113,11 @@ sub output_run_stats {
     print "  Coverage: " . $feedback_stats->{$run}->{coverage} . "\n";
     print OUT "  Coverage: " . $feedback_stats->{$run}->{coverage} . "\n";
 
+    my $basic_blocks_hit = $feedback_stats->{$run}->{basic_blocks_hit};
+    my $coverage_map = "[" . (join ", ", map { $basic_blocks_hit->{$_} ? $basic_blocks_hit->{$_} : 0 } @basic_blocks) . "]";
+    print "  Coverage Map: $coverage_map\n";
+    print OUT "Coverage Map: $coverage_map\n";
+
     close OUT;
     print "done\n\n";
 }
@@ -122,7 +132,12 @@ sub process_stats_for_input_image {
     while (my $line = <BB>) {
         chomp $line;
         $line =~ s/__#BB#__: //;
-        $basic_blocks_hit->{$line} = 1;
+
+        if (!$basic_blocks_hit->{$line}) {
+            $basic_blocks_hit->{$line} = 0;
+        }
+
+        $basic_blocks_hit->{$line}++;
     }
     close BB;
 }
