@@ -141,8 +141,8 @@ sub output_run_stats {
     print "  Average image height over time: [" . (join ", ", @average_image_height_over_time) . "]\n";
     print OUT "  Average image height over time: [" . (join ", ", @average_image_height_over_time) . "]\n";
 
-    print "  Average image width over time: [" . (join ", ", @average_image_width_over_time) . "]\n";
-    print OUT "  Average image width over time: [" . (join ", ", @average_image_width_over_time) . "]\n";
+    print "  Average image width over time: [" . (join ", ", @average_image_width_over_time) . "]\n\n";
+    print OUT "  Average image width over time: [" . (join ", ", @average_image_width_over_time) . "]\n\n";
 
     close OUT;
     print "done\n\n";
@@ -184,6 +184,8 @@ sub process_stats_for_input_image {
         }
     }
     close PNGSTATS;
+
+    print "hour: $hour; image: $height x $width; chunks: $num_chunks; unique chunks: " . (scalar keys %{$chunks}) . "\n";
 
     push @{$number_of_chunks_over_time_for_hour}, $num_chunks;
     push @{$number_of_unique_chunks_over_time_for_hour}, scalar keys %{$chunks};
