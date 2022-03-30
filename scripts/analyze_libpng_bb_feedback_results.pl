@@ -23,16 +23,16 @@ my $OUTPUT_RESULTS_DIR = "$RESULTS_DIR/feedback";
 make_path $OUTPUT_RESULTS_DIR;
 
 my @runs = (
-    #"minus-vvhash",
-    #"minus-vvmax",
-    #"minus-vvmax2",
-    #"minus-vvperm",
-    #"only-vvhash",
+    "minus-vvhash",
+    "minus-vvmax",
+    "minus-vvmax2",
+    "minus-vvperm",
+    "only-vvhash",
     "only-vvmax",
-    #"only-vvmax2",
-    #"only-vvperm",
-    #"sp-original",
-    #"sp-random"
+    "only-vvmax2",
+    "only-vvperm",
+    "sp-original",
+    "sp-random"
 );
 
 my $feedback_stats = {};
