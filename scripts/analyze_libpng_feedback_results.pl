@@ -185,8 +185,6 @@ sub process_stats_for_input_image {
     }
     close PNGSTATS;
 
-    print "hour: $hour; image: $height x $width; chunks: $num_chunks; unique chunks: " . (scalar keys %{$chunks}) . "; $file\n";
-
     push @{$number_of_chunks_over_time_for_hour}, $num_chunks;
     push @{$number_of_unique_chunks_over_time_for_hour}, scalar keys %{$chunks};
     push @{$image_height_over_time_for_hour}, $height;
