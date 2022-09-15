@@ -152,6 +152,8 @@ sub analyze_input_file {
     my $deepest_nesting_level_ref = \$fuzzer_stats->{$fuzzer}->{deepest_nesting_level};
     my $complexities = $fuzzer_stats->{$fuzzer}->{complexities};
 
+    print "File $file\n";
+
     open my $fh, "<", $file or die "Cannot open file $file";
     my $data = decode_json do {local $/; <$fh>};
     close $fh;
