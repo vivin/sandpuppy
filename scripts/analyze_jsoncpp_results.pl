@@ -18,7 +18,7 @@ my $print_only;
 if ($ARGV[0] && $ARGV[0] eq "print") {
    $print_only = 1;
 } elsif ($ARGV[0]) {
-    die "Usage: $0 sandpuppy | afl-plain | aflplusplus-(plain | lafintel | redqueen)\n";
+    die "Usage: $0 [print]\n";
 }
 
 my $BASE_PATH = "/mnt/vivin-nfs";
