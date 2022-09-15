@@ -163,7 +163,7 @@ sub analyze_json {
     my $deepest_nesting_level_ref = \$fuzzer_stats->{$fuzzer}->{deepest_nesting_level};
     my $complexities = $fuzzer_stats->{$fuzzer}->{complexities};
 
-    my ($complexity, $nesting_level) = getComplexity($data, 0);
+    my ($complexity, $nesting_level) = @{getComplexity($data, 0)};
     print "\n======================\nComplexity: $complexity, Nesting level: $nesting_level\n======================\n";
     push @{$complexities}, $complexity;
 
@@ -215,7 +215,7 @@ sub getComplexity {
         my @values_complexity_results = map { getComplexity($_, $current_depth + 1) } values %{$json};
         return [
             $OBJECT_MULTIPLIER * (1 + $avg_keys_complexity + ((sum map { $_->[0] } @values_complexity_results) / scalar @keys)),
-            max map {$_->[1] } @values_complexity_results
+            max map { $_->[1] } @values_complexity_results
         ];
     }
 
