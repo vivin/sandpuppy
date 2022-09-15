@@ -103,7 +103,7 @@ foreach my $fuzzer(@fuzzers) {
                     next;
                 }
 
-                system "/home/vivin/Projects/phd/resources/readjson $dir/$file 2>/dev/null";
+                system "/home/vivin/Projects/phd/resources/readjson $dir/$file 2>&1 >/dev/null";
                 if ($? != 0) {
                     print "Skipping invalid file " . (++$count) . " of $num_files                   \r";
                 } else {
