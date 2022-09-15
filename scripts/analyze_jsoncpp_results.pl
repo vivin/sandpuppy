@@ -7,6 +7,7 @@ use Storable qw{lock_store lock_retrieve};
 use Cpanel::JSON::XS;
 use Scalar::Util qw{looks_like_number};
 use List::Util qw{reduce sum max};
+use Data::Dumper;
 
 my $BOOL_MULTIPLIER = 1;
 my $NUMBER_MULTIPLIER = 1.5;
@@ -113,7 +114,7 @@ foreach my $fuzzer(@fuzzers) {
 
                     eval {
                         my $data = decode_json $contents;
-                        print "$contents\n";
+                        print "\n\n$contents\n\n";
                         print "Processing input " . (++$count) . " of $num_files                   \r";
                         analyze_json($data, $fuzzer);
                         print "\n";
@@ -165,7 +166,7 @@ sub analyze_json {
     my $complexities = $fuzzer_stats->{$fuzzer}->{complexities};
 
     my ($complexity, $nesting_level) = getComplexity($data, 0);
-    print "Complexity: $complexity, Nesting level: $nesting_level\n";
+    print "\n======================\nComplexity: $complexity, Nesting level: $nesting_level\n======================\n";
     push @{$complexities}, $complexity;
 
     if ($nesting_level > $$deepest_nesting_level_ref) {
