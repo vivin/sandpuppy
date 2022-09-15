@@ -21,11 +21,12 @@ if ($ARGV[0] && $ARGV[0] eq "print") {
     die "Usage: $0 [print]\n";
 }
 
+my $SCRIPT_NAME = basename $0;
 my $BASE_PATH = "/mnt/vivin-nfs";
-my $STATE_DIR = "/home/vivin/.script-state/${basename $0}/space-eval";
+my $STATE_DIR = "/home/vivin/.script-state/$SCRIPT_NAME/space-eval";
 if (! -d $BASE_PATH) {
     $BASE_PATH = "/media/2tb/phd-workspace/nfs";
-    $STATE_DIR = "/media/2tb/phd-workspace/script-data/${basename $0}/space-eval";
+    $STATE_DIR = "/media/2tb/phd-workspace/script-data/$SCRIPT_NAME/space-eval";
 }
 
 my $RUN_DIR = "$BASE_PATH/vivin/smartdsf/jsoncpp/results/space-eval";
