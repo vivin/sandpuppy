@@ -29,8 +29,10 @@ if (! -d $BASE_PATH) {
     $STATE_DIR = "/media/2tb/phd-workspace/script-data/$SCRIPT_NAME/space-eval";
 }
 
+make_path $STATE_DIR;
+
 my $RUN_DIR = "$BASE_PATH/vivin/smartdsf/jsoncpp/results/space-eval";
-my $RESULTS_DIR = "$RUN_DIR/aggregated/space-eval";
+my $RESULTS_DIR = "$RUN_DIR/aggregated";
 make_path $RESULTS_DIR;
 
 my @fuzzers = ("afl-plain", "aflplusplus-plain", "aflplusplus-lafintel", "aflplusplus-redqueen", "sandpuppy");
