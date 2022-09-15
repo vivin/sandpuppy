@@ -186,7 +186,7 @@ sub getComplexity {
 
     # string
     if (ref \$json eq "SCALAR") {
-        return [$STRING_MULTIPLIER * log10(length($json)), $current_depth];
+        return [$STRING_MULTIPLIER * (length($json) == 0 ? 0 : log10(length($json))), $current_depth];
     }
 
     # array
