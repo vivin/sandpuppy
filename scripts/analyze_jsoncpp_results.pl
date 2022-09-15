@@ -110,7 +110,6 @@ foreach my $fuzzer(@fuzzers) {
                 } else {
                     open my $fh, "<", "$dir/$file" or die "Cannot open file $dir/$file";
                     my $contents = do {local $/; <$fh>};
-                    print "$dir/$file:\n$contents\n";
                     close $fh;
 
                     my $data = eval { decode_json $contents };
