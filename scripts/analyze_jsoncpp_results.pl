@@ -103,11 +103,11 @@ foreach my $fuzzer(@fuzzers) {
                     next;
                 }
 
-                system "/home/vivin/Projects/phd/resources/readjson $dir/$file";
+                system "/home/vivin/Projects/phd/resources/readjson $dir/$file 2>/dev/null";
                 if ($? != 0) {
                     print "Skipping invalid file " . (++$count) . " of $num_files                   \r";
                 } else {
-                    open my $fh, "<", $file or die "Cannot open file $file";
+                    open my $fh, "<", "$dir/$file" or die "Cannot open file $dir/$file";
                     my $contents = do {local $/; <$fh>};
                     close $fh;
 
