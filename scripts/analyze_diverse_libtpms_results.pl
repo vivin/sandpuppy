@@ -99,7 +99,7 @@ foreach my $fuzzer(@fuzzers) {
             
             if ($file =~ /id:/ && $file !~ /,sync:/) {
                 print "Processing input " . (++$count) . " of $num_files                   \r";
-                process_commands_for_input("$dir/$file", $fuzzer);
+                analyze_input_file("$dir/$file", $fuzzer);
                 #system "touch $state_file";
             }
         }
@@ -176,7 +176,7 @@ sub output_fuzzer_stats {
     }
 }
 
-sub process_commands_for_input {
+sub analyze_input_file {
     my $file = $_[0];
     my $fuzzer = $_[1];
 

@@ -114,7 +114,7 @@ sub build {
 
     chdir $libtpms_base_dir;
 
-    $log->info("Building readtpmc..");
+    $log->info("Building readtpmc...");
 
     # If the binary directory (which we get from the execution context) contains colons then we run into problems when
     # providing it to the linker so that it can find the libtpms libraries that we put there. While no errors are shown

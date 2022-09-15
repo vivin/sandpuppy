@@ -35,7 +35,6 @@ function format_seconds {
 echo "Finding maximum world positions for smbc (level: $LEVEL)"
 echo "Identifying smbc targets in experiment $EXPERIMENT (run: $RUN_NAME)..."
 
-
 STATE_DIR="/home/vivin/.script-state/$(basename "$0")/$RUN_NAME"
 BASE_PATH="/mnt/vivin-nfs"
 if [[ ! -d "$BASE_PATH" ]]; then

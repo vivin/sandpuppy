@@ -22,6 +22,9 @@ use smbc;
 use cgc;
 use dmg2img;
 use libtins;
+use lavam;
+use pcapplusplus;
+use jsoncpp;
 
 my $log = Log::Simple::Color->new;
 
@@ -97,7 +100,7 @@ my $subjects = {
             fuzz             => create_fuzz_task(\&libpng::get_fuzz_command),
             pod_fuzz_command => create_pod_fuzz_command_task(\&libpng::get_fuzz_command)
         },
-        fuzz_time   => 900
+        fuzz_time   => 180
     },
     readelf     => {
         binary_name => "readelf",
@@ -152,6 +155,60 @@ my $subjects = {
             pod_fuzz_command => create_pod_fuzz_command_task(\&libtins::get_fuzz_command)
         },
         fuzz_time   => 360
+    },
+    base64      => {
+        binary_name => "base64",
+        tasks       => {
+            build            => \&lavam::build,
+            fuzz             => create_fuzz_task(\&lavam::get_fuzz_command),
+            pod_fuzz_command => create_pod_fuzz_command_task(\&lavam::get_fuzz_command)
+        },
+        fuzz_time   => 360
+    },
+    md5sum      => {
+        binary_name => "md5sum",
+        tasks       => {
+            build            => \&lavam::build,
+            fuzz             => create_fuzz_task(\&lavam::get_fuzz_command),
+            pod_fuzz_command => create_pod_fuzz_command_task(\&lavam::get_fuzz_command)
+        },
+        fuzz_time   => 360
+    },
+    who         => {
+        binary_name => "who",
+        tasks       => {
+            build            => \&lavam::build,
+            fuzz             => create_fuzz_task(\&lavam::get_fuzz_command),
+            pod_fuzz_command => create_pod_fuzz_command_task(\&lavam::get_fuzz_command)
+        },
+        fuzz_time   => 360
+    },
+    uniq        => {
+        binary_name => "uniq",
+        tasks       => {
+            build            => \&lavam::build,
+            fuzz             => create_fuzz_task(\&lavam::get_fuzz_command),
+            pod_fuzz_command => create_pod_fuzz_command_task(\&lavam::get_fuzz_command)
+        },
+        fuzz_time   => 360
+    },
+    pcapplusplus     => {
+        binary_name => "readpcap",
+        tasks       => {
+            build            => \&pcapplusplus::build,
+            fuzz             => create_fuzz_task(\&pcapplusplus::get_fuzz_command),
+            pod_fuzz_command => create_pod_fuzz_command_task(\&pcapplusplus::get_fuzz_command)
+        },
+        fuzz_time   => 600
+    },
+    jsoncpp     => {
+        binary_name => "readjson",
+        tasks       => {
+            build            => \&jsoncpp::build,
+            fuzz             => create_fuzz_task(\&jsoncpp::get_fuzz_command),
+            pod_fuzz_command => create_pod_fuzz_command_task(\&jsoncpp::get_fuzz_command)
+        },
+        fuzz_time   => 600
     }
 };
 
@@ -592,8 +649,6 @@ sub sandpuppy_fuzz {
             if ($? != 0) {
                 $log->error("[$i/$num_targets] Creating pod failed: $!");
             }
-
-
         } else {
             $log->info("[$i/$num_targets] Skipping existing pod $pod_name for target $target_id");
             $existing_pods++;

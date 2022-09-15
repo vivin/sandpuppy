@@ -7,6 +7,7 @@ import concurrent.futures
 import yaml
 import bz2
 import random
+import hashlib
 import pickle
 import _pickle as c_pickle
 
@@ -87,6 +88,8 @@ def main(experiment: str, subject: str, binary: str, execution: str, action: str
         print("")
 
         variables_by_filename_and_function = load_classification_results(analysis_data_path, "classification_results")
+        print_classification_results(variables_by_filename_and_function)
+        print("")
 
         # We don't need to instrument every single classified variable. Some aren't interesting and there can also
         # be duplicates. So we will only target the interesting ones for instrumentation.
@@ -154,6 +157,7 @@ def connect_to_cassandra():
     auth_provider = PlainTextAuthProvider(username='phd', password='phd')
     cluster = Cluster(protocol_version=4, auth_provider=auth_provider)
     session = cluster.connect('phd')
+    session.default_timeout = 60
 
     return session
 
@@ -538,7 +542,8 @@ def save_classified_variables(path, filename, variables):
 
 def load_variable_traces_info(path, variable):
     fqn = variable['fqn']
-    variable_traces_info_file = f"{path}/{fqn}.traces_info.pbz2"
+    fqn_hash = hashlib.sha256(fqn.encode()).hexdigest()
+    variable_traces_info_file = f"{path}/{fqn_hash}.traces_info.pbz2"
     if not os.path.isfile(variable_traces_info_file):
         raise Exception(f"Could not find variable traces info file at {variable_traces_info_file}")
 
@@ -549,8 +554,9 @@ def load_variable_traces_info(path, variable):
 
 def save_variable_traces_info(path, variable):
     fqn = variable['fqn']
+    fqn_hash = hashlib.sha256(fqn.encode()).hexdigest()
     traces_info = variable['traces_info']
-    variable_traces_info_file = f"{path}/{fqn}.traces_info.pbz2"
+    variable_traces_info_file = f"{path}/{fqn_hash}.traces_info.pbz2"
     with bz2.BZ2File(variable_traces_info_file, "w") as f:
         c_pickle.dump(traces_info, f)
 

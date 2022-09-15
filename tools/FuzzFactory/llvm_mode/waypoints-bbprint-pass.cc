@@ -30,21 +30,28 @@ protected:
 
 public:
     void visitBasicBlock(llvm::BasicBlock &basicBlock) {
-       std::string basicBlockName = basicBlock.getName().str() + "_" + std::to_string(basicBlockNumber);
-       std::string basicBlockNameVariableName = "__bbname_" + basicBlockName;
-       Value *basicBlockNameValue = getOrCreateGlobalStringVariable(
-           basicBlock.getModule(),
-           basicBlockNameVariableName,
-           basicBlockName
-       );
+        std::string sanitizedFilename = std::regex_replace(
+            std::regex_replace(basicBlock.getModule()->getSourceFileName(), std::regex("^\\./"), ""),
+            std::regex("[/]"),
+            "_"
+        );
+        std::string basicBlockName = sanitizedFilename + "_" + basicBlock.getName().str() + "_" + std::to_string(basicBlockNumber);
+        std::string basicBlockNameVariableName = "__bbname_" + basicBlockName;
+        Value *basicBlockNameValue = getOrCreateGlobalStringVariable(
+            basicBlock.getModule(),
+            basicBlockNameVariableName,
+            basicBlockName
+        );
 
-       auto irb = insert_before(basicBlock);
+        std::cout << "#BB#:" << basicBlockName << std::endl;
 
-       std::vector<Value *> args;
-       args.push_back(basicBlockNameValue);
+        auto irb = insert_before(basicBlock);
 
-       irb->CreateCall(printBasicBlockNameFunction, args);
-       basicBlockNumber++;
+        std::vector<Value *> args;
+        args.push_back(basicBlockNameValue);
+
+        irb->CreateCall(printBasicBlockNameFunction, args);
+        basicBlockNumber++;
     }
 };
 

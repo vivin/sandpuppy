@@ -43,7 +43,8 @@ class VariableValueDumpFeedback : public BaseVariableValueFeedback<VariableValue
         return result;
     }
 
-    void instrumentIfNecessary(Function* function, StoreInst *store) {
+    bool instrumentIfNecessary(Function* function, StoreInst *store) {
+        bool instrumented = false;
         std::string sourceFileName= store->getModule()->getSourceFileName();
         std::string functionName = function->getName().str();
 
@@ -57,7 +58,10 @@ class VariableValueDumpFeedback : public BaseVariableValueFeedback<VariableValue
         if (!variableName.empty() && !isInvolvedInPointerArithmetic(variableName)
             && (modifiesIntegerVariable(store) || initializesIntegerFunctionArgument(store, variableName))) {
                 createDumpVariableValueCall(function, store, variableName);
+                instrumented = true;
         }
+
+        return instrumented;
     }
 
     void createDumpVariableValueCall(Function* function, StoreInst* store, const std::string& variableName) {
@@ -151,10 +155,12 @@ protected:
         );
 
         // Instrument store instructions to log variable values
+        int numVariablesInstrumented = 0;
         for (auto *storeInstruction : storeInstructions) {
-            instrumentIfNecessary(&function, storeInstruction);
+            numVariablesInstrumented += instrumentIfNecessary(&function, storeInstruction) ? 1 : 0;
         }
 
+        std::cout << "[vvdump] " << getQualifiedFunctionName(&function) << ": " << numVariablesInstrumented << std::endl;
         variableNameToValue.clear();
     }
 
