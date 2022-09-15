@@ -116,6 +116,7 @@ foreach my $fuzzer(@fuzzers) {
                         print "$contents\n";
                         print "Processing input " . (++$count) . " of $num_files                   \r";
                         analyze_json($data, $fuzzer);
+                        print "\n";
                         1;
                     } or do {
                         print "Skipping invalid file " . (++$count) . " of $num_files                   \r";
@@ -164,6 +165,7 @@ sub analyze_json {
     my $complexities = $fuzzer_stats->{$fuzzer}->{complexities};
 
     my ($complexity, $nesting_level) = getComplexity($data, 0);
+    print "Complexity: $complexity, Nesting level: $nesting_level\n";
     push @{$complexities}, $complexity;
 
     if ($nesting_level > $$deepest_nesting_level_ref) {
