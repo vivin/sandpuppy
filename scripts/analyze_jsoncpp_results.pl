@@ -113,6 +113,7 @@ foreach my $fuzzer(@fuzzers) {
 
                     eval {
                         my $data = decode_json $contents;
+                        print "$contents\n";
                         print "Processing input " . (++$count) . " of $num_files                   \r";
                         analyze_json($data, $fuzzer);
                         1;
