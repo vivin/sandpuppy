@@ -107,8 +107,18 @@ foreach my $fuzzer(@fuzzers) {
                 if ($? != 0) {
                     print "Skipping invalid file " . (++$count) . " of $num_files                   \r";
                 } else {
-                    print "Processing input " . (++$count) . " of $num_files                   \r";
-                    analyze_input_file("$dir/$file", $fuzzer);
+                    open my $fh, "<", $file or die "Cannot open file $file";
+                    my $contents = do {local $/; <$fh>};
+                    close $fh;
+
+                    eval {
+                        my $data = decode_json $contents;
+                        print "Processing input " . (++$count) . " of $num_files                   \r";
+                        analyze_json($data, $fuzzer);
+                        1;
+                    } or do {
+                        print "Skipping invalid file " . (++$count) . " of $num_files                   \r";
+                    };
                 }
 
                 system "touch $state_file";
@@ -145,18 +155,12 @@ sub output_fuzzer_stats {
     print OUT "\n" if !$print_only;
 }
 
-sub analyze_input_file {
-    my $file = $_[0];
+sub analyze_json {
+    my $data = $_[0];
     my $fuzzer = $_[1];
 
     my $deepest_nesting_level_ref = \$fuzzer_stats->{$fuzzer}->{deepest_nesting_level};
     my $complexities = $fuzzer_stats->{$fuzzer}->{complexities};
-
-    print "File $file\n";
-
-    open my $fh, "<", $file or die "Cannot open file $file";
-    my $data = decode_json do {local $/; <$fh>};
-    close $fh;
 
     my ($complexity, $nesting_level) = getComplexity($data, 0);
     push @{$complexities}, $complexity;
