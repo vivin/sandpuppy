@@ -112,16 +112,14 @@ foreach my $fuzzer(@fuzzers) {
                     my $contents = do {local $/; <$fh>};
                     close $fh;
 
-                    eval {
-                        my $data = decode_json $contents;
-                        print "\n\n$contents\n\n";
-                        print "Processing input " . (++$count) . " of $num_files                   \r";
-                        analyze_json($data, $fuzzer);
-                        print "\n";
-                        1;
-                    } or do {
+                    my $data = eval { decode_json $contents };
+                    if ($@) {
                         print "Skipping invalid file " . (++$count) . " of $num_files                   \r";
-                    };
+                    } else {
+                        print "Processing input " . (++$count) . " of $num_files                   \r";
+                        print "\n\n$contents\n\n";
+                        analyze_json($data, $fuzzer);
+                    }
                 }
 
                 system "touch $state_file";
