@@ -106,7 +106,7 @@ foreach my $fuzzer(@fuzzers) {
 
                 system "/home/vivin/Projects/phd/resources/readjson $dir/$file 2>&1 >/dev/null";
                 if ($? != 0) {
-                    print "Skipping invalid file " . (++$count) . " of $num_files                   \r";
+                    print "Skipping input " . (++$count) . " of $num_files (invalid json)     \r";
                 } else {
                     open my $fh, "<", "$dir/$file" or die "Cannot open file $dir/$file";
                     my $contents = do {local $/; <$fh>};
@@ -114,7 +114,7 @@ foreach my $fuzzer(@fuzzers) {
 
                     my $data = eval { decode_json $contents };
                     if ($@) {
-                        print "Skipping invalid file " . (++$count) . " of $num_files                   \r";
+                        "Skipping input " . (++$count) . " of $num_files (invalid json)     \r";
                     } else {
                         print "Processing input " . (++$count) . " of $num_files                   \r";
                         analyze_json($data, $fuzzer);
