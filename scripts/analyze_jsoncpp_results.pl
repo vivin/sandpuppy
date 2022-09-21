@@ -22,6 +22,8 @@ if ($ARGV[0] && $ARGV[0] eq "print") {
     die "Usage: $0 [print]\n";
 }
 
+my $codec = Cpanel::JSON::XS->new->ascii->pretty->allow_nonref;
+
 my $SCRIPT_NAME = basename $0;
 my $BASE_PATH = "/mnt/vivin-nfs";
 my $STATE_DIR = "/home/vivin/.script-state/$SCRIPT_NAME/space-eval";
@@ -112,7 +114,7 @@ foreach my $fuzzer(@fuzzers) {
                     my $contents = do {local $/; <$fh>};
                     close $fh;
 
-                    my $data = eval { decode_json $contents };
+                    my $data = eval { $codec->decode($contents) };
                     if ($@) {
                         print "Skipping input " . (++$count) . " of $num_files (invalid json)     \r";
                     } else {
