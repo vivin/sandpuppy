@@ -114,7 +114,7 @@ foreach my $fuzzer(@fuzzers) {
 
                     my $data = eval { decode_json $contents };
                     if ($@) {
-                        "Skipping input " . (++$count) . " of $num_files (invalid json)     \r";
+                        print "Skipping input " . (++$count) . " of $num_files (invalid json)     \r";
                     } else {
                         print "Processing input " . (++$count) . " of $num_files                   \r";
                         analyze_json($data, $fuzzer);
