@@ -63,7 +63,7 @@ foreach my $session(@sessions) {
                     print "Skipping input " . (++$count) . " of $num_files (invalid json)     \r";
                 } else {
                     print "Copying input " . (++$count) . " of $num_files                   \r";
-                    system "cp $dir/$file $NEW_SEEDS"
+                    system "cp $dir/$file $NEW_SEEDS/$session-$file"
                 }
             }
 
