@@ -35,12 +35,12 @@ foreach my $session(@sessions) {
         chomp $file;
 
         if ($file =~ /id:/ && $file !~ /,sync:/) {
-            print "Processing input " . (++$count) . " of $num_files                   \r";
+            print "Processing input " . (++$count) . " of $num_files                       \r";
             system "/home/vivin/Projects/phd/resources/readtpmc-fullcmd $dir/$file 2>&1 >/dev/null";
             if ($? != 0) {
                 print "Skipping input " . (++$count) . " of $num_files (invalid tpm commands)     \r";
             } else {
-                print "Copying input " . (++$count) . " of $num_files                   \r";
+                print "Copying input " . (++$count) . " of $num_files                         \r";
                 system "cp $dir/$file $NEW_SEEDS/$session-$file"
             }
         }
