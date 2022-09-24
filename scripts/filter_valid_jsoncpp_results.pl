@@ -54,17 +54,8 @@ foreach my $session(@sessions) {
             if ($? != 0) {
                 print "Skipping input " . (++$count) . " of $num_files (invalid json)     \r";
             } else {
-                open my $fh, "<", "$dir/$file" or die "Cannot open file $dir/$file";
-                my $contents = do {local $/; <$fh>};
-                close $fh;
-
-                my $data = eval { $codec->decode($contents) };
-                if ($@) {
-                    print "Skipping input " . (++$count) . " of $num_files (invalid json)     \r";
-                } else {
-                    print "Copying input " . (++$count) . " of $num_files                   \r";
-                    system "cp $dir/$file $NEW_SEEDS/$session-$file"
-                }
+                print "Copying input " . (++$count) . " of $num_files                   \r";
+                system "cp $dir/$file $NEW_SEEDS/$session-$file"
             }
 
             system "touch $state_file";
