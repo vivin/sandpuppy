@@ -3,6 +3,7 @@ use strict;
 use warnings FATAL => 'all';
 use File::Path qw(make_path);
 use File::Basename;
+use List::Util qw(sum);
 
 if (!$ARGV[0]) {
     print "$0 <run-name>\n";
@@ -60,8 +61,11 @@ foreach my $session(@sessions) {
     close FILES;
 
     my $blocks_hit = sum(map { defined $basic_blocks_hit->{$_} ? 1 : 0 } @basic_blocks);
-    print "$session: $blocks_hit / $total_basic_blocks\n";
+    print "$session: $blocks_hit / $total_basic_blocks\n\n";
 }
+
+my $blocks_hit = sum(map { defined $basic_blocks_hit->{$_} ? 1 : 0 } @basic_blocks);
+print "$blocks_hit / $total_basic_blocks (" . ($blocks_hit / $total_basic_blocks) . ")\n";
 
 sub analyze_jsoncpp_coverage {
     my $file = $_[0];
