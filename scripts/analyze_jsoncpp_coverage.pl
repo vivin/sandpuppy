@@ -66,6 +66,8 @@ foreach my $session(@sessions) {
 sub analyze_jsoncpp_coverage {
     my $file = $ARGV[0];
 
+    print "Looking for $file\n";
+
     open BB, "resources/readjson-bbprinter < $file 2> /dev/null | grep \"__#BB#__\" | grep -v readjson |";
     while (my $line = <BB>) {
         chomp $line;
