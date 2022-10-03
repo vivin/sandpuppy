@@ -12,6 +12,9 @@ if (!$ARGV[0]) {
 my $RUN_NAME = $ARGV[0];
 my $SCRIPT_NAME = basename $0;
 my $BASE_PATH = "/mnt/vivin-nfs";
+if (! -d $BASE_PATH) {
+    $BASE_PATH = "/media/2tb/phd-workspace/nfs";
+}
 
 my $RUN_DIR = "$BASE_PATH/vivin/smartdsf/jsoncpp/results/$RUN_NAME";
 if (! -d $RUN_DIR) {
