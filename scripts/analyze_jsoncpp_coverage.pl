@@ -70,7 +70,7 @@ print "$blocks_hit / $total_basic_blocks (" . ($blocks_hit / $total_basic_blocks
 sub analyze_jsoncpp_coverage {
     my $file = $_[0];
 
-    open BB, "resources/readjson-bbprinter < $file 2> /dev/null | grep \"__#BB#__\" | grep -v readjson |";
+    open BB, "resources/readjson-bbprinter $file 2> /dev/null | grep \"__#BB#__\" | grep -v readjson |";
     while (my $line = <BB>) {
         chomp $line;
         $line =~ s/__#BB#__: //;
@@ -82,5 +82,4 @@ sub analyze_jsoncpp_coverage {
         $basic_blocks_hit->{$line}++;
     }
     close BB;
-
 }
