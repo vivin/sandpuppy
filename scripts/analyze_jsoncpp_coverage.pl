@@ -18,7 +18,7 @@ if (! -d $BASE_PATH) {
 
 my $RUN_DIR = "$BASE_PATH/vivin/smartdsf/jsoncpp/results/$RUN_NAME";
 if (! -d $RUN_DIR) {
-    print "Cannot fund run directory $RUN_DIR\n";
+    print "Cannot find run directory $RUN_DIR\n";
     exit 1;
 }
 
@@ -64,9 +64,7 @@ foreach my $session(@sessions) {
 }
 
 sub analyze_jsoncpp_coverage {
-    my $file = $ARGV[0];
-
-    print "Looking for $file\n";
+    my $file = $_[0];
 
     open BB, "resources/readjson-bbprinter < $file 2> /dev/null | grep \"__#BB#__\" | grep -v readjson |";
     while (my $line = <BB>) {
