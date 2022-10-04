@@ -74,7 +74,17 @@ foreach my $fuzzer(@fuzzers) {
     }
 
     my $blocks_hit = sum(map { defined $basic_blocks_hit->{$_} ? 1 : 0 } @basic_blocks);
+
+    open BB_STATS, ">>", "$RESULTS_DIR/other-fuzzers-coverage-stats.txt";
     print "$fuzzer: $blocks_hit / $total_basic_blocks (" . ($blocks_hit / $total_basic_blocks) . ")\n";
+    print BB_STATS "$fuzzer: $blocks_hit / $total_basic_blocks (" . ($blocks_hit / $total_basic_blocks) . ")\n";
+    close BB_STATS;
+
+    open BBS_HIT, ">", "$RESULTS_DIR/$fuzzer-basic-blocks-hit.txt";
+    foreach my $bb(sort(keys(%{$basic_blocks_hit}))) {
+        print BBS_HIT "$bb: $basic_blocks_hit->{$bb}\n";
+    }
+    close BBS_HIT;
 }
 
 sub analyze_jsoncpp_coverage {

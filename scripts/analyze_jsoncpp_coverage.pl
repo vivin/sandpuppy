@@ -61,11 +61,22 @@ foreach my $session(@sessions) {
     close FILES;
 
     my $blocks_hit = sum(map { defined $basic_blocks_hit->{$_} ? 1 : 0 } @basic_blocks);
-    print "$session: $blocks_hit / $total_basic_blocks\n\n";
+    print "$blocks_hit / $total_basic_blocks\n\n";
 }
 
 my $blocks_hit = sum(map { defined $basic_blocks_hit->{$_} ? 1 : 0 } @basic_blocks);
 print "$blocks_hit / $total_basic_blocks (" . ($blocks_hit / $total_basic_blocks) . ")\n";
+
+open BB_STATS, ">", "$RESULTS_DIR/sandpuppy-coverage-stats.txt";
+print "$blocks_hit / $total_basic_blocks (" . ($blocks_hit / $total_basic_blocks) . ")\n";
+print BB_STATS "$blocks_hit / $total_basic_blocks (" . ($blocks_hit / $total_basic_blocks) . ")\n";
+close BB_STATS;
+
+open BBS_HIT, ">", "$RESULTS_DIR/sandpuppy-basic-blocks-hit.txt";
+foreach my $bb(sort(keys(%{$basic_blocks_hit}))) {
+    print BBS_HIT "$bb: $basic_blocks_hit->{$bb}\n";
+}
+close BBS_HIT;
 
 sub analyze_jsoncpp_coverage {
     my $file = $_[0];
