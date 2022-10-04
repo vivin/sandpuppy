@@ -61,7 +61,7 @@ foreach my $session(@sessions) {
     close FILES;
 
     my $blocks_hit = sum(map { defined $basic_blocks_hit->{$_} ? 1 : 0 } @basic_blocks);
-    print "$blocks_hit / $total_basic_blocks\n\n";
+    print "\n$blocks_hit / $total_basic_blocks\n\n";
 }
 
 my $blocks_hit = sum(map { defined $basic_blocks_hit->{$_} ? 1 : 0 } @basic_blocks);
