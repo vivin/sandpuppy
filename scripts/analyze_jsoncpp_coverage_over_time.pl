@@ -140,7 +140,8 @@ foreach my $fuzzer(@fuzzers) {
 
     print "\n";
     foreach my $hour(0..48) {
-        print "Hour $hour: $average_basic_block_counts_by_hour->[$hour]; $fuzzers_average_coverage_by_hour->{average_coverage}->[$hour]\n";
+        print "Hour $hour: $average_basic_block_counts_by_hour->[$hour];\b";
+        print "Hour $hour: $fuzzers_average_coverage_by_hour->{average_coverage}->[$hour]\n";
     }
 }
 
