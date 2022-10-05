@@ -54,19 +54,17 @@ foreach my $session(@sessions) {
     open FILES, "ls -f $dir |";
     while (my $file = <FILES>) {
         chomp $file;
+        if ($file =~ /id:/ && $file !~ /,sync:/) {
+            chomp(my $hash = `sha512sum $dir/$file | awk '{ print \$1; }'`);
+            if (!defined $file_hashes->{$hash}) {
+                $file_hashes->{$hash} = 1;
 
-        chomp(my $hash = `sha512sum $dir/$file | awk '{ print \$1; }'`);
-        if (!defined $file_hashes->{$hash}) {
-            $file_hashes->{$hash} = 1;
-
-            if ($file =~ /id:/ && $file !~ /,sync:/) {
                 print "Processing input " . (++$count) . " of $num_files                    \r";
                 analyze_jsoncpp_coverage("$dir/$file");
+            } else {
+                print "Skipping input " . (++$count) . " of $num_files (already processed)\r";
             }
-        } else {
-            print "Skipping input " . (++$count) . " of $num_files (already processed)\r";
         }
-
     }
     close FILES;
 
