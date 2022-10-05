@@ -36,17 +36,13 @@ close BBS;
 my $total_basic_blocks = scalar @basic_blocks;
 
 my $NUM_HOURS = 48;
-my $fuzzer_coverage_by_hour = {};
 
 my @fuzzers = ("afl-plain");#, "aflplusplus-plain", "aflplusplus-lafintel", "aflplusplus-redqueen", "sandpuppy");
+my $fuzzers_coverage_by_hour = map { $_ => {} } @fuzzers;
 foreach my $fuzzer(@fuzzers) {
     print "Processing jsoncpp coverage results for fuzzer $fuzzer...\n\n";
     my $fuzzer_dir = "$RUN_DIR/$fuzzer-sync";
     next if ! -e -d $fuzzer_dir;
-
-    my $file_hashes = {};
-    my $ctime_to_basic_blocks_hit = {};
-    $fuzzer_coverage_by_hour->{$fuzzer} = {0 => {}};
 
     my @sessions;
     if ($fuzzer ne "sandpuppy") {
@@ -63,6 +59,10 @@ foreach my $fuzzer(@fuzzers) {
         chomp(@sessions = `grep "^[^- ]" $RUN_DIR/id_to_pod_name_and_target.yml | sed -e 's,:,,'`);
     }
 
+    $fuzzers_coverage_by_hour->{$fuzzer} = map { $_ => {} } @sessions;
+    my $fuzzer_sessions_coverage_by_hour = $fuzzers_coverage_by_hour->{$fuzzer};
+    my $file_hashes = {};
+
     my $num_sessions = scalar @sessions;
     my $i = 0;
     foreach my $session(@sessions) {
@@ -73,6 +73,8 @@ foreach my $fuzzer(@fuzzers) {
 
         chomp (my $num_files = `ls -f $dir | grep -v "^\\." | grep -v ",sync:" | wc -l`);
         my $count = 0;
+        my $ctime_to_basic_blocks_hit = {};
+
         open FILES, "ls -f $dir |";
         while (my $file = <FILES>) {
             chomp $file;
@@ -89,49 +91,55 @@ foreach my $fuzzer(@fuzzers) {
             }
         }
         close FILES;
+
+        $fuzzer_sessions_coverage_by_hour->{$session} = map { $_ => {} } (0..$NUM_HOURS);
+        my $session_coverage_by_hour = $fuzzer_sessions_coverage_by_hour->{$session};
+        my $min_ctime = min(keys %{$ctime_to_basic_blocks_hit});
+        foreach my $ctime(sort(keys %{$ctime_to_basic_blocks_hit})) {
+            my $hour = 1 + floor(($ctime - $min_ctime) / 3600);
+            my $session_coverage_for_hour = $session_coverage_by_hour->{$hour};
+
+            my $basic_blocks_hit = $ctime_to_basic_blocks_hit->{$ctime};
+            foreach my $basic_block(keys %{$basic_blocks_hit}) {
+                if (!defined $session_coverage_for_hour->{$basic_block}) {
+                    $session_coverage_for_hour->{$basic_block} = 0;
+                }
+
+                $session_coverage_for_hour->{$basic_block} += $basic_blocks_hit->{$basic_block};
+            }
+        }
+
+        print "\n";
+
+        # Fill in holes and calculate cumulative coverage
+        for my $hour(1..$NUM_HOURS) {
+            if (scalar(keys %{$session_coverage_by_hour->{$hour}}) == 0) {
+                $session_coverage_by_hour->{$hour} = $session_coverage_by_hour->{$hour - 1};
+            } else {
+                my $previous_hour_basic_blocks_hit = $session_coverage_by_hour->{$hour - 1};
+                my $basic_blocks_hit = $session_coverage_by_hour->{$hour};
+                foreach my $basic_block(keys %{$previous_hour_basic_blocks_hit}) {
+                    if (!defined $basic_blocks_hit->{$basic_block}) {
+                        $basic_blocks_hit->{$basic_block} = 0;
+                    }
+
+                    $basic_blocks_hit->{$basic_block} += $previous_hour_basic_blocks_hit->{$basic_block};
+                }
+            }
+
+            print "Hour $hour: " . (scalar keys(%{$session_coverage_by_hour->{$hour}})) . " / $total_basic_blocks\n";
+        }
     }
 
     print "\n";
 
-    my $coverage_by_hour = $fuzzer_coverage_by_hour->{$fuzzer};
-    my $min_ctime = min(keys %{$ctime_to_basic_blocks_hit});
-    foreach my $ctime(sort(keys %{$ctime_to_basic_blocks_hit})) {
-        my $hour = 1 + floor(($ctime - $min_ctime) / 3600);
-        print "min_ctime: $min_ctime; ctime: $ctime; hour: $hour\n";
+    my $average_coverage_by_hour = map {
+        my $hour = $_;
+        $hour => sum(map { scalar(keys %{$fuzzer_sessions_coverage_by_hour->{$_}->{$hour}}) } @sessions) / $num_sessions;
+    } (0..$NUM_HOURS);
 
-        if (!defined $coverage_by_hour->{$hour}) {
-            $coverage_by_hour->{$hour} = {};
-        }
-
-        my $coverage_for_hour = $coverage_by_hour->{$hour};
-        my $basic_blocks_hit = $ctime_to_basic_blocks_hit->{$ctime};
-        foreach my $basic_block(keys %{$basic_blocks_hit}) {
-            if (!defined $coverage_for_hour->{$basic_block}) {
-                $coverage_for_hour->{$basic_block} = 0;
-            }
-
-            $coverage_for_hour->{$basic_block} += $basic_blocks_hit->{$basic_block};
-        }
-    }
-
-    # Fill in holes and calculate cumulative coverage
-    for my $hour(1..$NUM_HOURS) {
-        if (!defined $coverage_by_hour->{$hour}) {
-            $coverage_by_hour->{$hour} = $coverage_by_hour->{$hour - 1};
-        } else {
-            my $previous_hour_basic_blocks_hit = $coverage_by_hour->{$hour - 1};
-            my $basic_blocks_hit = $coverage_by_hour->{$hour};
-
-            foreach my $basic_block(keys %{$previous_hour_basic_blocks_hit}) {
-                if (!defined $basic_blocks_hit->{$basic_block}) {
-                    $basic_blocks_hit->{$basic_block} = 0;
-                }
-
-                $basic_blocks_hit->{$basic_block} += $previous_hour_basic_blocks_hit->{$basic_block};
-            }
-        }
-
-        print "Hour $hour: " . (scalar keys(%{$coverage_by_hour->{$hour}})) . " / $total_basic_blocks\n";
+    foreach my $hour(sort(keys %{$average_coverage_by_hour})) {
+        print "Hour $hour: $average_coverage_by_hour->{$hour}\n";
     }
 }
 
