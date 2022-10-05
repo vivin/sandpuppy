@@ -38,7 +38,7 @@ my $total_basic_blocks = scalar @basic_blocks;
 my $NUM_HOURS = 48;
 
 my @fuzzers = ("afl-plain");#, "aflplusplus-plain", "aflplusplus-lafintel", "aflplusplus-redqueen", "sandpuppy");
-my $fuzzers_coverage_by_hour = map { $_ => {} } @fuzzers;
+my $fuzzers_coverage_by_hour = { map { $_ => {} } @fuzzers };
 foreach my $fuzzer(@fuzzers) {
     print "Processing jsoncpp coverage results for fuzzer $fuzzer...\n\n";
     my $fuzzer_dir = "$RUN_DIR/$fuzzer-sync";
@@ -59,7 +59,8 @@ foreach my $fuzzer(@fuzzers) {
         chomp(@sessions = `grep "^[^- ]" $RUN_DIR/id_to_pod_name_and_target.yml | sed -e 's,:,,'`);
     }
 
-    $fuzzers_coverage_by_hour->{$fuzzer} = map { $_ => {} } @sessions;
+    foreach my $s(@sessions) { print "$s\n"; }
+    $fuzzers_coverage_by_hour->{$fuzzer} = { map { $_ => {} } @sessions };
     my $fuzzer_sessions_coverage_by_hour = $fuzzers_coverage_by_hour->{$fuzzer};
     my $file_hashes = {};
 
@@ -92,7 +93,7 @@ foreach my $fuzzer(@fuzzers) {
         }
         close FILES;
 
-        $fuzzer_sessions_coverage_by_hour->{$session} = map { $_ => {} } (0..$NUM_HOURS);
+        $fuzzer_sessions_coverage_by_hour->{$session} = { map { $_ => {} } (0..$NUM_HOURS) };
         my $session_coverage_by_hour = $fuzzer_sessions_coverage_by_hour->{$session};
         my $min_ctime = min(keys %{$ctime_to_basic_blocks_hit});
         foreach my $ctime(sort(keys %{$ctime_to_basic_blocks_hit})) {
@@ -133,10 +134,10 @@ foreach my $fuzzer(@fuzzers) {
 
     print "\n";
 
-    my $average_coverage_by_hour = map {
+    my $average_coverage_by_hour = { map {
         my $hour = $_;
         $hour => sum(map { scalar(keys %{$fuzzer_sessions_coverage_by_hour->{$_}->{$hour}}) } @sessions) / $num_sessions;
-    } (0..$NUM_HOURS);
+    } (0..$NUM_HOURS) };
 
     foreach my $hour(sort(keys %{$average_coverage_by_hour})) {
         print "Hour $hour: $average_coverage_by_hour->{$hour}\n";
