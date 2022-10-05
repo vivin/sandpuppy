@@ -59,7 +59,6 @@ foreach my $fuzzer(@fuzzers) {
         chomp(@sessions = `grep "^[^- ]" $RUN_DIR/id_to_pod_name_and_target.yml | sed -e 's,:,,'`);
     }
 
-    foreach my $s(@sessions) { print "$s\n"; }
     $fuzzers_coverage_by_hour->{$fuzzer} = { map { $_ => {} } @sessions };
     my $fuzzer_sessions_coverage_by_hour = $fuzzers_coverage_by_hour->{$fuzzer};
     my $file_hashes = {};
