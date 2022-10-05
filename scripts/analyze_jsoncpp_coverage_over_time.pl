@@ -114,10 +114,21 @@ foreach my $fuzzer(@fuzzers) {
         }
     }
 
-    # Fill in holes
+    # Fill in holes and calculate cumulative coverage
     for my $hour(1..$NUM_HOURS) {
         if (!defined $coverage_by_hour->{$hour}) {
             $coverage_by_hour->{$hour} = $coverage_by_hour->{$hour - 1};
+        } else {
+            my $previous_hour_basic_blocks_hit = $coverage_by_hour->{$hour - 1};
+            my $basic_blocks_hit = $coverage_by_hour->{$hour};
+
+            foreach my $basic_block(keys %{$previous_hour_basic_blocks_hit}) {
+                if (!defined $basic_blocks_hit->{$basic_block}) {
+                    $basic_blocks_hit->{$basic_block} = 0;
+                }
+
+                $basic_blocks_hit->{$basic_block} += $previous_hour_basic_blocks_hit->{$basic_block};
+            }
         }
 
         print "Hour $hour: " . (scalar keys(%{$coverage_by_hour->{$hour}})) . " / $total_basic_blocks\n";
