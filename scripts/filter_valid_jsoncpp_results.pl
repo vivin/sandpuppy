@@ -3,9 +3,8 @@ use strict;
 use warnings FATAL => 'all';
 use File::Path qw(make_path);
 use File::Basename;
-use Cpanel::JSON::XS;
 
-my $codec = Cpanel::JSON::XS->new->ascii->pretty->allow_nonref;
+print "ok start\n";
 
 my $SCRIPT_NAME = basename $0;
 if (scalar @ARGV < 2) {
