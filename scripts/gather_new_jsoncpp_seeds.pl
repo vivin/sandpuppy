@@ -74,12 +74,18 @@ foreach my $session(@sessions) {
             if (!defined $file_hashes->{$hash}) {
                 $file_hashes->{$hash} = 1;
 
-                system "/home/vivin/Projects/phd/resources/readjson $dir/$file 2>&1 >/dev/null";
-                if ($? != 0) {
-                    print "Skipping input " . (++$count) . " of $num_files (invalid json)     \r";
-                } else {
+                # Will always copy new coverage regardless of whether it is valid json or not
+                if ($file =~ /\+cov/) {
                     print "Copying input " . (++$count) . " of $num_files                   \r";
                     system "cp $dir/$file $NEW_SEEDS/$session-$file"
+                } else {
+                    system "/home/vivin/Projects/phd/resources/readjson $dir/$file 2>&1 >/dev/null";
+                    if ($? != 0) {
+                        print "Skipping input " . (++$count) . " of $num_files (invalid json)     \r";
+                    } else {
+                        print "Copying input " . (++$count) . " of $num_files                   \r";
+                        system "cp $dir/$file $NEW_SEEDS/$session-$file"
+                    }
                 }
             }
 
