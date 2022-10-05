@@ -8,16 +8,24 @@ use Cpanel::JSON::XS;
 my $codec = Cpanel::JSON::XS->new->ascii->pretty->allow_nonref;
 
 my $SCRIPT_NAME = basename $0;
+if (scalar @ARGV < 2) {
+    print "$0 <experiment> <run-name>\n";
+    exit 1;
+}
+
+my $EXPERIMENT = $ARGV[0];
+my $RUN_NAME = $ARGV[1];
+
 my $BASE_PATH = "/mnt/vivin-nfs";
-my $STATE_DIR = "/home/vivin/.script-state/$SCRIPT_NAME/space-eval";
+my $STATE_DIR = "/home/vivin/.script-state/$SCRIPT_NAME/$RUN_NAME";
 if (! -d $BASE_PATH) {
     $BASE_PATH = "/media/2tb/phd-workspace/nfs";
-    $STATE_DIR = "/media/2tb/phd-workspace/script-data/$SCRIPT_NAME/space-eval";
+    $STATE_DIR = "/media/2tb/phd-workspace/script-data/$SCRIPT_NAME/$RUN_NAME";
 }
 
 make_path $STATE_DIR;
 
-my $RUN_DIR = "$BASE_PATH/vivin/smartdsf/jsoncpp/results/space-eval";
+my $RUN_DIR = "$BASE_PATH/vivin/$EXPERIMENT/jsoncpp/results/$RUN_NAME";
 my $RESULTS_DIR = "$RUN_DIR/aggregated";
 make_path $RESULTS_DIR;
 
@@ -28,6 +36,7 @@ print "Processing jsoncpp results for fuzzer sandpuppy...\n\n";
 
 my $fuzzer_dir = "$RUN_DIR/sandpuppy-sync";
 
+my $file_hashes = {};
 chomp(my @sessions = `grep "^[^- ]" $RUN_DIR/id_to_pod_name_and_target.yml | sed -e 's,:,,'`);
 my $num_sessions = scalar @sessions;
 my $i = 0;
@@ -50,12 +59,17 @@ foreach my $session(@sessions) {
                 next;
             }
 
-            system "/home/vivin/Projects/phd/resources/readjson $dir/$file 2>&1 >/dev/null";
-            if ($? != 0) {
-                print "Skipping input " . (++$count) . " of $num_files (invalid json)     \r";
-            } else {
-                print "Copying input " . (++$count) . " of $num_files                   \r";
-                system "cp $dir/$file $NEW_SEEDS/$session-$file"
+            chomp(my $hash = `sha512sum $dir/$file | awk '{ print \$1; }'`);
+            if (!defined $file_hashes->{$hash}) {
+                $file_hashes->{$hash} = 1;
+
+                system "/home/vivin/Projects/phd/resources/readjson $dir/$file 2>&1 >/dev/null";
+                if ($? != 0) {
+                    print "Skipping input " . (++$count) . " of $num_files (invalid json)     \r";
+                } else {
+                    print "Copying input " . (++$count) . " of $num_files                   \r";
+                    system "cp $dir/$file $NEW_SEEDS/$session-$file"
+                }
             }
 
             system "touch $state_file";
