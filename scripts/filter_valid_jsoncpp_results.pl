@@ -3,7 +3,6 @@ use strict;
 use warnings FATAL => 'all';
 use File::Path qw(make_path);
 use File::Basename;
-use Storable qw{lock_store lock_retrieve};
 
 my $SCRIPT_NAME = basename $0;
 if (scalar @ARGV < 2) {
@@ -16,11 +15,9 @@ my $RUN_NAME = $ARGV[1];
 
 my $BASE_PATH = "/mnt/vivin-nfs";
 my $STATE_DIR = "/home/vivin/.script-state/$SCRIPT_NAME/$RUN_NAME";
-my $HASHES_FILENAME = "/home/vivin/.script-state/$SCRIPT_NAME/file-hashes.dat";
 if (! -d $BASE_PATH) {
     $BASE_PATH = "/media/2tb/phd-workspace/nfs";
     $STATE_DIR = "$BASE_PATH/script-data/$SCRIPT_NAME/$RUN_NAME";
-    $HASHES_FILENAME = "$BASE_PATH/script-data/$SCRIPT_NAME/file-hashes.dat";
 }
 
 make_path $STATE_DIR;
@@ -31,12 +28,7 @@ if (! -d $RUN_DIR) {
     exit 1;
 }
 
-my $file_hashes;
-if (! -e -f "$HASHES_FILENAME") {
-    $file_hashes = {};
-} else {
-    $file_hashes = lock_retrieve $HASHES_FILENAME;
-}
+my $file_hashes = {};
 
 my $RESULTS_DIR = "$RUN_DIR/aggregated";
 make_path $RESULTS_DIR;
@@ -88,5 +80,3 @@ foreach my $session(@sessions) {
     }
     close FILES;
 }
-
-lock_store $file_hashes, $HASHES_FILENAME;
