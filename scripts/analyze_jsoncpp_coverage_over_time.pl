@@ -39,6 +39,7 @@ my $NUM_HOURS = 48;
 
 my @fuzzers = ("afl-plain");#, "aflplusplus-plain", "aflplusplus-lafintel", "aflplusplus-redqueen", "sandpuppy");
 my $fuzzers_coverage_by_hour = { map { $_ => {} } @fuzzers };
+my $fuzzers_average_coverage_by_hour = { map { $_ => {} } @fuzzers };
 foreach my $fuzzer(@fuzzers) {
     print "Processing jsoncpp coverage results for fuzzer $fuzzer...\n\n";
     my $fuzzer_dir = "$RUN_DIR/$fuzzer-sync";
@@ -109,8 +110,6 @@ foreach my $fuzzer(@fuzzers) {
             }
         }
 
-        print "\n";
-
         # Fill in holes and calculate cumulative coverage
         for my $hour(1..$NUM_HOURS) {
             if (scalar(keys %{$session_coverage_by_hour->{$hour}}) == 0) {
@@ -126,20 +125,17 @@ foreach my $fuzzer(@fuzzers) {
                     $basic_blocks_hit->{$basic_block} += $previous_hour_basic_blocks_hit->{$basic_block};
                 }
             }
-
-            print "Hour $hour: " . (scalar keys(%{$session_coverage_by_hour->{$hour}})) . " / $total_basic_blocks\n";
         }
     }
 
-    print "\n";
-
-    my $average_coverage_by_hour = { map {
+    my $average_coverage_by_hour = [ map {
         my $hour = $_;
-        $hour => sum(map { scalar(keys %{$fuzzer_sessions_coverage_by_hour->{$_}->{$hour}}) } @sessions) / $num_sessions;
-    } (0..$NUM_HOURS) };
+        sum(map { scalar(keys %{$fuzzer_sessions_coverage_by_hour->{$_}->{$hour}}) } @sessions) / $num_sessions;
+    } (0..$NUM_HOURS) ];
 
-    foreach my $hour(sort(keys %{$average_coverage_by_hour})) {
-        print "Hour $hour: $average_coverage_by_hour->{$hour}\n";
+    print "\n";
+    foreach my $hour(0..48) {
+        print "Hour $hour: $average_coverage_by_hour->[$hour]\n";
     }
 }
 
