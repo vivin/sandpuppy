@@ -6,6 +6,7 @@ use File::Path qw(make_path);
 use File::stat;
 use List::Util qw(sum min);
 use POSIX qw(floor);
+use Cpanel::JSON::XS;
 
 if (scalar @ARGV < 2) {
     print "$0 <experiment> <run-name>\n";
@@ -28,6 +29,7 @@ if (! -d $RUN_DIR) {
 my $RESULTS_DIR = "$RUN_DIR/aggregated";
 make_path $RESULTS_DIR;
 
+my $json = Cpanel::JSON::XS->new->ascii->pretty->allow_nonref;
 
 open BBS, '<', "resources/jsoncpp-basic-blocks.txt";
 chomp(my @basic_blocks = <BBS>);
@@ -37,7 +39,7 @@ my $total_basic_blocks = scalar @basic_blocks;
 
 my $NUM_HOURS = 48;
 
-my @fuzzers = ("afl-plain");#, "aflplusplus-plain", "aflplusplus-lafintel", "aflplusplus-redqueen", "sandpuppy");
+my @fuzzers = ("afl-plain", "aflplusplus-plain", "aflplusplus-lafintel", "aflplusplus-redqueen", "sandpuppy");
 my $fuzzers_coverage_by_hour = { map { $_ => {} } @fuzzers };
 my $fuzzers_average_coverage_by_hour = { map { $_ => {} } @fuzzers };
 foreach my $fuzzer(@fuzzers) {
@@ -140,10 +142,13 @@ foreach my $fuzzer(@fuzzers) {
 
     print "\n";
     foreach my $hour(0..48) {
-        print "Hour $hour: $average_basic_block_counts_by_hour->[$hour];\b";
-        print "Hour $hour: $fuzzers_average_coverage_by_hour->{average_coverage}->[$hour]\n";
+        print "Hour $hour: $average_basic_block_counts_by_hour->[$hour]; $fuzzers_average_coverage_by_hour->{$fuzzer}->{average_coverage}->[$hour]\n";
     }
 }
+
+open JSON, ">", "$RESULTS_DIR/average_coverage_by_hour.json";
+print JSON $json->encode($fuzzers_average_coverage_by_hour);
+close JSON;
 
 sub analyze_jsoncpp_coverage {
     my $file = $_[0];
