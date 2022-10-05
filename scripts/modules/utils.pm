@@ -487,6 +487,12 @@ sub generate_startup_script {
     # Copy the binary and any other files in the nfs binary directory to a local directory
     cp -r "$container_nfs_subject_directory/binaries/$target->{binary_context}" /home/vivin/Projects/phd/bin
 
+    # Copy seeds over
+    log "Copying seeds..."
+    mkdir -p /home/vivin/Projects/phd/resources/seeds/$subject
+    cp -r /private-nfs/vivin/seeds/$subject/fuzz /home/vivin/Projects/phd/resources/seeds/$subject
+    log "Done copying seeds"
+
     # Since we don't copy over the symlinks created for binary directories with colons (we do this because when linking
     # the linker has issues with paths containing colons) dynamically linked binaries have issues finding their shared
     # library. So we will create a symlink to the local binary directory and set LD_LIBRARY_PATH to it.
@@ -643,6 +649,12 @@ sub generate_startup_script_without_import_sync {
 
     # Copy the binary and any other files in the nfs binary directory to a local directory
     cp -r "$container_nfs_subject_directory/binaries/$target->{binary_context}" /home/vivin/Projects/phd/bin
+
+    # Copy seeds over
+    log "Copying seeds..."
+    mkdir -p /home/vivin/Projects/phd/resources/seeds/$subject
+    cp -r /private-nfs/vivin/seeds/$subject/fuzz /home/vivin/Projects/phd/resources/seeds/$subject
+    log "Done copying seeds"
 
     # Since we don't copy over the symlinks created for binary directories with colons (we do this because when linking
     # the linker has issues with paths containing colons) dynamically linked binaries have issues finding their shared

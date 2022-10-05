@@ -7,7 +7,6 @@ RUN groupadd -g $GID -o $UNAME && useradd -m -u $UID -g $GID -o -s /bin/bash $UN
 COPY resources/docker/container_bashrc /home/vivin/.bashrc
 COPY tools/FuzzFactory /home/vivin/Projects/phd/tools/FuzzFactory
 COPY tools/aflplusplus /home/vivin/Projects/phd/tools/aflplusplus
-COPY resources/seeds /home/vivin/Projects/phd/resources/seeds
 COPY ["resources/docker/Super Mario Bros. (JU) (PRG0) [[]!].nes", "/home/vivin/Projects/phd/"]
 RUN chown -R $UNAME:$UNAME /home/vivin
 USER $UNAME
