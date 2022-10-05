@@ -39,6 +39,7 @@ print "Processing jsoncpp results for fuzzer sandpuppy...\n\n";
 
 my $fuzzer_dir = "$RUN_DIR/sandpuppy-sync";
 
+my $file_hashes = {};
 chomp(my @sessions = `grep "^[^- ]" $RUN_DIR/id_to_pod_name_and_target.yml | sed -e 's,:,,'`);
 my $num_sessions = scalar @sessions;
 my $i = 0;
@@ -54,10 +55,18 @@ foreach my $session(@sessions) {
     while (my $file = <FILES>) {
         chomp $file;
 
-        if ($file =~ /id:/ && $file !~ /,sync:/) {
-            print "Processing input " . (++$count) . " of $num_files                   \r";
-            analyze_jsoncpp_coverage("$dir/$file");
+        chomp(my $hash = `sha512sum $dir/$file | awk '{ print \$1; }'`);
+        if (!defined $file_hashes->{$hash}) {
+            $file_hashes->{$hash} = 1;
+
+            if ($file =~ /id:/ && $file !~ /,sync:/) {
+                print "Processing input " . (++$count) . " of $num_files                    \r";
+                analyze_jsoncpp_coverage("$dir/$file");
+            }
+        } else {
+            print "Skipping input " . (++$count) . " of $num_files (already processed)\r";
         }
+
     }
     close FILES;
 
@@ -69,7 +78,6 @@ my $blocks_hit = sum(map { defined $basic_blocks_hit->{$_} ? 1 : 0 } @basic_bloc
 print "$blocks_hit / $total_basic_blocks (" . ($blocks_hit / $total_basic_blocks) . ")\n";
 
 open BB_STATS, ">", "$RESULTS_DIR/sandpuppy-coverage-stats.txt";
-print "$blocks_hit / $total_basic_blocks (" . ($blocks_hit / $total_basic_blocks) . ")\n";
 print BB_STATS "$blocks_hit / $total_basic_blocks (" . ($blocks_hit / $total_basic_blocks) . ")\n";
 close BB_STATS;
 
