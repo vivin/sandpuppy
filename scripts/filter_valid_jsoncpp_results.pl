@@ -26,6 +26,11 @@ if (! -d $BASE_PATH) {
 make_path $STATE_DIR;
 
 my $RUN_DIR = "$BASE_PATH/vivin/$EXPERIMENT/jsoncpp/results/$RUN_NAME";
+if (! -d $RUN_DIR) {
+    print "Cannot find results at $RUN_DIR\n";
+    exit 1;
+}
+
 my $RESULTS_DIR = "$RUN_DIR/aggregated";
 make_path $RESULTS_DIR;
 
