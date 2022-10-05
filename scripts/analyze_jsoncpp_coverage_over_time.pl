@@ -128,14 +128,19 @@ foreach my $fuzzer(@fuzzers) {
         }
     }
 
-    my $average_coverage_by_hour = [ map {
+    my $average_basic_block_counts_by_hour = [ map {
         my $hour = $_;
         sum(map { scalar(keys %{$fuzzer_sessions_coverage_by_hour->{$_}->{$hour}}) } @sessions) / $num_sessions;
     } (0..$NUM_HOURS) ];
 
+    $fuzzers_average_coverage_by_hour->{$fuzzer} = {
+        average_basic_blocks_counts => $average_basic_block_counts_by_hour,
+        average_coverage            => [ map { $_ / $total_basic_blocks } @{$average_basic_block_counts_by_hour} ]
+    };
+
     print "\n";
     foreach my $hour(0..48) {
-        print "Hour $hour: $average_coverage_by_hour->[$hour]\n";
+        print "Hour $hour: $average_basic_block_counts_by_hour->[$hour]; $fuzzers_average_coverage_by_hour->{average_coverage}->[$hour]\n";
     }
 }
 
