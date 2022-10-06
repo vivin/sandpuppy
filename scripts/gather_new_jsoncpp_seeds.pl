@@ -4,6 +4,9 @@ use warnings FATAL => 'all';
 use File::Path qw(make_path);
 use File::Basename;
 use Storable qw{lock_store lock_retrieve};
+use Cpanel::JSON::XS;
+
+my $codec = Cpanel::JSON::XS->new->ascii->pretty->allow_nonref;
 
 my $SCRIPT_NAME = basename $0;
 if (scalar @ARGV < 2) {
@@ -76,8 +79,17 @@ foreach my $session(@sessions) {
                     if ($? != 0) {
                         print "Skipping input " . (++$count) . " of $num_files (invalid json)     \r";
                     } else {
-                        print "Copying input " . (++$count) . " of $num_files                   \r";
-                        system "cp $dir/$file $NEW_SEEDS/$session-$file"
+                        open my $fh, "<", "$dir/$file" or die "Cannot open file $dir/$file";
+                        my $contents = do {local $/; <$fh>};
+                        close $fh;
+
+                        my $data = eval { $codec->decode($contents) };
+                        if ($@) {
+                            print "Skipping input " . (++$count) . " of $num_files (invalid json)     \r";
+                        } else {
+                            print "Copying input " . (++$count) . " of $num_files                   \r";
+                            system "cp $dir/$file $NEW_SEEDS/$session-$file"
+                        }
                     }
                 }
             }
