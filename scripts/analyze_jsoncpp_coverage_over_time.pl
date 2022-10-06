@@ -40,7 +40,7 @@ my $total_basic_blocks = scalar @basic_blocks;
 
 my $NUM_HOURS = 48;
 
-my @fuzzers = ("afl-plain");#, "aflplusplus-plain", "aflplusplus-lafintel", "aflplusplus-redqueen", "sandpuppy");
+my @fuzzers = ("afl-plain", "aflplusplus-plain", "aflplusplus-lafintel", "aflplusplus-redqueen", "sandpuppy");
 my $fuzzers_coverage_by_hour = { map { $_ => {} } @ fuzzers };
 my $fuzzers_sessions_coverage_by_hour = { map { $_ => {} } @fuzzers };
 my $fuzzers_coverage_data = { map { $_ => {} } @fuzzers };
@@ -169,8 +169,12 @@ foreach my $fuzzer(@fuzzers) {
 
     print "\n";
     foreach my $hour(0..48) {
-        print "Hour $hour: $average_basic_block_counts_by_hour->[$hour]; $fuzzers_coverage_data->{$fuzzer}->{average_coverage}->[$hour]\n";
+        print "Hour $hour:\n";
+        print "  basic_blocks=$fuzzers_coverage_data->{$fuzzer}->{total_coverage}->[$hour]\n";
+        print "  avg_basic_blocks=$average_basic_block_counts_by_hour->[$hour]\n";
+        print "  avg_coverage=$fuzzers_coverage_data->{$fuzzer}->{average_coverage}->[$hour]\n";
     }
+    print "\n";
 }
 
 open JSON, ">", "$RESULTS_DIR/coverage_data.json";
