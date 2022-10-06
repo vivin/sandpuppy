@@ -22,7 +22,7 @@ my $BASE_PATH = "/mnt/vivin-nfs";
 my $STATE_DIR = "/home/vivin/.script-state/$SCRIPT_NAME/$RUN_NAME";
 if (! -d $BASE_PATH) {
     $BASE_PATH = "/media/2tb/phd-workspace/nfs";
-    $STATE_DIR = "$BASE_PATH/script-data/$SCRIPT_NAME/$RUN_NAME";
+    $STATE_DIR = "/media/2tb/phd-workspace/script-data/$SCRIPT_NAME/$RUN_NAME";
 }
 
 make_path $STATE_DIR;
