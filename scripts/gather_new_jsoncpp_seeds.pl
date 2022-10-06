@@ -1,8 +1,9 @@
 #!/usr/bin/perl
 use strict;
 use warnings FATAL => 'all';
-use File::Path qw(make_path);
 use File::Basename;
+use File::Path qw(make_path);
+use File::stat;
 use Storable qw{lock_store lock_retrieve};
 use Cpanel::JSON::XS;
 
@@ -66,30 +67,39 @@ foreach my $session(@sessions) {
                 next;
             }
 
-            chomp(my $hash = `sha512sum $dir/$file | awk '{ print \$1; }'`);
-            if (!defined $file_hashes->{$hash}) {
-                $file_hashes->{$hash} = 1;
+            my $ctime = stat("$dir/$file")->ctime;
+            if (time() - $ctime < 45) {
+                print "Skipping input " . (++$count) . " of $num_files (file is too new)  \r";
+                next;
+            }
 
-                # Will always copy new coverage regardless of whether it is valid json or not
-                if ($file =~ /\+cov/) {
-                    print "Copying input " . (++$count) . " of $num_files                   \r";
-                    system "cp $dir/$file $NEW_SEEDS/$session-$file"
+            chomp(my $hash = `sha512sum $dir/$file | awk '{ print \$1; }'`);
+            if (defined $file_hashes->{$hash}) {
+                print "Skipping input " . (++$count) . " of $num_files (duplicate file)   \r";
+                next;
+            }
+
+            $file_hashes->{$hash} = 1;
+
+            # Will always copy new coverage regardless of whether it is valid json or not
+            if ($file =~ /\+cov/) {
+                print "Copying input " . (++$count) . " of $num_files                   \r";
+                system "cp $dir/$file $NEW_SEEDS/$session-$file"
+            } else {
+                system "/home/vivin/Projects/phd/resources/readjson $dir/$file 2>&1 >/dev/null";
+                if ($? != 0) {
+                    print "Skipping input " . (++$count) . " of $num_files (invalid json)     \r";
                 } else {
-                    system "/home/vivin/Projects/phd/resources/readjson $dir/$file 2>&1 >/dev/null";
-                    if ($? != 0) {
+                    open my $fh, "<", "$dir/$file" or die "Cannot open file $dir/$file";
+                    my $contents = do {local $/; <$fh>};
+                    close $fh;
+
+                    my $data = eval { $codec->decode($contents) };
+                    if ($@) {
                         print "Skipping input " . (++$count) . " of $num_files (invalid json)     \r";
                     } else {
-                        open my $fh, "<", "$dir/$file" or die "Cannot open file $dir/$file";
-                        my $contents = do {local $/; <$fh>};
-                        close $fh;
-
-                        my $data = eval { $codec->decode($contents) };
-                        if ($@) {
-                            print "Skipping input " . (++$count) . " of $num_files (invalid json)     \r";
-                        } else {
-                            print "Copying input " . (++$count) . " of $num_files                   \r";
-                            system "cp $dir/$file $NEW_SEEDS/$session-$file"
-                        }
+                        print "Copying input " . (++$count) . " of $num_files                   \r";
+                        system "cp $dir/$file $NEW_SEEDS/$session-$file"
                     }
                 }
             }
