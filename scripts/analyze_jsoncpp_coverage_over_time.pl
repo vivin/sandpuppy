@@ -7,6 +7,7 @@ use File::stat;
 use List::Util qw(sum min);
 use POSIX qw(floor);
 use Cpanel::JSON::XS;
+use Data::Dumper;
 
 if (scalar @ARGV < 2) {
     print "$0 <experiment> <run-name>\n";
@@ -39,9 +40,10 @@ my $total_basic_blocks = scalar @basic_blocks;
 
 my $NUM_HOURS = 48;
 
-my @fuzzers = ("afl-plain", "aflplusplus-plain", "aflplusplus-lafintel", "aflplusplus-redqueen", "sandpuppy");
-my $fuzzers_coverage_by_hour = { map { $_ => {} } @fuzzers };
-my $fuzzers_average_coverage_by_hour = { map { $_ => {} } @fuzzers };
+my @fuzzers = ("afl-plain");#, "aflplusplus-plain", "aflplusplus-lafintel", "aflplusplus-redqueen", "sandpuppy");
+my $fuzzers_coverage_by_hour = { map { $_ => {} } @ fuzzers };
+my $fuzzers_sessions_coverage_by_hour = { map { $_ => {} } @fuzzers };
+my $fuzzers_coverage_data = { map { $_ => {} } @fuzzers };
 foreach my $fuzzer(@fuzzers) {
     print "Processing jsoncpp coverage results for fuzzer $fuzzer...\n\n";
     my $fuzzer_dir = "$RUN_DIR/$fuzzer-sync";
@@ -62,8 +64,12 @@ foreach my $fuzzer(@fuzzers) {
         chomp(@sessions = `grep "^[^- ]" $RUN_DIR/id_to_pod_name_and_target.yml | sed -e 's,:,,'`);
     }
 
-    $fuzzers_coverage_by_hour->{$fuzzer} = { map { $_ => {} } @sessions };
-    my $fuzzer_sessions_coverage_by_hour = $fuzzers_coverage_by_hour->{$fuzzer};
+    $fuzzers_sessions_coverage_by_hour->{$fuzzer} = { map { $_ => {} } @sessions };
+    my $fuzzer_sessions_coverage_by_hour = $fuzzers_sessions_coverage_by_hour->{$fuzzer};
+
+    $fuzzers_coverage_by_hour->{$fuzzer} = { map { $_ => {} } (0..$NUM_HOURS) };
+    my $fuzzer_coverage_by_hour  = $fuzzers_coverage_by_hour->{$fuzzer};
+
     my $file_hashes = {};
 
     my $num_sessions = scalar @sessions;
@@ -101,6 +107,7 @@ foreach my $fuzzer(@fuzzers) {
         foreach my $ctime(sort(keys %{$ctime_to_basic_blocks_hit})) {
             my $hour = 1 + floor(($ctime - $min_ctime) / 3600);
             my $session_coverage_for_hour = $session_coverage_by_hour->{$hour};
+            my $fuzzer_coverage_for_hour = $fuzzer_coverage_by_hour->{$hour};
 
             my $basic_blocks_hit = $ctime_to_basic_blocks_hit->{$ctime};
             foreach my $basic_block(keys %{$basic_blocks_hit}) {
@@ -108,7 +115,12 @@ foreach my $fuzzer(@fuzzers) {
                     $session_coverage_for_hour->{$basic_block} = 0;
                 }
 
+                if (!defined $fuzzer_coverage_for_hour->{$basic_block}) {
+                    $fuzzer_coverage_for_hour->{$basic_block} = 0;
+                }
+
                 $session_coverage_for_hour->{$basic_block} += $basic_blocks_hit->{$basic_block};
+                $fuzzer_coverage_for_hour->{$basic_block} += $basic_blocks_hit->{$basic_block};
             }
         }
 
@@ -127,6 +139,20 @@ foreach my $fuzzer(@fuzzers) {
                     $basic_blocks_hit->{$basic_block} += $previous_hour_basic_blocks_hit->{$basic_block};
                 }
             }
+
+            if (scalar(keys %{$fuzzer_coverage_by_hour->{$hour}}) == 0) {
+                $fuzzer_coverage_by_hour->{$hour} = $fuzzer_coverage_by_hour->{$hour - 1};
+            } else {
+                my $previous_hour_basic_blocks_hit = $fuzzer_coverage_by_hour->{$hour - 1};
+                my $basic_blocks_hit = $fuzzer_coverage_by_hour->{$hour};
+                foreach my $basic_block(keys %{$previous_hour_basic_blocks_hit}) {
+                    if (!defined $basic_blocks_hit->{$basic_block}) {
+                        $basic_blocks_hit->{$basic_block} = 0;
+                    }
+
+                    $basic_blocks_hit->{$basic_block} += $previous_hour_basic_blocks_hit->{$basic_block};
+                }
+            }
         }
     }
 
@@ -135,19 +161,20 @@ foreach my $fuzzer(@fuzzers) {
         sum(map { scalar(keys %{$fuzzer_sessions_coverage_by_hour->{$_}->{$hour}}) } @sessions) / $num_sessions;
     } (0..$NUM_HOURS) ];
 
-    $fuzzers_average_coverage_by_hour->{$fuzzer} = {
+    $fuzzers_coverage_data->{$fuzzer} = {
         average_basic_blocks_counts => $average_basic_block_counts_by_hour,
-        average_coverage            => [ map { $_ / $total_basic_blocks } @{$average_basic_block_counts_by_hour} ]
+        average_coverage            => [ map { $_ / $total_basic_blocks } @{$average_basic_block_counts_by_hour} ],
+        total_coverage              => [ map { scalar(keys %{$fuzzer_coverage_by_hour->{$_}}) } sort { $a <=> $b } (keys %{$fuzzer_coverage_by_hour}) ]
     };
 
     print "\n";
     foreach my $hour(0..48) {
-        print "Hour $hour: $average_basic_block_counts_by_hour->[$hour]; $fuzzers_average_coverage_by_hour->{$fuzzer}->{average_coverage}->[$hour]\n";
+        print "Hour $hour: $average_basic_block_counts_by_hour->[$hour]; $fuzzers_coverage_data->{$fuzzer}->{average_coverage}->[$hour]\n";
     }
 }
 
-open JSON, ">", "$RESULTS_DIR/average_coverage_by_hour.json";
-print JSON $json->encode($fuzzers_average_coverage_by_hour);
+open JSON, ">", "$RESULTS_DIR/coverage_data.json";
+print JSON $json->encode($fuzzers_coverage_data);
 close JSON;
 
 sub analyze_jsoncpp_coverage {
