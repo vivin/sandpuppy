@@ -34,6 +34,7 @@ if (! -d $RUN_DIR) {
 }
 
 my $file_hashes = {};
+my $seen_orig_files = {}; # Need this because apparently afl likes to somehow modify the initial seeds??
 
 my $RESULTS_DIR = "$RUN_DIR/aggregated";
 make_path $RESULTS_DIR;
@@ -63,19 +64,30 @@ foreach my $session(@sessions) {
         if ($file =~ /id:/ && $file !~ /,sync:/) {
             my $state_file = "$STATE_DIR/$session-$file";
             if (-e -f $state_file) {
-                print "Skipping input " . (++$count) . " of $num_files (already processed)\r";
+                print "Skipping input " . (++$count) . " of $num_files (already processed)        \r";
                 next;
             }
 
             my $ctime = stat("$dir/$file")->ctime;
             if (time() - $ctime < 45) {
-                print "Skipping input " . (++$count) . " of $num_files (file is too new)  \r";
+                print "Skipping input " . (++$count) . " of $num_files (file is too new)        \r";
                 next;
+            }
+
+            if ($file =~ /,orig/) {
+                if (defined $seen_orig_files->{$file}) {
+                    print "Skipping input " . (++$count) . " of $num_files (duplicate orig file)     \r";
+                    system "touch $state_file";
+                    next;
+                }
+
+                $seen_orig_files->{$file} = 1;
             }
 
             chomp(my $hash = `sha512sum $dir/$file | awk '{ print \$1; }'`);
             if (defined $file_hashes->{$hash}) {
-                print "Skipping input " . (++$count) . " of $num_files (duplicate file)   \r";
+                print "Skipping input " . (++$count) . " of $num_files (duplicate file)          \r";
+                system "touch $state_file";
                 next;
             }
 
@@ -83,12 +95,12 @@ foreach my $session(@sessions) {
 
             # Will always copy new coverage regardless of whether it is valid json or not
             if ($file =~ /\+cov/) {
-                print "Copying input " . (++$count) . " of $num_files                   \r";
+                print "Copying input " . (++$count) . " of $num_files                          \r";
                 system "cp $dir/$file $NEW_SEEDS/$session-$file"
             } else {
                 system "/home/vivin/Projects/phd/resources/readjson $dir/$file 2>&1 >/dev/null";
                 if ($? != 0) {
-                    print "Skipping input " . (++$count) . " of $num_files (invalid json)     \r";
+                    print "Skipping input " . (++$count) . " of $num_files (invalid json)            \r";
                 } else {
                     open my $fh, "<", "$dir/$file" or die "Cannot open file $dir/$file";
                     my $contents = do {local $/; <$fh>};
@@ -96,9 +108,9 @@ foreach my $session(@sessions) {
 
                     my $data = eval { $codec->decode($contents) };
                     if ($@) {
-                        print "Skipping input " . (++$count) . " of $num_files (invalid json)     \r";
+                        print "Skipping input " . (++$count) . " of $num_files (invalid json)            \r";
                     } else {
-                        print "Copying input " . (++$count) . " of $num_files                   \r";
+                        print "Copying input " . (++$count) . " of $num_files                          \r";
                         system "cp $dir/$file $NEW_SEEDS/$session-$file"
                     }
                 }
