@@ -185,9 +185,9 @@ open JSON, ">", "$RESULTS_DIR/only_cov_coverage_data.json";
 print JSON $json->encode($fuzzers_coverage_data);
 close JSON;
 
-foreach my $hour(sort {$a <=> $b} (keys %{$fuzzers_coverage_by_hour})) {
+foreach my $hour(sort {$a <=> $b} (keys %{$fuzzers_coverage_by_hour->{sandpuppy}})) {
     open FILE, ">", "$RESULTS_DIR/hour_bb.txt";
-    foreach my $bb(sort(keys(%{$fuzzers_coverage_by_hour->{$hour}}))) {
+    foreach my $bb(sort(keys(%{$fuzzers_coverage_by_hour->{sandpuppy}->{$hour}}))) {
         print FILE "$bb\n";
     }
     close FILE;
