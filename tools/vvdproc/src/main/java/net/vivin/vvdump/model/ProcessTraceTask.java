@@ -1,11 +1,10 @@
 package net.vivin.vvdump.model;
 
-import static org.awaitility.Awaitility.await;
 import static net.vivin.vvdump.service.TraceProcessingService.Metrics;
 
 import lombok.NonNull;
 import lombok.extern.slf4j.Slf4j;
-import net.vivin.vvdump.cassandra.repository.CassandraRepository;
+import net.vivin.vvdump.repository.TraceRepository;
 import org.apache.commons.lang3.RandomStringUtils;
 
 import java.io.FileInputStream;
@@ -36,12 +35,12 @@ public class ProcessTraceTask implements Runnable {
     private final ExecutorService executor;
 
     @NonNull
-    private final CassandraRepository cassandra;
+    private final TraceRepository traceRepository;
 
     @NonNull
     private final Metrics metrics;
 
-    public ProcessTraceTask(ProcessTrace processTrace, @NonNull Path dataDirectory, @NonNull ExecutorService executor, @NonNull CassandraRepository cassandra, @NonNull Metrics metrics) {
+    public ProcessTraceTask(ProcessTrace processTrace, @NonNull Path dataDirectory, @NonNull ExecutorService executor, @NonNull TraceRepository traceRepository, @NonNull Metrics metrics) {
 
         this.traceSize = processTrace.size();
         savedProcessTracePath = dataDirectory.resolve(
@@ -69,7 +68,7 @@ public class ProcessTraceTask implements Runnable {
         }
 
         this.executor = executor;
-        this.cassandra = cassandra;
+        this.traceRepository = traceRepository;
         this.metrics = metrics;
 
         this.metrics.addToTotalTraceItems(processTrace.size());
@@ -111,7 +110,7 @@ public class ProcessTraceTask implements Runnable {
             Executors.callable(() -> {
                 var start = System.currentTimeMillis();
 
-                cassandra.insertFullTraceItem(FullTraceItem.from(traceItem, endTraceItem));
+                traceRepository.insertFullTraceItem(FullTraceItem.from(traceItem, endTraceItem));
 
                 metrics.decrementProcessingTraceItems();
                 metrics.incrementProcessedTraceItems();

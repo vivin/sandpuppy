@@ -35,6 +35,8 @@ my $WAYPOINTS_NONE = "none";
 my $SANDPUPPY_MAIN_TARGET_NAME = "sandpuppy-main";
 my $SANDPUPPY_SYNC_DIRECTORY = "sandpuppy-sync";
 
+my $fuzz_config = YAML::XS::LoadFile("$BASE_PATH/resources/fuzz_config.yml");
+
 my $subjects = {
     vctestbed  => {
         binary_name => "vctestbed",
@@ -118,7 +120,7 @@ my $subjects = {
             fuzz             => create_fuzz_task(\&libtpms::get_fuzz_command),
             pod_fuzz_command => create_pod_fuzz_command_task(\&libtpms::get_fuzz_command)
         },
-        fuzz_time   => 600
+        fuzz_time   => $fuzz_config->{libtpms}->{fuzz_time}
     },
     smbc        => {
         binary_name => "smbc",
@@ -208,7 +210,7 @@ my $subjects = {
             fuzz             => create_fuzz_task(\&jsoncpp::get_fuzz_command),
             pod_fuzz_command => create_pod_fuzz_command_task(\&jsoncpp::get_fuzz_command)
         },
-        fuzz_time   => 600
+        fuzz_time   => $fuzz_config->{jsoncpp}->{fuzz_time}
     }
 };
 

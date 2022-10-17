@@ -8,6 +8,7 @@ import yaml
 import bz2
 import random
 import hashlib
+import redis
 import pickle
 import _pickle as c_pickle
 
@@ -18,7 +19,7 @@ from functools import partial
 from cassandra.auth import PlainTextAuthProvider
 from cassandra.cluster import Cluster
 
-from db import cassandra_trace_db
+from db import cassandra_trace_db, redis_trace_db
 from ml import feature_extractor, classifiers
 from graphs import graph
 
@@ -153,6 +154,10 @@ def main(experiment: str, subject: str, binary: str, execution: str, action: str
         print(f"Finished in {hours} hours, {minutes} minutes, and {seconds} seconds")
 
 
+def connect_to_redis():
+    return redis.Redis(host='localhost', port=6379, db=0)
+
+
 def connect_to_cassandra():
     auth_provider = PlainTextAuthProvider(username='phd', password='phd')
     cluster = Cluster(protocol_version=4, auth_provider=auth_provider)
@@ -247,10 +252,10 @@ def classify_variables(experiment: str, subject: str, binary: str, execution: st
     results_path = f"{base_results_path}/{execution}"
     analysis_data_path = f"{results_path}/analysis_data"
 
-    session = connect_to_cassandra()
+    client = connect_to_redis()
 
     print("Identifying files, functions, and variables...")
-    retrieved_variables, variables_by_filename_and_function = retrieve_variables(session, subject)
+    retrieved_variables, variables_by_filename_and_function = retrieve_variables(client, subject)
 
     num_retrieved_variables = len(retrieved_variables)
     if action == "classify_from_saved":
@@ -259,7 +264,7 @@ def classify_variables(experiment: str, subject: str, binary: str, execution: st
         print(f"Retrieving traces for {num_retrieved_variables} variables and classifying...")
 
     done = threading.Event()
-    with concurrent.futures.ThreadPoolExecutor(max_workers=60) as thread_pool_executor,\
+    with concurrent.futures.ThreadPoolExecutor(max_workers=4096) as thread_pool_executor,\
          concurrent.futures.ProcessPoolExecutor(max_workers=12) as process_pool_executor:
 
         counts = {'processed': 0}
@@ -324,9 +329,9 @@ def classify_variables(experiment: str, subject: str, binary: str, execution: st
                 ).add_done_callback(partial(classify_callback, _variable=variable))
             else:
                 thread_pool_executor.submit(
-                    cassandra_trace_db.retrieve_variable_value_traces_information,
+                    redis_trace_db.retrieve_variable_value_traces_information,
                     variable=variable,
-                    session=session,
+                    client=client,
                     experiment=experiment,
                     subject=subject,
                     binary=binary,
@@ -359,14 +364,14 @@ def retrieve_variables(session, subject):
     variables_by_filename_and_function = {}
     retrieved_variables = []
 
-    filenames = cassandra_trace_db.get_subject_filenames(session, subject)
+    filenames = redis_trace_db.get_subject_filenames(session, subject)
     for filename in sorted(filenames):
         variables_by_filename_and_function[filename] = {}
 
-        functions = cassandra_trace_db.get_subject_file_functions(session, subject, filename)
+        functions = redis_trace_db.get_subject_file_functions(session, subject, filename)
         for function in sorted(functions):
-            variables = cassandra_trace_db.get_subject_file_function_variables_of_type(session, subject, filename,
-                                                                                       function, "int")
+            variables = redis_trace_db.get_subject_file_function_variables_of_type(session, subject, filename,
+                                                                                   function, "int")
             variables_by_filename_and_function[filename][function] = {
                 'variables': variables,
                 'zero_traces': [],
@@ -397,6 +402,11 @@ def print_classification_results(variables_by_filename_and_function):
         'enum_from_input': "Enums deriving value from input",
         'related': "Related variables"
     }
+    for filename in sorted(variables_by_filename_and_function.keys()):
+        for function in sorted(variables_by_filename_and_function[filename].keys()):
+            function_variables = variables_by_filename_and_function[filename][function]
+            for variable in sorted(function_variables['variables'], key=lambda d: d['name']):
+                print(f"#VAR#: {variable['class']} {variable['fqn']}")
 
     print("")
     for filename in sorted(variables_by_filename_and_function.keys()):
@@ -584,11 +594,11 @@ def classify_variable(variable):
         counter_class = classifiers.classify_counter(features)
         return features, counter_class + "_counter", variable['traces_info']['modified_lines']
 
-    elif classifiers.is_correlated_with_input_size(features):
-        return features, "correlated_with_input_size", variable['traces_info']['modified_lines']
-
     elif classifiers.is_enum(features):
         return features, "enum_from_input", variable['traces_info']['modified_lines']
+
+    elif classifiers.is_correlated_with_input_size(features):
+        return features, "correlated_with_input_size", variable['traces_info']['modified_lines']
 
     return features, "unknown", variable['traces_info']['modified_lines']
 

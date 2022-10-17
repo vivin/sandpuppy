@@ -40,7 +40,7 @@ char* decode(const char* input, int* length) {
 
 vvdump_ignore
 __attribute__((no_sanitize("address")))
-int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size)
+int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size, int is_first)
 {
     unsigned char *rbuffer = NULL;
     uint32_t rlength;
@@ -60,6 +60,10 @@ int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size)
     if (res != TPM_SUCCESS) {
         fprintf(stderr, "Error: TPMLIB_MainInit() failed\n");
         return 1;
+    }
+
+    if (is_first == 0) {
+        printf("__#STARTUP#__\n");
     }
 
     res = TPMLIB_Process(&rbuffer, &rlength, &rtotal, startup, sizeof(startup));
@@ -122,10 +126,12 @@ int main(int argc, char **argv)
         return 1;
     }
 
+    int is_first = 1;
     while (exit_code == 0 && (read = getline(&line, &len, f)) != -1) {
         int command_length;
         char *command = decode(line, &command_length);
-        exit_code = LLVMFuzzerTestOneInput((void *)command, (size_t) command_length);
+        exit_code = LLVMFuzzerTestOneInput((void *)command, (size_t) command_length, is_first);
+        is_first = 0;
     }
 
     fclose(f);

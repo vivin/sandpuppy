@@ -1,13 +1,14 @@
 package net.vivin.vvdump.service;
 
 import lombok.extern.slf4j.Slf4j;
-import net.vivin.vvdump.cassandra.repository.CassandraRepository;
 import net.vivin.vvdump.model.EndTraceMessage;
 import net.vivin.vvdump.model.ProcessTrace;
 import net.vivin.vvdump.model.ProcessTraceTask;
 import net.vivin.vvdump.model.TraceItem;
+import net.vivin.vvdump.repository.TraceRepository;
 import org.apache.commons.math3.stat.descriptive.DescriptiveStatistics;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.ApplicationContext;
 import org.springframework.context.ConfigurableApplicationContext;
@@ -43,7 +44,7 @@ import static org.awaitility.Awaitility.await;
 public class TraceProcessingService {
 
     private static final int PROCESS_TRACE_EXECUTOR_NUM_THREADS = 12;
-    private static final int TRACE_ITEM_EXECUTOR_NUM_THREADS = 256;
+    private static final int TRACE_ITEM_EXECUTOR_NUM_THREADS = 512;
     private static final int NUM_TRACE_COMPONENTS = 13;
     private static final int NUM_END_TRACE_COMPONENTS = 8;
     private static final String END_TRACE_MARKER = "__$VVDUMP_END$__";
@@ -53,7 +54,7 @@ public class TraceProcessingService {
     private String namedPipePath;
 
     private final ApplicationContext applicationContext;
-    private final CassandraRepository cassandra;
+    private final TraceRepository traceRepository;
     private final ExecutorService pipeReaderExecutor;
     private final ScheduledExecutorService loggerExecutor;
     private final ExecutorService processTraceExecutor;
@@ -71,9 +72,9 @@ public class TraceProcessingService {
     private boolean showProgress = false;
 
     @Autowired
-    public TraceProcessingService(ApplicationContext applicationContext, CassandraRepository cassandra) throws IOException {
+    public TraceProcessingService(ApplicationContext applicationContext, @Qualifier("redis") TraceRepository traceRepository) throws IOException {
         this.applicationContext = applicationContext;
-        this.cassandra = cassandra;
+        this.traceRepository = traceRepository;
         this.pipeReaderExecutor = Executors.newSingleThreadExecutor();
         this.loggerExecutor = Executors.newSingleThreadScheduledExecutor();
         this.processTraceExecutor = Executors.newFixedThreadPool(PROCESS_TRACE_EXECUTOR_NUM_THREADS);
@@ -154,7 +155,7 @@ public class TraceProcessingService {
                             new ProcessTrace(processTraces.remove(pid), line),
                             dataDirectory,
                             traceItemInsertionExecutor,
-                            cassandra,
+                            traceRepository,
                             metrics
                         ));
                     } else {

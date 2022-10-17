@@ -1,0 +1,25 @@
+# no need?
+set experiments = ...
+
+# no need?
+set <experiment-name>.subjects = ...
+
+# no need?
+set <experiment-name>:<subject-name>.binaries = ...
+
+# no need?
+set <experiment-name>:<subject-name>:<binary-name>.executions = ...
+
+set <subject-name>.files = ...
+
+set <subject-name>:<filename>.functions = ...
+
+set <subject-name>:<filename>:<function-name>.variables = [<declared-line>,<type>,<name>]
+
+# no need?
+set <experiment-name>:<subject-name>:<binary-name>:<execution-name>.<exit-status>.<pid> = <input-size>
+
+<experiment-name>:<subject-name>:<binary-name>:<execution-name>:<filename>:<function-name>:<declared-line>:<variable-type>:<variable-name>:<exit-status> = [<pid>,<input-size>]
+
+<experiment-name>:<subject-name>:<binary-name>:<execution-name>:<filename>:<function-name>:<declared-line>:<variable-type>:<variable-name>:<pid> = [<timestamp>,<modified-line>,<value>]
+

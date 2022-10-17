@@ -4,17 +4,21 @@ server:
 spring:
   main:
     web-application-type: none
-  data:
-    cassandra:
-      session-name: "Data Cluster"
-      username: phd
-      password: phd
-      keyspace-name: phd
-      port: 9042
-      contact-points: localhost
-      local-datacenter: datacenter1
-      request:
-        timeout: 15s
+#  data:
+#    cassandra:
+#      session-name: "Data Cluster"
+#      username: phd
+#      password: phd
+#      keyspace-name: phd
+#      port: 9042
+#      contact-points: localhost
+#      local-datacenter: datacenter1
+#      request:
+#        timeout: 15s
+  redis:
+    database: 0
+    host: localhost
+    port: 6379
 
 vvdump:
   named-pipe-path: "/tmp/vvdump"
