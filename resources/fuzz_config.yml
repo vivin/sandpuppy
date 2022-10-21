@@ -1,8 +1,28 @@
 ---
 jsoncpp:
-  fuzz_time: 30
+  fuzz_time: 300
+  binary_name: readjson
+  argument: @@
 libtpms:
   fuzz_time: 300
+  binary_name: readtpmc
+  argument: @@
+libpng:
+  fuzz_time: 300
+  binary_name: readjson
+  argument: < @@
+pcapplusplus:
+  fuzz_time: 300
+  binary_name: readpcap
+  argument: @@
+dmg2img:
+  fuzz_time: 300
+  binary_name: dmg2img
+  argument: @@
+readelf:
+  fuzz_time: 300
+  binary_name: readelf
+  argument: -a @@
 smbc:
   exec_or_run_matching:
     ^l0-:

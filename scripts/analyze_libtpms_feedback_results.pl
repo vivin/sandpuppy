@@ -87,7 +87,7 @@ foreach my $run(@runs) {
 
             if ($file =~ /id:/ && $file !~ /,sync:/) {
                 print "Processing input " . (++$count) . " of $num_files                   \r";
-                process_commands_for_input("$dir/$file", $run);
+                analyze_input_file("$dir/$file", $run);
             }
         }
         close FILES;
@@ -144,7 +144,7 @@ sub output_run_stats {
     }
 }
 
-sub process_commands_for_input {
+sub analyze_input_file {
     my $file = $_[0];
     my $run = $_[1];
 

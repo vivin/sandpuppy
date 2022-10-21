@@ -3,15 +3,14 @@
 use lib glob "~/Projects/phd/scripts/modules";
 use strict;
 use warnings FATAL => 'all';
-use POSIX;
-use Fcntl;
 use tasks;
 
 my $supported_tasks = {
     build         => 1,
     fuzz          => 1,
     spfuzz        => 1,
-    spvanillafuzz => 1
+    spvanillafuzz => 1,
+    setupfuzzeval => 1
 };
 
 if (scalar @ARGV < 3) {
@@ -87,7 +86,7 @@ if ($task eq "build" or $task eq "fuzz") {
             $resume = 1;
         }
     }
-} elsif ($task eq "spfuzz" || $task eq "spvanillafuzz") {
+} elsif ($task eq "spfuzz" || $task eq "spvanillafuzz" || $task eq "setupfuzzeval") {
     if (!$ARGV[3] || $ARGV[3] ne "as") {
         die "Expected \"as\":\n $0 $experiment_name $task $original_subject as <run-name> [resume | with asan [resume]]\n";
     } elsif (!$ARGV[4]) {
@@ -119,7 +118,7 @@ if (!tasks::subject_exists($subject)) {
     die "Unrecognized subject $subject";
 }
 
-if ($task ne "spfuzz" && $task ne "spvanillafuzz" && !tasks::subject_has_task($subject, $task)) {
+if ($task ne "spfuzz" && $task ne "spvanillafuzz" && $task ne "setupfuzzeval" && !tasks::subject_has_task($subject, $task)) {
     die "Subject $subject does not have task $task"
 }
 
@@ -167,6 +166,16 @@ if ($task eq "build") {
                 }
             );
         }
-
+    } elsif($task eq "setupfuzzeval") {
+        tasks::setup_fuzz_eval(
+            $experiment_name,
+            $subject,
+            $version,
+            {
+                run_name => $run_name,
+                use_asan => $use_asan,
+                resume   => $resume
+            }
+        );
     }
 }

@@ -3,6 +3,7 @@ package utils;
 use strict;
 use warnings FATAL => 'all';
 use Log::Simple::Color;
+use Fcntl;
 use File::Path qw(make_path);
 use List::Util qw(reduce);
 use POSIX;
@@ -21,6 +22,44 @@ my $ASAN_MEMORY_LIMIT = 1024; #20971586; # Depends on the system. For 64-bit ASA
 
 srand(time);
 
+sub setup_named_pipe {
+    my $NAMED_PIPE = "/tmp/vvdump";
+    if (!-e $NAMED_PIPE) {
+        $log->info("Creating named pipe at $NAMED_PIPE");
+        POSIX::mkfifo($NAMED_PIPE, 0700) or die "Could not create $NAMED_PIPE";
+    }
+
+    # Increase maximum named-pipe size and set the size of our pipe. It appears the maximum possible size is 32 mb; at least
+    # on my system.
+    my $NAMED_PIPE_SIZE = 1048576 * 32;
+    my $pid = fork;
+    if (!$pid) {
+        # I don't remember why I did this. I think maybe there needs to be a writer on it or something in order to set
+        # the pipe size.
+        open my $f, ">", $NAMED_PIPE;
+        while(1) { }
+        exit;
+    } else {
+        # Need sudo to increase the maximum pipe size. Make sure there is an entry like the following in the sudoers
+        # file:
+        # myuser  ALL=(ALL:ALL) NOPASSWD:/sbin/sysctl fs.pipe-max-size=*
+        system("sudo sysctl fs.pipe-max-size=$NAMED_PIPE_SIZE");
+        open FD, $NAMED_PIPE  or die "Cannot open $NAMED_PIPE";
+        my $old_size = fcntl(\*FD, Fcntl::F_GETPIPE_SZ, 0);
+        $log->info("Old pipe size: $old_size");
+
+        fcntl(\*FD, Fcntl::F_SETPIPE_SZ, int($NAMED_PIPE_SIZE));
+        my $new_size = fcntl(\*FD, Fcntl::F_GETPIPE_SZ, 0);
+        if ($new_size < $NAMED_PIPE_SIZE) {
+            $log->error("Failed setting pipe size to $NAMED_PIPE_SIZE");
+        } else {
+            $log->info("New pipe size: $new_size");
+        }
+
+        kill 'INT', $pid;
+    }
+}
+
 sub get_clang_library_path {
     return "/usr/lib/llvm-10/lib/clang/10.0.0/lib/linux"
 }
@@ -31,6 +70,10 @@ sub get_clang_asan_dso {
 
 sub get_clang_asan_static_lib {
     return get_clang_library_path() . "/libclang_rt.asan-x86_64.a";
+}
+
+sub get_base_nfs_path {
+    return $BASE_NFS_PATH;
 }
 
 sub __get_subject_directory_for_root {
@@ -192,6 +235,10 @@ sub build_fuzz_command {
         die "Could not find binary for binary context $binary_context at $binary";
     }
 
+    if ($binary_context =~ /redqueen/ && ! -e "$binary.cmp") {
+        die "Could not find cmp binary for binary context $binary_context at $binary.cmp";
+    }
+
     # If we are using kubernetes then we copy the binary from the shared mount to a local bin directory in the
     # container. So let us run that instead (performance is better).
     if ($use_kubernetes) {
@@ -199,7 +246,12 @@ sub build_fuzz_command {
     }
 
     my $FUZZ_FACTORY = "$TOOLS/FuzzFactory";
+    my $AFL_PLUS_PLUS = "$TOOLS/aflplusplus";
     my $fuzz_command = "$FUZZ_FACTORY/afl-fuzz";
+    if ($binary_context =~ /aflplusplus/) {
+        $fuzz_command = "$AFL_PLUS_PLUS/afl-fuzz";
+    }
+
     if ($waypoints ne "none") {
         $fuzz_command .= " -p";
     }
@@ -239,7 +291,11 @@ sub build_fuzz_command {
         $fuzz_command .= " -d";
     }
 
-    $fuzz_command .= " -- $binary";
+    if ($binary_context ne "aflplusplus-redqueen") {
+        $fuzz_command .= " -- $binary";
+    } else {
+        $fuzz_command .= " -c $binary.cmp -- $binary";
+    }
 
     # Extra arguments to binary. Can contain @@ to tell AFL to provide input as file name
     if (defined $binary_arguments) {
@@ -489,8 +545,8 @@ sub generate_startup_script {
 
     # Copy seeds over
     log "Copying seeds..."
-    mkdir -p /home/vivin/Projects/phd/resources/seeds/$subject
-    cp -r /private-nfs/vivin/seeds/$subject/fuzz /home/vivin/Projects/phd/resources/seeds/$subject
+    mkdir -p /home/vivin/Projects/phd/resources/seeds/$subject/fuzz
+    cp -a $container_nfs_subject_directory/seeds/\$RUN_NAME/. /home/vivin/Projects/phd/resources/seeds/$subject/fuzz/
     log "Done copying seeds"
 
     # Since we don't copy over the symlinks created for binary directories with colons (we do this because when linking
@@ -513,6 +569,213 @@ sub generate_startup_script {
     HERE
 }
 
+sub generate_fuzz_eval_startup_script {
+    my $experiment_name = $_[0];
+    my $subject = $_[1];
+    my $version = $_[2];
+    my $pod_name = $_[3];
+    my $fuzzer = $_[4];
+    my $fuzz_command = $_[5];
+    my $fuzz_command_with_resume = $_[6];
+
+    my $container_nfs_subject_directory = get_container_nfs_subject_directory($experiment_name, $subject, $version);
+    my $remote_nfs_subject_directory = get_remote_nfs_subject_directory($experiment_name, $subject, $version);
+
+    return <<~"HERE";
+    #!/bin/bash
+
+    if [[ \$# -lt 2 ]]; then
+      echo "\$0 <run-name> <target-id> [resume]"
+      exit 1
+    fi
+
+    RUN_NAME=\$1
+    TARGET_ID=\$2
+    RESUME=\$3
+
+    NUM_CORES=\$(lscpu | grep -e "^CPU(s):" | sed -e 's,^.* ,,')
+    AVAILABLE_CORES=\$(( NUM_CORES - 2 )) # One for AFL and one for sync() running in the background
+
+    SYNC_DELAY=300
+    ATTEMPTS_BEFORE_FULL_SYNC=6
+
+    DELAY=0.1
+    EXPONENT=2
+
+    log () {
+      echo -e "\\e[1m\\e[32m[\$(date -u)]\\e[0m \$1"
+    }
+
+    warn () {
+      log "\\e[33m\$1\\e[0m"
+    }
+
+    sync_current_target_to_share() {
+      remote_nfs_sync_directory="$remote_nfs_subject_directory/results/\$RUN_NAME/$fuzzer-sync"
+
+      rsync -az -e "ssh -S '/home/vivin/.ssh/ctl/\$TARGET_ID\@%h:%p'" \\
+            /out/\$TARGET_ID vivin\@vivin.is-a-geek.net:"\$remote_nfs_sync_directory" 2> /tmp/rsync.err
+    }
+
+    sync_current_target_from_share() {
+      remote_nfs_target_directory="$remote_nfs_subject_directory/results/\$RUN_NAME/$fuzzer-sync/\$TARGET_ID"
+
+      rsync -az -e "ssh -S '/home/vivin/.ssh/ctl/\$TARGET_ID\@%h:%p'" \\
+            vivin\@vivin.is-a-geek.net:"\$remote_nfs_target_directory" /out 2> /tmp/rsync.err
+    }
+
+    sync_target_inputs_from_share() {
+      target=\$1
+      remote_nfs_target_directory="$remote_nfs_subject_directory/results/\$RUN_NAME/$fuzzer-sync/\$target"
+
+      rsync -az -e "ssh -S '/home/vivin/.ssh/ctl/\$TARGET_ID\@%h:%p'" \\
+            --include="fuzzer_stats" --include="queue/" \\
+            --exclude="hangs*/" --exclude="crashes*/" --exclude=".synced/" --exclude=".state/" --exclude="fuzz_bitmap" \\
+            --exclude=".cur_input" --exclude="plot_data" --exclude="fuzzfactory.log" \\
+            vivin\@vivin.is-a-geek.net:"\$remote_nfs_target_directory" /out 2> /tmp/rsync.err
+    }
+
+    sync_with_retry() {
+      sync_function=\$1
+      shift
+
+      attempt=1
+      \$sync_function \$\@
+      while [[ "\$?" -ne 0 ]]
+      do
+        calculated_delay=\$(perl -e "print \$DELAY * (\$EXPONENT ** \$attempt)")
+        warn "\$sync_function failed."
+        cat /tmp/rsync.err
+        warn "Retrying after sleeping for \$calculated_delay seconds..."
+        sleep "\$calculated_delay"
+
+        attempt=\$(( attempt + 1 ))
+        \$sync_function \$\@
+      done
+    }
+
+    sync() {
+      # Sleep first before we start syncing. This gives AFL time to start up and produce some results.
+      sleep "\$SYNC_DELAY"
+
+      count=0
+      while :
+      do
+        # Start control SSH session
+        ssh -nNf -M -S "/home/vivin/.ssh/ctl/\$TARGET_ID\@%h:%p" -o StrictHostKeyChecking=no -i /home/vivin/sandpuppy-pod-key \\
+            vivin\@vivin.is-a-geek.net
+
+        # First copy this target's results over to the share
+        log "Copying target results to share"
+        sync_with_retry sync_current_target_to_share
+        log "Done copying target results to share"
+
+        # If 30 minutes have elapsed let's sync results from the other targets
+        if [[ "\$count" -eq "\$ATTEMPTS_BEFORE_FULL_SYNC" ]]; then
+          while IFS="" read -r target || [ -n "\$target" ]
+          do
+            container_nfs_target_directory="$container_nfs_subject_directory/results/\$RUN_NAME/$fuzzer-sync/\$target"
+            if [[ -d "\$container_nfs_target_directory" ]]; then
+              log "Syncing \$target inputs"
+              sync_with_retry sync_target_inputs_from_share "\$target"
+              log "Done syncing \$target inputs"
+
+              sleep "\$DELAY"
+            else
+              log "No existing results found for target \$target"
+            fi
+          done < /out/targets
+
+          count=0
+        fi
+
+        # End control SSH session
+        ssh -O exit -S "/home/vivin/.ssh/ctl/\$TARGET_ID\@%h:%p" vivin\@vivin.is-a-geek.net
+
+        sleep "\$SYNC_DELAY"
+        count=\$(( count + 1 ))
+      done
+    }
+
+    echo "Experiment: $experiment_name"
+    echo "Subject: ${\($subject . ($version ? "-$version" : ""))}"
+    echo "Run Name: \$RUN_NAME"
+    echo "Target name: \$TARGET_ID"
+    echo "Pod name: $pod_name"
+
+    ln -sf /private-nfs/vivin /home/vivin/Projects/phd/workspace
+    mkdir -p /home/vivin/Projects/phd/bin
+    mkdir -p $container_nfs_subject_directory/results/\$RUN_NAME/$fuzzer-sync
+    mkdir -p /home/vivin/.ssh/ctl
+    cp /private-nfs/vivin/sandpuppy-pod-key /home/vivin/sandpuppy-pod-key
+    cp $container_nfs_subject_directory/$fuzzer-targets /out/targets
+
+    # We don't want pods slamming the SSH server at the same time on resume or sync, so we will sleep first before we
+    # do anything. This value is generated randomly.
+    SLEEP=\$((1 + RANDOM % 10))
+    log "Sleeping for \$SLEEP seconds before starting..."
+    sleep \$SLEEP
+
+    if [[ -z "\$RESUME" ]]; then
+      date +%s >"$container_nfs_subject_directory/results/\$RUN_NAME/$fuzzer-sync/start_ts"
+    else
+      # Start control SSH session
+      ssh -nNf -M -S "/home/vivin/.ssh/ctl/\$TARGET_ID\@%h:%p" -o StrictHostKeyChecking=no -i /home/vivin/sandpuppy-pod-key \\
+          vivin\@vivin.is-a-geek.net
+
+      # We are resuming, so first copy over this target's results directory, and then the queues from other targets
+      log "Copying previous results from share into local results directory"
+      sync_with_retry sync_current_target_from_share
+      log "Done copying previous results from share into local results directory"
+
+      while IFS="" read -r target || [ -n "\$target" ]
+      do
+        container_nfs_target_directory="$container_nfs_subject_directory/results/\$RUN_NAME/$fuzzer-sync/\$target"
+        if [[ -d "\$container_nfs_target_directory" ]]; then
+          log "Syncing existing inputs for \$target"
+          sync_with_retry sync_target_inputs_from_share "\$target"
+          log "Done syncing existing inputs for \$target"
+
+          sleep "\$DELAY"
+        else
+          log "No existing results found for target \$target"
+        fi
+      done < /out/targets
+
+      # End control SSH session
+      ssh -O exit -S "/home/vivin/.ssh/ctl/\$TARGET_ID\@%h:%p" vivin\@vivin.is-a-geek.net
+    fi
+
+    # Copy the binary and any other files in the nfs binary directory to a local directory
+    cp -r "$container_nfs_subject_directory/binaries/$fuzzer" /home/vivin/Projects/phd/bin
+
+    # Copy seeds over
+    log "Copying seeds..."
+    mkdir -p /home/vivin/Projects/phd/resources/seeds/$subject/fuzz
+    cp -a $container_nfs_subject_directory/seeds/\$RUN_NAME/. /home/vivin/Projects/phd/resources/seeds/$subject/fuzz/
+    log "Done copying seeds"
+
+    # Since we don't copy over the symlinks created for binary directories with colons (we do this because when linking
+    # the linker has issues with paths containing colons) dynamically linked binaries have issues finding their shared
+    # library. So we will create a symlink to the local binary directory and set LD_LIBRARY_PATH to it.
+    ln -s "/home/vivin/Projects/phd/bin/$fuzzer" /home/vivin/lib
+    export LD_LIBRARY_PATH=/home/vivin/lib
+
+    cd /home/vivin/Projects/phd
+    sync &
+    SYNC_PID=\$!
+
+    if [[ -z "\$RESUME" ]]; then
+      $fuzz_command
+    else
+      $fuzz_command_with_resume
+    fi
+
+    kill \$SYNC_PID >/dev/null 2>&1
+    HERE
+}
+
+# TODO: do we even need this script anymore
 # Similar to above, but doesn't try to import results from other targets for syncing. Only used for the main target so
 # so that we can fuzz with just vanilla AFL.
 sub generate_startup_script_without_import_sync {
@@ -652,8 +915,8 @@ sub generate_startup_script_without_import_sync {
 
     # Copy seeds over
     log "Copying seeds..."
-    mkdir -p /home/vivin/Projects/phd/resources/seeds/$subject
-    cp -r /private-nfs/vivin/seeds/$subject/fuzz /home/vivin/Projects/phd/resources/seeds/$subject
+    mkdir -p /home/vivin/Projects/phd/resources/seeds/$subject/fuzz
+    cp -a $container_nfs_subject_directory/seeds/\$RUN_NAME/. /home/vivin/Projects/phd/resources/seeds/$subject/fuzz/
     log "Done copying seeds"
 
     # Since we don't copy over the symlinks created for binary directories with colons (we do this because when linking

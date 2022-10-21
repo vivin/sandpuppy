@@ -30,6 +30,7 @@ my $log = Log::Simple::Color->new;
 
 my $BASE_PATH = glob "~/Projects/phd";
 my $TOOLS = "$BASE_PATH/tools";
+my $RESOURCES = "$BASE_PATH/resources";
 
 my $WAYPOINTS_NONE = "none";
 my $SANDPUPPY_MAIN_TARGET_NAME = "sandpuppy-main";
@@ -381,42 +382,6 @@ sub pod_fuzz_command {
     return $tasks->{pod_fuzz_command}->(@_);
 }
 
-sub setup_named_pipe {
-    my $NAMED_PIPE = "/tmp/vvdump";
-    if (!-e $NAMED_PIPE) {
-        $log->info("Creating named pipe at $NAMED_PIPE");
-        POSIX::mkfifo($NAMED_PIPE, 0700) or die "Could not create $NAMED_PIPE";
-    }
-
-    # Increase maximum named-pipe size and set the size of our pipe. It appears the maximum possible size is 32 mb; at least
-    # on my system.
-    my $NAMED_PIPE_SIZE = 1048576 * 32;
-    my $pid = fork;
-    if (!$pid) {
-        open my $f, ">", $NAMED_PIPE;
-        while(1) { }
-        exit;
-    } else {
-        # Need sudo to increase the maximum pipe size. Make sure there is an entry like the following in the sudoers
-        # file:
-        # myuser  ALL=(ALL:ALL) NOPASSWD:/sbin/sysctl fs.pipe-max-size=*
-        system("sudo sysctl fs.pipe-max-size=$NAMED_PIPE_SIZE");
-        open FD, $NAMED_PIPE  or die "Cannot open $NAMED_PIPE";
-        my $old_size = fcntl(\*FD, Fcntl::F_GETPIPE_SZ, 0);
-        $log->info("Old pipe size: $old_size");
-
-        fcntl(\*FD, Fcntl::F_SETPIPE_SZ, int($NAMED_PIPE_SIZE));
-        my $new_size = fcntl(\*FD, Fcntl::F_GETPIPE_SZ, 0);
-        if ($new_size < $NAMED_PIPE_SIZE) {
-            $log->error("Failed setting pipe size to $NAMED_PIPE_SIZE");
-        } else {
-            $log->info("New pipe size: $new_size");
-        }
-
-        kill 'INT', $pid;
-    }
-}
-
 sub vvdump_fuzz {
     my $experiment_name = $_[0];
     my $subject = $_[1];
@@ -426,7 +391,7 @@ sub vvdump_fuzz {
     my $execution_context = $_[5];
     my $options = $_[6];
 
-    setup_named_pipe();
+    utils::setup_named_pipe();
 
     my $tasks = $subjects->{$subject}->{tasks};
 
@@ -554,6 +519,131 @@ sub initialize_nfs_subject_directory {
     }
 }
 
+sub setup_fuzz_eval {
+    my $experiment_name = $_[0];
+    my $subject = $_[1];
+    my $version = $_[2];
+    my $options = $_[3];
+
+    my $full_subject = $subject . ($version ? "-$version" : "");
+
+    my $run_name = $options->{run_name};
+    initialize_nfs_subject_directory($experiment_name, $subject, $version, $run_name);
+
+    my $nfs_subject_directory = utils::get_nfs_subject_directory($experiment_name, $subject, $version);
+
+    $log->info("Copying seeds to fuzz directory...");
+    my $nfs_seeds_dir = utils::get_nfs_subject_directory($experiment_name, $subject, $version) . "/seeds/$run_name";
+    if (! -e $nfs_seeds_dir) {
+        make_path $nfs_seeds_dir;
+        system("cp -a $RESOURCES/seeds/$subject/fuzz/. $nfs_seeds_dir/")
+    }
+
+    foreach my $fuzzer("afl-plain", "aflplusplus-plain", "aflplusplus-lafintel", "aflplusplus-redqueen") {
+        $log->info("Copying files for $fuzzer evaluation...");
+        copy_target_files_to_nfs($experiment_name, $subject, $version, { binary_context => $fuzzer });
+        print "\n";
+
+        my $pod_name = "$experiment_name-$full_subject-\$RUN_NAME--\$TARGET_ID";
+        my $parent_startup_script = utils::generate_fuzz_eval_startup_script(
+            $experiment_name,
+            $subject,
+            $version,
+            $pod_name,
+            $fuzzer,
+            pod_fuzz_command(
+                $experiment_name,
+                $subject,
+                $version,
+                $WAYPOINTS_NONE,
+                $fuzzer,
+                "\$TARGET_ID",
+                {
+                    async              => 1,
+                    fuzzer_id          => "\$TARGET_ID",
+                    parallel_fuzz_mode => "parent",
+                    run_name           => $run_name,
+                    resume             => 0
+                    #exit_when_done      => 1
+                }
+            ),
+            pod_fuzz_command(
+                $experiment_name,
+                $subject,
+                $version,
+                $WAYPOINTS_NONE,
+                $fuzzer,
+                "\$TARGET_ID",
+                {
+                    async              => 1,
+                    fuzzer_id          => "\$TARGET_ID",
+                    parallel_fuzz_mode => "parent",
+                    run_name           => $run_name,
+                    resume             => 1
+                    #exit_when_done      => 1
+                }
+            )
+        );
+        my $child_startup_script = utils::generate_fuzz_eval_startup_script(
+            $experiment_name,
+            $subject,
+            $version,
+            $pod_name,
+            $fuzzer,
+            pod_fuzz_command(
+                $experiment_name,
+                $subject,
+                $version,
+                $WAYPOINTS_NONE,
+                $fuzzer,
+                "\$TARGET_ID",
+                {
+                    async              => 1,
+                    fuzzer_id          => "\$TARGET_ID",
+                    parallel_fuzz_mode => "child",
+                    run_name           => $run_name,
+                    resume             => 0
+                    #exit_when_done      => 1
+                }
+            ),
+            pod_fuzz_command(
+                $experiment_name,
+                $subject,
+                $version,
+                $WAYPOINTS_NONE,
+                $fuzzer,
+                "\$TARGET_ID",
+                {
+                    async              => 1,
+                    fuzzer_id          => "\$TARGET_ID",
+                    parallel_fuzz_mode => "child",
+                    run_name           => $run_name,
+                    resume             => 1
+                    #exit_when_done      => 1
+                }
+            )
+        );
+
+        $log->info("Writing out parent startup script for $fuzzer...");
+
+        my $parent_startup_script_name = "$fuzzer.$run_name.parent";
+        open my $PARENT_STARTUP_SCRIPT, ">", "$nfs_subject_directory/$parent_startup_script_name";
+        print $PARENT_STARTUP_SCRIPT $parent_startup_script;
+        close $PARENT_STARTUP_SCRIPT;
+
+        system "chmod 755 $nfs_subject_directory/$parent_startup_script_name";
+
+        $log->info("Writing out child startup script for $fuzzer...");
+
+        my $child_startup_script_name = "$fuzzer.$run_name.child";
+        open my $CHILD_STARTUP_SCRIPT, ">", "$nfs_subject_directory/$child_startup_script_name";
+        print $CHILD_STARTUP_SCRIPT $child_startup_script;
+        close $CHILD_STARTUP_SCRIPT;
+
+        system "chmod 755 $nfs_subject_directory/$child_startup_script_name";
+    }
+}
+
 sub sandpuppy_fuzz {
     my $experiment_name = $_[0];
     my $subject = $_[1];
@@ -583,6 +673,13 @@ sub sandpuppy_fuzz {
     $log->info("Fuzzing using kubernetes requested.\n");
 
     initialize_nfs_subject_directory($experiment_name, $subject, $version, $run_name);
+
+    $log->info("Copying seeds to fuzz directory...");
+    my $nfs_seeds_dir = utils::get_nfs_subject_directory($experiment_name, $subject, $version) . "/seeds/$run_name";
+    if (! -e $nfs_seeds_dir) {
+        make_path $nfs_seeds_dir;
+        system("cp -a $RESOURCES/seeds/$subject/fuzz/. $nfs_seeds_dir/")
+    }
 
     my $i = 1;
     foreach my $target (@{$targets}) {
@@ -626,6 +723,7 @@ sub sandpuppy_fuzz {
         my $startup_script = $pod_information->{$pod_name}->{startup_script};
         my $startup_script_name = $pod_information->{$pod_name}->{startup_script_name};
         my $create_command = $pod_information->{$pod_name}->{create_command};
+        my $resume_command = $pod_information->{$pod_name}->{resume_command};
 
         # Check to see if the pod already exists. If it does, we don't want to create it
         system("kubectl get pod $pod_name >/dev/null 2>&1");
@@ -646,10 +744,26 @@ sub sandpuppy_fuzz {
 
             system "chmod 755 $subject_directory/$startup_script_name.create";
 
-            $log->info("[$i/$num_targets] Creating pod $pod_name for target $target_id");
-            system $create_command;
-            if ($? != 0) {
-                $log->error("[$i/$num_targets] Creating pod failed: $!");
+            $log->info("[$i/$num_targets] Writing out pod-resumption script.");
+
+            open my $POD_RESUMPTION_SCRIPT, ">", "$subject_directory/$startup_script_name.resume";
+            print $POD_RESUMPTION_SCRIPT "$resume_command\n";
+            close $POD_RESUMPTION_SCRIPT;
+
+            system "chmod 755 $subject_directory/$startup_script_name.resume";
+
+            if (!$options->{resume}) {
+                $log->info("[$i/$num_targets] Creating pod $pod_name for target $target_id");
+                system $create_command;
+                if ($? != 0) {
+                    $log->error("[$i/$num_targets] Creating pod failed: $!");
+                }
+            } else {
+                $log->info("[$i/$num_targets] Resuming pod $pod_name for target $target_id");
+                system $resume_command;
+                if ($? != 0) {
+                    $log->error("[$i/$num_targets] Resuming pod failed: $!");
+                }
             }
         } else {
             $log->info("[$i/$num_targets] Skipping existing pod $pod_name for target $target_id");
@@ -1070,11 +1184,11 @@ sub generate_pod_information_for_target {
 
     my $pod_name;
     if ($is_main_target == 1) {
-        $pod_name = "$experiment_name-$full_subject-$run_name--$target->{id}$asan_suffix";
+        $pod_name = "$experiment_name-$full_subject-\$RUN_NAME--$target->{id}$asan_suffix";
     } else {
         $pod_name = $target->{waypoints} eq "vvmax" ?
-            "$experiment_name-$full_subject-$run_name--$target->{id}$asan_suffix" :
-            "$experiment_name-$full_subject-$run_name--$target->{id}-$target->{waypoints}$asan_suffix";
+            "$experiment_name-$full_subject-\$RUN_NAME--$target->{id}$asan_suffix" :
+            "$experiment_name-$full_subject-\$RUN_NAME--$target->{id}-$target->{waypoints}$asan_suffix";
     }
 
     $pod_name =~ s/[\._]/-/g; # pod names have restrictions
@@ -1121,12 +1235,13 @@ sub generate_pod_information_for_target {
     );
 
     my $container_nfs_subject_directory = utils::get_container_nfs_subject_directory($experiment_name, $subject, $version);
-    my $pod_command = "$container_nfs_subject_directory/$target->{id}.$run_name $run_name" . ($options->{resume} ? " resume" : "");
+    my $pod_command = "$container_nfs_subject_directory/$target->{id}.$run_name $run_name";
     return $pod_name, {
         target_id           => $target->{id},
         startup_script      => $startup_script,
         startup_script_name => "$target->{id}.$run_name",
         create_command      => "kuboid/scripts/pod_create -n \"$pod_name\" -s /tmp/sandpuppy.existing -i vivin/sandpuppy $pod_command",
+        resume_command      => "kuboid/scripts/pod_create -n \"$pod_name\" -s /tmp/sandpuppy.existing -i vivin/sandpuppy $pod_command resume",
         sort_key            => ($is_main_target ? "a" : $target->{name}) # "a" so that main target is always first
     };
 }
