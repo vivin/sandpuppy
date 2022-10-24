@@ -84,7 +84,7 @@ sub iteration_handler {
         );
     }
 
-    my $elpsd = time() - $start; print "\nelapsed: $elpsd\n";
+    my $elpsd = time() - $start; printf "\nelapsed: %.9f\n", $elpsd;
 }
 
 sub create_wrapped_checker {
