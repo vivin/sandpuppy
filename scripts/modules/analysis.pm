@@ -196,7 +196,7 @@ sub iterate_fuzzer_results {
 
         chomp (my $num_files = `ls -f $inputs_dir | grep -v "^\\." | grep -v ",sync:" | wc -l`);
         my $count = 0;
-        open FILES, "ls -f $inputs_dir |";
+        open FILES, "ls -f $inputs_dir | grep -v \"^\\.\" | grep -v \",sync:\" | ";
         while (my $file = <FILES>) {
             chomp $file;
 
