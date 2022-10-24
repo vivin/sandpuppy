@@ -50,7 +50,9 @@ sub iteration_handler {
     my $session = $_[0];
     my $input_file = $_[1];
 
+    my $start = time();
     my @basic_blocks = @{analysis::get_basic_blocks_for_input($subject, $input_file)};
+    my $elpsd = time() - $start; print "\nelapsed: $elpsd\n";
     my $has_new_coverage = analysis::is_coverage_new(
         $experiment, $subject, $version, $run_name, $iteration, \@basic_blocks
     );
