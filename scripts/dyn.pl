@@ -266,7 +266,7 @@ sub setup_background_trace_processing {
     if (!$pid) {
         chdir "$TOOLS/vvdproc";
         system "mvn package 2>&1 >/dev/null";
-        exec "java -Xms8G -Xmx16G -jar target/vvdproc.jar 2>&1 >/dev/null";
+        exec "unbuffer java -Xms8G -Xmx16G -jar target/vvdproc.jar 2>&1 >/dev/null";
     }
 
     push @CHILDREN, $pid;
@@ -355,6 +355,7 @@ sub analyze_current_results {
         system "ssh -o StrictHostKeyChecking=no -i /mnt/vivin-nfs/vivin/sandpuppy-pod-key vivin\@vivin.is-a-geek.net " .
             "\"nohup /home/vivin/Projects/phd/scripts/analyze_results.pl $experiment $full_subject $run_name $iteration\" " .
             " > $REMOTE_RESULTS_DIR/$ANALYZE_RESULTS_LOG_FILENAME &";
+        sleep 1;
     } else {
         print "Analysis of current results for run $run_name (iteration $iteration) is already running...\n";
     }
