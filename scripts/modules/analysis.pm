@@ -25,7 +25,9 @@ sub get_basic_blocks_for_input {
     my $command = "$binary $fuzz_config->{$subject}->{argument}";
     $command =~ s/\@\@/$input_file/;
 
-    chomp(my @basic_blocks = `$command 2> /dev/null | grep \"__#BB#__\" | grep -v $binary | sort | uniq | sed 's,__#BB#__: ,,'`);
+    chomp(my @data = `$command 2> /dev/null | grep \"__#BB#__\" | grep -v $binary | sed 's,__#BB#__: ,,'`);
+    my %seen;
+    my @basic_blocks = sort(grep !$seen{$_}++, @data);
     return \@basic_blocks;
 }
 
