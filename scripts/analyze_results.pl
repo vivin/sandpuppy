@@ -6,7 +6,7 @@ use lib glob "~/Projects/phd/scripts/modules";
 use analysis;
 use utils;
 use jsoncpp;
-use Time::HiRes;
+use Time::HiRes qw(time);
 
 if (! -e -d "/media/2tb/phd-workspace/nfs") {
     die "Should be run on system that has local results\n";
