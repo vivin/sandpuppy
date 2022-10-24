@@ -239,10 +239,6 @@ sub start_sandpuppy_fuzz {
         phase_status   => "launching"
     });
 
-    # Start up the trace processor in the background so that it can collect traces as the fuzzing run progresses, from
-    # novel input that is deemed interesting.
-    setup_background_trace_processing();
-
     my $iteration = $run_state->{iteration};
 
     # Next we will start the sandpuppy fuzzing run
@@ -269,7 +265,7 @@ sub setup_background_trace_processing {
     my $pid = fork;
     if (!$pid) {
         chdir "$TOOLS/vvdproc";
-        system "mvn package";
+        system "mvn package 2>&1 >/dev/null";
         exec "java -Xms8G -Xmx16G -jar target/vvdproc.jar 2>&1 >/dev/null";
     }
 
@@ -299,6 +295,10 @@ sub wait_until_pods_are_ready {
 sub wait_until_iteration_is_done {
     my $iteration = $run_state->{iteration};
     my $start_time = $run_state->{start_time};
+
+    # Start up the trace processor in the background so that it can collect traces as the fuzzing run progresses, from
+    # novel input that is deemed interesting.
+    setup_background_trace_processing();
 
     sleep 60; # Initial sleep so that pods have a chance to upload results (they are uploaded every 5 minutes).
     while(time() - $start_time < $SANDPUPPY_FUZZING_RUN_TIME_SECONDS) {

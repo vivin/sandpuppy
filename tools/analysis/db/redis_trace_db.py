@@ -126,7 +126,7 @@ def delete_experiment_subject_binary(client, experiment, subject, binary):
     count = 1
     for keybatch in batcher(client.scan_iter(f"{experiment}:{subject}:{binary}:*"), 500):
         print(f"Deleting batch {count}...")
-        client.delete(*keybatch)
+        client.delete(*[x for x in keybatch if x is not None])
         count += 1
 
 
@@ -134,5 +134,5 @@ def delete_experiment_subject_binary_execution(client, experiment, subject, bina
     count = 1
     for keybatch in batcher(client.scan_iter(f"{experiment}:{subject}:{binary}:{execution}:*"), 500):
         print(f"Deleting batch {count}...")
-        client.delete(*keybatch)
+        client.delete(*[x for x in keybatch if x is not None])
         count += 1

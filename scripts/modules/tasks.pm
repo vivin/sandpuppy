@@ -1183,10 +1183,15 @@ sub generate_pod_information_for_target {
     my $asan_suffix = ($options->{use_asan} ? "-asan" : "");
 
     my $pod_name;
+    my $templated_pod_name;
     if ($is_main_target == 1) {
-        $pod_name = "$experiment_name-$full_subject-\$RUN_NAME--$target->{id}$asan_suffix";
+        $pod_name = "$experiment_name-$full_subject-$run_name--$target->{id}$asan_suffix";
+        $templated_pod_name = "$experiment_name-$full_subject-\$RUN_NAME--$target->{id}$asan_suffix";
     } else {
         $pod_name = $target->{waypoints} eq "vvmax" ?
+            "$experiment_name-$full_subject-$run_name--$target->{id}$asan_suffix" :
+            "$experiment_name-$full_subject-$run_name--$target->{id}-$target->{waypoints}$asan_suffix";
+        $templated_pod_name = $target->{waypoints} eq "vvmax" ?
             "$experiment_name-$full_subject-\$RUN_NAME--$target->{id}$asan_suffix" :
             "$experiment_name-$full_subject-\$RUN_NAME--$target->{id}-$target->{waypoints}$asan_suffix";
     }
@@ -1197,7 +1202,7 @@ sub generate_pod_information_for_target {
         $experiment_name,
         $subject,
         $version,
-        $pod_name,
+        $templated_pod_name,
         $target,
         $options,
         pod_fuzz_command(
