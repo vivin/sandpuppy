@@ -99,7 +99,7 @@ if (-e -f $RUN_STATE_FILE) {
         die "Dynamic fuzzing run already in progress for $RUN_KEY:\n$run_state_data\nInvoke with restart or continue\n";
     }
 
-    if ($restart_continue ne "restart" || $restart_continue ne "continue") {
+    if ($restart_continue ne "restart" && $restart_continue ne "continue") {
         die "Invoke with either restart or continue. Unrecognized argument: $restart_continue\n";
     }
 
@@ -198,6 +198,15 @@ sub analyze_traces {
 
     my $iteration = $run_state->{iteration};
     if ($iteration > 0) {
+        my $suffix = ($iteration > 1) ? "$run_name-${\($iteration - 1)}" : "$run_name-initial_tracegen";
+
+        print "Backing up previous trace-analysis results...\n";
+        my $SUBJECT_PATH = utils::get_subject_directory($experiment, $subject, $version);
+        system "mv $SUBJECT_PATH/results/$TRACEGEN_EXEC_CONTEXT $SUBJECT_PATH/results/$TRACEGEN_BIN_CONTEXT.$suffix";
+        system "mv $SUBJECT_PATH/results/sandpuppy_interesting_variables.yml $SUBJECT_PATH/results/sandpuppy_interesting_variables.yml.$suffix";
+        system "mv $SUBJECT_PATH/results/sandpuppy-target-name-to-id.yml $SUBJECT_PATH/results/sandpuppy-target-name-to-id.yml.$suffix";
+        system "mv $SUBJECT_PATH/results/sandpuppy-vvmax-variables.txt $SUBJECT_PATH/results/sandpuppy-vvmax-variables.txt.$suffix";
+
         print "Analyzing traces for run $run_name, iteration $iteration...\n";
     } else {
         print "Analyzing traces after initial trace-gathering run for $run_name...\n";
@@ -207,15 +216,6 @@ sub analyze_traces {
     if ($? != 0) {
         die "Trace analysis exited with an error: $!\n";
     }
-
-    my $suffix = ($iteration > 0) ? "$run_name-$iteration" : "$run_name-initial_tracegen";
-
-    print "Backing up trace-analysis results...\n";
-    my $SUBJECT_PATH = utils::get_subject_directory($experiment, $subject, $version);
-    system "mv $SUBJECT_PATH/results/$TRACEGEN_EXEC_CONTEXT $SUBJECT_PATH/results/$TRACEGEN_BIN_CONTEXT.$suffix";
-    system "mv $SUBJECT_PATH/results/sandpuppy_interesting_variables.yml $SUBJECT_PATH/results/sandpuppy_interesting_variables.yml.$suffix";
-    system "mv $SUBJECT_PATH/results/sandpuppy-target-name-to-id.yml $SUBJECT_PATH/results/sandpuppy-target-name-to-id.yml.$suffix";
-    system "mv $SUBJECT_PATH/results/sandpuppy-vvmax-variables.txt $SUBJECT_PATH/results/sandpuppy-vvmax-variables.txt.$suffix";
 
     # The trace-analysis phase is the terminal phase since it is the last thing we do after an iteration of a sandpuppy
     # run. If we are at the final iteration, update the state to reflect it. Otherwise simply mark the analysis phase
