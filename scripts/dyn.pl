@@ -4,6 +4,7 @@ use warnings FATAL => 'all';
 
 use lib glob "~/Projects/phd/scripts/modules";
 use Data::Dumper;
+use File::Basename;
 use File::Path qw(make_path);
 use Log::Simple::Color;
 use Storable qw{lock_store lock_retrieve};
@@ -15,8 +16,10 @@ if (! -e -d "/mnt/vivin-nfs") {
     die "Should be run on system that has results NFS mount\n";
 }
 
+my $SCRIPT_NAME = basename $0;
+
 if (scalar @ARGV < 3) {
-    die "Syntax:\n $0 <experiment> <subject>[:<version>] <run-name> [restart|continue]\n";
+    die "Syntax:\n $SCRIPT_NAME <experiment> <subject>[:<version>] <run-name> [restart|continue]\n";
 }
 
 # Check to see if there is already a process running
@@ -77,7 +80,7 @@ if ($full_subject =~ /:/) {
 my $fuzz_config = YAML::XS::LoadFile("$BASE_PATH/resources/fuzz_config.yml");
 my $num_iterations = $fuzz_config->{$subject}->{num_iterations};
 
-my $SCRIPT_STATE_DIR = glob "~/.script-state/$0";
+my $SCRIPT_STATE_DIR = glob "~/.script-state/$SCRIPT_NAME";
 if (! -d $SCRIPT_STATE_DIR) {
     make_path $SCRIPT_STATE_DIR;
 }
