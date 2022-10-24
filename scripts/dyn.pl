@@ -39,7 +39,7 @@ my $BASE_PATH = glob "~/Projects/phd";
 my $TOOLS = "$BASE_PATH/tools";
 my $TRACEGEN_BIN_CONTEXT = "vvdump-instrumented";
 my $TRACEGEN_EXEC_CONTEXT = "vvdump-tracegen";
-my $SANDPUPPY_FUZZING_RUN_TIME_HOURS = 4;
+my $SANDPUPPY_FUZZING_RUN_TIME_HOURS = 0.5;
 my $SANDPUPPY_FUZZING_RUN_TIME_SECONDS = $SANDPUPPY_FUZZING_RUN_TIME_HOURS * 60 * 60;
 
 my $state_machine = {
@@ -357,8 +357,11 @@ sub analyze_current_results {
     }
 
     my $pid = open TAIL, '-|', "tail -f $NFS_RESULTS_DIR/$ANALYZE_RESULTS_LOG_FILENAME" or die $!;
-    my $done == 0;
-    while($done == 0 && my $line = <TAIL>) {
+    my $done = 0;
+    while($done == 0) {
+        my $line = <TAIL>;
+        last if !$line;
+
         print $line;
         $done = ($line =~ /Analysis done!/);
     }
