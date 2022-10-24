@@ -39,6 +39,7 @@ if ($full_subject =~ /:/) {
 my $SUBJECT_DIR = utils::get_remote_nfs_subject_directory($experiment, $subject, $version);
 my $RUN_DIR = "$SUBJECT_DIR/results/$run_name-$iteration";
 chomp(my @sessions = `grep "^[^- ]" $RUN_DIR/id_to_pod_name_and_target.yml | sed -e 's,:,,'`);
+print "sessions: @sessions " . " " . (join ",", @sessions) . "\n";
 
 analysis::iterate_fuzzer_results(
     $experiment, $subject, $version, "$run_name-$iteration", "sandpuppy", @sessions,
