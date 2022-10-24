@@ -7,6 +7,7 @@ use File::Path qw(make_path);
 use File::stat;
 use Redis;
 use YAML::XS;
+use Time::HiRes qw(time);
 
 use utils;
 
@@ -200,6 +201,7 @@ sub iterate_fuzzer_results {
         my $count = 0;
         open FILES, "ls -f $inputs_dir | grep -v \"^\\.\" | grep -v \",sync:\" | ";
         while (my $file = <FILES>) {
+            my $start = time;
             chomp $file;
 
             if ($redis->sismember($processed_files_key, "$inputs_dir/$file")) {
@@ -231,6 +233,8 @@ sub iterate_fuzzer_results {
 
             $redis->sadd($processed_files_key, "$inputs_dir/$file");
             $redis->sadd($sha512_key, $sha512);
+
+            my $elpsd = time() - $start; printf "\nelapsed: %.9f\n", $elpsd;
         }
         close FILES;
     }

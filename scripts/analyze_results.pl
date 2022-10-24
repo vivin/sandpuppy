@@ -6,7 +6,6 @@ use lib glob "~/Projects/phd/scripts/modules";
 use analysis;
 use utils;
 use jsoncpp;
-use Time::HiRes qw(time);
 
 if (! -e -d "/media/2tb/phd-workspace/nfs") {
     die "Should be run on system that has local results\n";
@@ -51,7 +50,6 @@ sub iteration_handler {
     my $session = $_[0];
     my $input_file = $_[1];
 
-    my $start = time();
     my @basic_blocks = @{analysis::get_basic_blocks_for_input($subject, $input_file)};
     my $has_new_coverage = analysis::is_coverage_new(
         $experiment, $subject, $version, $run_name, $iteration, \@basic_blocks
@@ -83,8 +81,6 @@ sub iteration_handler {
             $experiment, $subject, $version, $run_name, $iteration, $session, $input_file
         );
     }
-
-    my $elpsd = time() - $start; printf "\nelapsed: %.9f\n", $elpsd;
 }
 
 sub create_wrapped_checker {

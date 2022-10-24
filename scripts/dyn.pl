@@ -353,8 +353,8 @@ sub analyze_current_results {
     if ($analysis_running == 0) {
         print "Analyzing current results from run $run_name (iteration $iteration)...\n";
         system "ssh -o StrictHostKeyChecking=no -i /mnt/vivin-nfs/vivin/sandpuppy-pod-key vivin\@vivin.is-a-geek.net " .
-            "\"nohup /home/vivin/Projects/phd/scripts/analyze_results.pl $experiment $full_subject $run_name $iteration\" " .
-            " > $REMOTE_RESULTS_DIR/$ANALYZE_RESULTS_LOG_FILENAME &";
+            "\"nohup /home/vivin/Projects/phd/scripts/analyze_results.pl $experiment $full_subject $run_name $iteration " .
+            " > $REMOTE_RESULTS_DIR/$ANALYZE_RESULTS_LOG_FILENAME &\"";
         sleep 1;
     } else {
         print "Analysis of current results for run $run_name (iteration $iteration) is already running...\n";
