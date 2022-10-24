@@ -37,7 +37,7 @@ sub check_if_input_processed_successfully {
     my $command = "$binary $fuzz_config->{$subject}->{argument}";
     $command =~ s/\@\@/$input_file/;
 
-    system $command;
+    system "$command 2>&1 >/dev/null";
     return $? == 0;
 }
 
