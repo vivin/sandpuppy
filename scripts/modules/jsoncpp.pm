@@ -133,7 +133,7 @@ sub check_input_is_valid_json {
         $valid = 0;
     }
 
-    print "\n $input_file is valid json: $valid\n";
+    #print "\n $input_file is valid json: $valid\n";
 
     return $valid;
 }
