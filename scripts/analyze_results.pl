@@ -42,6 +42,9 @@ if ($full_subject =~ /:/) {
 }
 
 my $queue = Thread::Queue->new();
+
+my $coverage_lock :shared;
+my $session_coverage_lock :shared;
 my $pool = Thread::Pool->new({
     optimize     => 'memory',
     do           => sub {
@@ -105,8 +108,6 @@ sub process_file_with_coverage_data {
     my @basic_blocks = $_[2];
     my $count = $_[3];
 
-    my $coverage_lock :shared;
-    my $session_coverage_lock :shared;
     #print "\n checking coverage file $count $input_file\n";
     my $has_new_coverage;
     {
