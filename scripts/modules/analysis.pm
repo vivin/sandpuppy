@@ -42,10 +42,7 @@ sub check_if_input_processed_successfully {
     $command =~ s/\@\@/$input_file/;
 
     system "$command 2>&1 >/dev/null";
-    my $ex = $?;
-    print "\n command is $command \n";
-    print "\n $input_file exit code: $ex\n";
-    return $ex == 0;
+    return $? == 0;
 }
 
 sub is_coverage_new {

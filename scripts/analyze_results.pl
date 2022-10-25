@@ -89,6 +89,7 @@ print "Analysis done!\n";
 sub iteration_handler {
     my $session = $_[0];
     my $input_file = $_[1];
+    print "\n submitting for $session, $input_file\n";
     $pool->job($session, $input_file);
 }
 
@@ -97,9 +98,11 @@ sub process_file_with_coverage_data {
     my $input_file = $_[1];
     my @basic_blocks = $_[2];
 
+    print "\n processing for $session, $input_file\n";
     my $has_new_coverage = analysis::is_coverage_new(
         $experiment, $subject, $version, $run_name, $iteration, \@basic_blocks
     );
+    print "\n new coverage: $has_new_coverage for $session, $input_file \n";
     if ($has_new_coverage != 0) {
         # New overall coverage implies new session coverage as well, so let's record session coverage in addition to
         # overall coverage. After this we will copy this input over to be used as a seed in the next iteration.
@@ -133,7 +136,10 @@ sub create_wrapped_checker {
     my $checker = $_[0];
     return sub {
         my $input_file = $_[0];
-        return analysis::check_if_input_processed_successfully($subject, $input_file) == 1 && $checker->($input_file) == 1;
+        my $ret = analysis::check_if_input_processed_successfully($subject, $input_file) && $checker->($input_file);
+
+        print "\nvalid is $ret for $input_file\n";
+        return $ret;
     }
 }
 
