@@ -232,9 +232,9 @@ sub iterate_fuzzer_results {
             print $_[0];
         },
         autoshutdown => 1,
-        workers      => 16,
-        maxjobs      => 128,
-        minjobs      => 64
+        workers      => 32,
+        maxjobs      => 256,
+        minjobs      => 128
     });
 
     my $num_sessions = scalar @sessions;
