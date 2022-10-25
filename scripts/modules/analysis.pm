@@ -201,15 +201,17 @@ sub iterate_fuzzer_results {
             my $count = $_[5];
             my $num_files = $_[6];
 
+            my $file_redis_set_value = "$full_subject;$run_name;$session;$file";
+
             if ($session eq "__COMPLETED__") {
                 $handler->("__COMPLETED__", "__COMPLETED__");
                 return "\n";
             }
 
-            my $is_processed = $redis->sismember($processed_files_key, "$run_name,$session,$file");
-            print "\nis_processed: $is_processed for $run_name,$session,$file\n";
+            my $is_processed = $redis->sismember($processed_files_key, $file_redis_set_value);
+            print "\nis_processed: $is_processed for $full_subject,$run_name,$session,$file\n";
             if ($is_processed) {
-                print "\n $run_name,$session,$file already processed\n";
+                print "\n $file_redis_set_value already processed\n";
                 return "[$session_number/$num_sessions] $session: Input $count of $num_files skipped (already processed)      \r";
             }
 
@@ -224,11 +226,12 @@ sub iterate_fuzzer_results {
             # NOTE: coverage by using the calculated overall-coverage from the previous iteration.
             chomp(my $sha512 = `sha512sum $inputs_dir/$file | awk '{ print \$1; }'`);
             if ($redis->sismember($sha512_key, $sha512)) {
-                $redis->sadd($processed_files_key, "$run_name,$session,$file");
+                print "\nsha512 matches for $file_redis_set_value\n";
+                $redis->sadd($processed_files_key, $file_redis_set_value);
                 return "[$session_number/$num_sessions] $session: Input $count of $num_files skipped (sha512 already seen)    \r";
             }
 
-            $redis->sadd($processed_files_key, "$run_name,$session,$file");
+            $redis->sadd($processed_files_key, $file_redis_set_value);
             $redis->sadd($sha512_key, $sha512);
             $handler->($session, "$inputs_dir/$file");
             return "[$session_number/$num_sessions] $session: Input $count of $num_files being processed                  \r";
