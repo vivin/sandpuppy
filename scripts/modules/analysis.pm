@@ -229,12 +229,12 @@ sub iterate_fuzzer_results {
 
             my $is_processed = redis_sismember($processed_files_key, $file_redis_set_value);
             if ($is_processed) {
-                return "[$session_number/$num_sessions] $session: Input $count of $num_files skipped (already processed)      \n";
+                return "[$session_number/$num_sessions] $session: Input $count of $num_files skipped (already processed)      \r";
             }
 
             my $ctime = stat("$inputs_dir/$file")->ctime;
             if (time() - $ctime < 45) {
-                return "[$session_number/$num_sessions] $session: Input $count of $num_files skipped (file is too new)        \n";
+                return "[$session_number/$num_sessions] $session: Input $count of $num_files skipped (file is too new)        \r";
             }
 
             # NOTE: It may seem like this will mess up per-session coverage data because we use the same set of seeds
@@ -244,13 +244,13 @@ sub iterate_fuzzer_results {
             chomp(my $sha512 = `sha512sum $inputs_dir/$file | awk '{ print \$1; }'`);
             if (redis_sismember($sha512_key, $sha512)) {
                 redis_sadd($processed_files_key, $file_redis_set_value);
-                return "[$session_number/$num_sessions] $session: Input $count of $num_files skipped (sha512 already seen)    \n";
+                return "[$session_number/$num_sessions] $session: Input $count of $num_files skipped (sha512 already seen)    \r";
             }
 
             redis_sadd($processed_files_key, $file_redis_set_value);
             redis_sadd($sha512_key, $sha512);
             $handler->($session, "$inputs_dir/$file", $count);
-            return "[$session_number/$num_sessions] $session: Input $count of $num_files being processed                  \n";
+            return "[$session_number/$num_sessions] $session: Input $count of $num_files being processed                  \r";
         },
         stream       => sub {
             print $_[0];
