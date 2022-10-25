@@ -216,12 +216,14 @@ sub iterate_fuzzer_results {
                 next;
             }
 
+            print "not processed\n";
             my $ctime = stat("$inputs_dir/$file")->ctime;
             if (time() - $ctime < 45) {
                 print "Input $count of $num_files skipped (file is too new)        \r";
                 next;
             }
 
+            print "check the sha\n";
             # NOTE: It may seem like this will mess up per-session coverage data because we use the same set of seeds
             # NOTE: for each session, which means that we will be ignoring them when processing files in subsequent
             # NOTE: sessions after we process one. However, this is not an issue since we can reconstruct that initial
