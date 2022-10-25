@@ -62,6 +62,7 @@ sub is_coverage_new {
     my $key = "$experiment:$full_subject:$run_name-$iteration.coverage";
     my $has_new_coverage = 0;
     foreach my $bb(@basic_blocks) {
+        print "bb is $bb\n";
         my $result = $redis->sadd($key, $bb);
         if ($has_new_coverage == 0) {
             $has_new_coverage = $result;
@@ -105,7 +106,7 @@ sub record_input_coverage {
     my $full_subject = $subject . ($version ? "-$version" : "");
     my $key = "$experiment:$full_subject:$run_name-$iteration.coverage_over_time";
     my $ctime = stat($input_file)->ctime;
-    $redis->sadd($key, "$ctime," . (join ";", @basic_blocks));
+    $redis->sadd($key, "$ctime,${\(join ';', @basic_blocks)}");
 }
 
 sub record_session_input_coverage {
@@ -121,7 +122,7 @@ sub record_session_input_coverage {
     my $full_subject = $subject . ($version ? "-$version" : "");
     my $key = "$experiment:$full_subject:$run_name-$iteration:$session.coverage_over_time";
     my $ctime = stat($input_file)->ctime;
-    $redis->sadd($key, "$ctime," . (join ";", @basic_blocks));
+    $redis->sadd($key, "$ctime,${\(join ';', @basic_blocks)}");
 }
 
 sub copy_input_for_tracegen {
