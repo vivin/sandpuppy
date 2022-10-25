@@ -18,8 +18,6 @@ my $RESOURCES = "$BASE_PATH/resources";
 
 my $log = Log::Simple::Color->new;
 my $redis = Redis->new;
-my $redis_shared = Redis->new;
-my $redis_lock :shared;
 
 my $fuzz_config = YAML::XS::LoadFile("$RESOURCES/fuzz_config.yml");
 
@@ -50,18 +48,6 @@ sub check_if_input_processed_successfully {
 
     system "$command 2>&1 >/dev/null";
     return $? == 0;
-}
-
-sub redis_sadd {
-    my ($set, $member) = @_;
-    lock($redis_lock);
-    return $redis_shared->sadd($set, $member);
-}
-
-sub redis_sismember {
-    my ($set, $member) = @_;
-    lock($redis_lock);
-    return $redis_shared->sismember($set, $member);
 }
 
 sub is_coverage_new {
@@ -208,33 +194,30 @@ sub iterate_fuzzer_results {
     my $sha512_key = "$experiment:$full_subject:$run_name:$fuzzer.sha512";
 
     my $FUZZER_DIR = "$SUBJECT_DIR/results/$run_name/$fuzzer-sync";
+    my $num_sessions = scalar @sessions;
+    my $i = 0;
+    foreach my $session(@sessions) {
+        my $inputs_dir = "$FUZZER_DIR/$session/queue";
+        next if ! -e -d $inputs_dir;
 
-    my $pool = Thread::Pool->new({
-        optimize     => 'memory',
-        do           => sub {
-            my $session = $_[0];
-            my $session_number = $_[1];
-            my $num_sessions = $_[2];
-            my $inputs_dir = $_[3];
-            my $file = $_[4];
-            my $count = $_[5];
-            my $num_files = $_[6];
+        print "[" . (++$i) . "/$num_sessions] Processing inputs in session $session...\n";
+        chomp (my $num_files = `ls -fA $inputs_dir | grep -v "^\\." | grep -v ",sync:" | wc -l`);
+        my $count = 0;
+        open FILES, "ls -fA $inputs_dir | grep -v \"^\\.\" | grep -v \",sync:\" | ";
+        while (my $file = <FILES>) {
+            $count++;
+            chomp $file;
 
             my $file_redis_set_value = "$full_subject;$run_name;$session;$file";
-
-            if ($session eq "__COMPLETED__") {
-                $handler->("__COMPLETED__", "__COMPLETED__");
-                return "\n";
-            }
-
-            my $is_processed = redis_sismember($processed_files_key, $file_redis_set_value);
-            if ($is_processed) {
-                return "[$session_number/$num_sessions] $session: Input $count of $num_files skipped (already processed)      \r";
+            if ($redis->sismember($processed_files_key, $file_redis_set_value)) {
+                print "Input $count of $num_files skipped (already processed)      \r";
+                next;
             }
 
             my $ctime = stat("$inputs_dir/$file")->ctime;
             if (time() - $ctime < 45) {
-                return "[$session_number/$num_sessions] $session: Input $count of $num_files skipped (file is too new)        \r";
+                print "Input $count of $num_files skipped (file is too new)        \r";
+                next;
             }
 
             # NOTE: It may seem like this will mess up per-session coverage data because we use the same set of seeds
@@ -242,47 +225,21 @@ sub iterate_fuzzer_results {
             # NOTE: sessions after we process one. However, this is not an issue since we can reconstruct that initial
             # NOTE: coverage by using the calculated overall-coverage from the previous iteration.
             chomp(my $sha512 = `sha512sum $inputs_dir/$file | awk '{ print \$1; }'`);
-            if (redis_sismember($sha512_key, $sha512)) {
-                redis_sadd($processed_files_key, $file_redis_set_value);
-                return "[$session_number/$num_sessions] $session: Input $count of $num_files skipped (sha512 already seen)    \r";
+            if ($redis->sismember($sha512_key, $sha512)) {
+                $redis->sadd($processed_files_key, $file_redis_set_value);
+                print "Input $count of $num_files skipped (sha512 already seen)    \r";
+                next;
             }
 
-            redis_sadd($processed_files_key, $file_redis_set_value);
-            redis_sadd($sha512_key, $sha512);
+            return "Input $count of $num_files being processed                  \r";
+            $redis->sadd($processed_files_key, $file_redis_set_value);
+            $redis->sadd($sha512_key, $sha512);
             $handler->($session, "$inputs_dir/$file", $count);
-            return "[$session_number/$num_sessions] $session: Input $count of $num_files being processed                  \r";
-        },
-        stream       => sub {
-            print $_[0];
-        },
-        autoshutdown => 1,
-        workers      => 1,
-        maxjobs      => 128,
-        minjobs      => 64
-    });
-
-    my $num_sessions = scalar @sessions;
-    my $i = 0;
-    foreach my $session(@sessions) {
-        my $inputs_dir = "$FUZZER_DIR/$session/queue";
-        next if ! -e -d $inputs_dir;
-
-        #print "[" . (++$i) . "/$num_sessions] Processing inputs in session $session...\n";
-        $i++;
-
-        chomp (my $num_files = `ls -fA $inputs_dir | grep -v "^\\." | grep -v ",sync:" | wc -l`);
-        my $count = 0;
-        open FILES, "ls -fA $inputs_dir | grep -v \"^\\.\" | grep -v \",sync:\" | ";
-        while (my $file = <FILES>) {
-            $count++;
-            chomp $file;
-            $pool->job($session, $i, $num_sessions, $inputs_dir, $file, $count, $num_files);
-
         }
         close FILES;
     }
 
-    $pool->job("__COMPLETED__", 0, 0, "__COMPLETED__", "__COMPLETED__", 0, 0);
+    $handler->("__COMPLETED__", "__COMPLETED__", 0);
 }
 
 1;
