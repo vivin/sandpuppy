@@ -208,6 +208,8 @@ sub iterate_fuzzer_results {
             $count++;
             chomp $file;
 
+            print "file is $file\n";
+
             my $file_redis_set_value = "$full_subject;$run_name;$session;$file";
             if ($redis->sismember($processed_files_key, $file_redis_set_value)) {
                 print "Input $count of $num_files skipped (already processed)      \r";
