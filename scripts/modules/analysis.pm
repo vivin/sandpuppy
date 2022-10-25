@@ -7,6 +7,7 @@ use File::Path qw(make_path);
 use File::stat;
 use Redis;
 use YAML::XS;
+use Thread::Pool;
 use Time::HiRes qw(time);
 
 use utils;
@@ -189,29 +190,27 @@ sub iterate_fuzzer_results {
 
     my $FUZZER_DIR = "$SUBJECT_DIR/results/$run_name/$fuzzer-sync";
 
-    my $num_sessions = scalar @sessions;
-    my $i = 0;
-    foreach my $session(@sessions) {
-        my $inputs_dir = "$FUZZER_DIR/$session/queue";
-        next if ! -e -d $inputs_dir;
+    my $pool = Thread::Pool->new({
+        optimize     => 'memory',
+        do           => sub {
+            my $session = $_[0];
+            my $inputs_dir = $_[1];
+            my $file = $_[2];
+            my $count = $_[3];
+            my $num_files = $_[4];
 
-        print "[" . (++$i) . "/$num_sessions] Processing inputs in session $session...\n";
-
-        chomp (my $num_files = `ls -f $inputs_dir | grep -v "^\\." | grep -v ",sync:" | wc -l`);
-        my $count = 0;
-        open FILES, "ls -f $inputs_dir | grep -v \"^\\.\" | grep -v \",sync:\" | ";
-        while (my $file = <FILES>) {
-            chomp $file;
+            if ($session eq "__COMPLETED__") {
+                $handler->("__COMPLETED__", "__COMPLETED__");
+                return "\r";
+            }
 
             if ($redis->sismember($processed_files_key, "$inputs_dir/$file")) {
-                print "Skipping input " . (++$count) . " of $num_files (already processed)      \r";
-                next;
+                return "Skipping input $count of $num_files (already processed)      \r";
             }
 
             my $ctime = stat("$inputs_dir/$file")->ctime;
             if (time() - $ctime < 45) {
-                print "Skipping input " . (++$count) . " of $num_files (file is too new)        \r";
-                next;
+                return "Skipping input $count of $num_files (file is too new)        \r";
             }
 
             # NOTE: It may seem like this will mess up per-session coverage data because we use the same set of seeds
@@ -221,22 +220,43 @@ sub iterate_fuzzer_results {
             chomp(my $sha512 = `sha512sum $inputs_dir/$file | awk '{ print \$1; }'`);
             if ($redis->sismember($sha512_key, $sha512)) {
                 $redis->sadd($processed_files_key, "$inputs_dir/$file");
-                print "Skipping input " . (++$count) . " of $num_files (sha512 already seen)    \r";
-                next;
-            }
-
-            if ($file =~ /id:/) {
-                print "Processing input " . (++$count) . " of $num_files                        \r";
-                $handler->($session, "$inputs_dir/$file");
+                return "Skipping input $count of $num_files (sha512 already seen)    \r";
             }
 
             $redis->sadd($processed_files_key, "$inputs_dir/$file");
             $redis->sadd($sha512_key, $sha512);
+            $handler->($session, "$inputs_dir/$file");
+            return "Processing input $count of $num_files                        \r";
+        },
+        stream       => sub {
+            print $_[0];
+        },
+        autoshutdown => 1,
+        workers      => 16,
+        maxjobs      => 128,
+        minjobs      => 64
+    });
+
+    my $num_sessions = scalar @sessions;
+    my $i = 0;
+    foreach my $session(@sessions) {
+        my $inputs_dir = "$FUZZER_DIR/$session/queue";
+        next if ! -e -d $inputs_dir;
+
+        print "[" . (++$i) . "/$num_sessions] Processing inputs in session $session...\n";
+
+        chomp (my $num_files = `ls -fA $inputs_dir | grep -v "^\\." | grep -v ",sync:" | wc -l`);
+        my $count = 0;
+        open FILES, "ls -fA $inputs_dir | grep -v \"^\\.\" | grep -v \",sync:\" | ";
+        while (my $file = <FILES>) {
+            chomp $file;
+            $pool->job($session, $inputs_dir, $file, ++$count, $num_files);
+
         }
         close FILES;
     }
 
-    $handler->("__COMPLETED__", "__COMPLETED__");
+    $pool->job("__COMPLETED__", "__COMPLETED__", "__COMPLETED__", 0, 0);
 }
 
 1;

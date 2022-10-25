@@ -59,17 +59,16 @@ my $pool = Thread::Pool->new({
             });
         }
     },
-    autoshutdown => 1,                               # default: 1 = yes
-    workers      => 32, # default: 1
-    maxjobs      => 256,
-    minjobs      => 128
+    autoshutdown => 1,
+    workers      => 16,
+    maxjobs      => 128,
+    minjobs      => 64
 });
 
 my $worker = threads->create(
     sub {
         # Thread will loop until no more work
         while(defined(my $item = $queue->dequeue())) {
-            print "\nprocessing for session $item->{session}, file $item->{input_file}\n";
             process_file_with_coverage_data($item->{session}, $item->{input_file}, $item->{basic_blocks});
         }
     }
@@ -82,7 +81,7 @@ analysis::iterate_fuzzer_results(
     $experiment, $subject, $version, "$run_name-$iteration", "sandpuppy", \@sessions,
     \&iteration_handler
 );
-$pool->shutdown();
+#$pool->shutdown();
 $worker->join();
 
 print "Analysis done!\n";
@@ -97,8 +96,6 @@ sub process_file_with_coverage_data {
     my $session = $_[0];
     my $input_file = $_[1];
     my @basic_blocks = $_[2];
-
-    print "\nprocessing session $session and file $input_file\n";
 
     my $has_new_coverage = analysis::is_coverage_new(
         $experiment, $subject, $version, $run_name, $iteration, \@basic_blocks
