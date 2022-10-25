@@ -119,6 +119,8 @@ sub process_file_with_coverage_data {
         # New overall coverage implies new session coverage as well, so let's record session coverage in addition to
         # overall coverage. After this we will copy this input over to be used as a seed in the next iteration.
         #print "\n recording input coverage $count $input_file\n";
+        lock($coverage_lock);
+        lock($session_coverage_lock);
         analysis::record_input_coverage(
             $experiment, $subject, $version, $run_name, $iteration, $input_file, \@basic_blocks
         );
@@ -142,6 +144,7 @@ sub process_file_with_coverage_data {
         }
 
         #print "\n session coverage is $has_new_session_coverage and will record for $count $input_file if necessary\n";
+        lock($session_coverage_lock);
         analysis::record_session_input_coverage(
             $experiment, $subject, $version, $run_name, $iteration, $session, $input_file, \@basic_blocks
         ) if $has_new_session_coverage != 0;
