@@ -71,7 +71,7 @@ my $worker = threads->create(
     sub {
         # Thread will loop until no more work
         while(defined(my $item = $queue->dequeue())) {
-            process_file_with_coverage_data($item->{session}, $item->{input_file}, $item->{basic_blocks});
+            process_file_with_coverage_data($item->{session}, $item->{input_file}, $item->{basic_blocks}, $item->{count});
         }
     }
 );
