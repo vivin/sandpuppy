@@ -26,6 +26,8 @@ sub get_basic_blocks_for_input {
     my $subject = $_[0];
     my $input_file = $_[1];
 
+    print "basic blocks for $input_file\n";
+
     my $binary = "$RESOURCES/$fuzz_config->{$subject}->{binary_name}-bbprinter";
     my $command = "$binary $fuzz_config->{$subject}->{argument}";
     $command =~ s/\@\@/$input_file/;
@@ -225,12 +227,12 @@ sub iterate_fuzzer_results {
 
             my $is_processed = redis_sismember($processed_files_key, $file_redis_set_value);
             if ($is_processed) {
-                return "[$session_number/$num_sessions] $session: Input $count of $num_files skipped (already processed)      \r";
+                return "[$session_number/$num_sessions] $session: Input $count of $num_files skipped (already processed)      \n";
             }
 
             my $ctime = stat("$inputs_dir/$file")->ctime;
             if (time() - $ctime < 45) {
-                return "[$session_number/$num_sessions] $session: Input $count of $num_files skipped (file is too new)        \r";
+                return "[$session_number/$num_sessions] $session: Input $count of $num_files skipped (file is too new)        \n";
             }
 
             # NOTE: It may seem like this will mess up per-session coverage data because we use the same set of seeds
@@ -240,13 +242,13 @@ sub iterate_fuzzer_results {
             chomp(my $sha512 = `sha512sum $inputs_dir/$file | awk '{ print \$1; }'`);
             if (redis_sismember($sha512_key, $sha512)) {
                 redis_sadd($processed_files_key, $file_redis_set_value);
-                return "[$session_number/$num_sessions] $session: Input $count of $num_files skipped (sha512 already seen)    \r";
+                return "[$session_number/$num_sessions] $session: Input $count of $num_files skipped (sha512 already seen)    \n";
             }
 
             redis_sadd($processed_files_key, $file_redis_set_value);
             redis_sadd($sha512_key, $sha512);
             $handler->($session, "$inputs_dir/$file");
-            return "[$session_number/$num_sessions] $session: Input $count of $num_files being processed                  \r";
+            return "[$session_number/$num_sessions] $session: Input $count of $num_files being processed                  \n";
         },
         stream       => sub {
             print $_[0];
