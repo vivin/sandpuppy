@@ -226,7 +226,7 @@ sub iterate_fuzzer_results {
             $redis->sadd($processed_files_key, "$inputs_dir/$file");
             $redis->sadd($sha512_key, $sha512);
             $handler->($session, "$inputs_dir/$file");
-            return "Input $count of $num_files being processed        \r";
+            return "Input $count of $num_files being processed                  \r";
         },
         stream       => sub {
             print $_[0];
