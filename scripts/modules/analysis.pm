@@ -181,6 +181,8 @@ sub iterate_fuzzer_results {
     my @sessions = @{$_[5]};
     my $handler = $_[6];
 
+    my $_redis = Redis->new;
+
     my $full_subject = $subject . ($version ? "-$version" : "");
 
     my $SUBJECT_DIR;
@@ -209,7 +211,7 @@ sub iterate_fuzzer_results {
             chomp $file;
 
             my $file_redis_set_value = "$full_subject;$run_name;$session;$file";
-            if ($redis->sismember($processed_files_key, $file_redis_set_value)) {
+            if ($_redis->sismember($processed_files_key, $file_redis_set_value)) {
                 print "Input $count of $num_files skipped (already processed)      \r";
                 next;
             }
@@ -225,15 +227,15 @@ sub iterate_fuzzer_results {
             # NOTE: sessions after we process one. However, this is not an issue since we can reconstruct that initial
             # NOTE: coverage by using the calculated overall-coverage from the previous iteration.
             chomp(my $sha512 = `sha512sum $inputs_dir/$file | awk '{ print \$1; }'`);
-            if ($redis->sismember($sha512_key, $sha512)) {
-                $redis->sadd($processed_files_key, $file_redis_set_value);
+            if ($_redis->sismember($sha512_key, $sha512)) {
+                $_redis->sadd($processed_files_key, $file_redis_set_value);
                 print "Input $count of $num_files skipped (sha512 already seen)    \r";
                 next;
             }
 
             print "Input $count of $num_files being processed                  \r";
-            $redis->sadd($processed_files_key, $file_redis_set_value);
-            $redis->sadd($sha512_key, $sha512);
+            $_redis->sadd($processed_files_key, $file_redis_set_value);
+            $_redis->sadd($sha512_key, $sha512);
             $handler->($session, "$inputs_dir/$file", $count);
         }
         close FILES;
