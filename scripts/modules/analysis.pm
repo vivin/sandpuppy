@@ -7,6 +7,7 @@ use File::Path qw(make_path);
 use File::stat;
 use Redis;
 use YAML::XS;
+use threads::shared;
 use Thread::Pool;
 use Time::HiRes qw(time);
 
@@ -16,7 +17,7 @@ my $BASE_PATH = glob "~/Projects/phd";
 my $RESOURCES = "$BASE_PATH/resources";
 
 my $log = Log::Simple::Color->new;
-my $redis = Redis->new;
+my $redis :shared = Redis->new;
 my $fuzz_config = YAML::XS::LoadFile("$RESOURCES/fuzz_config.yml");
 
 sub get_basic_blocks_for_input {
@@ -239,7 +240,7 @@ sub iterate_fuzzer_results {
             print $_[0];
         },
         autoshutdown => 1,
-        workers      => 1,
+        workers      => 8,
         maxjobs      => 40,
         minjobs      => 20
     });
