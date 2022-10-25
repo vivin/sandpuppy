@@ -89,7 +89,6 @@ print "Analysis done!\n";
 sub iteration_handler {
     my $session = $_[0];
     my $input_file = $_[1];
-    print "\nhandler called for session $session and file $input_file\n";
     $pool->job($session, $input_file);
 }
 

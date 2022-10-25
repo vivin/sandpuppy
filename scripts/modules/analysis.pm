@@ -201,7 +201,7 @@ sub iterate_fuzzer_results {
 
             if ($session eq "__COMPLETED__") {
                 $handler->("__COMPLETED__", "__COMPLETED__");
-                return "\r";
+                return "\n";
             }
 
             if ($redis->sismember($processed_files_key, "$inputs_dir/$file")) {

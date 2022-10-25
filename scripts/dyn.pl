@@ -378,9 +378,9 @@ sub generate_traces_from_staged_tracegen_files {
     my $iteration = $run_state->{iteration};
 
     my $SUBJECT_DIR = utils::get_nfs_subject_directory($experiment, $subject, $version);
-    my $TRACEGEN_STAGING_DIR = "$SUBJECT_DIR/results/$run_name/tracegen-staging";
+    my $TRACEGEN_STAGING_DIR = "$SUBJECT_DIR/results/$run_name-$iteration/tracegen-staging";
 
-    my $TRACEGEN_ITERATION_DIR = "$SUBJECT_DIR/results/$run_name/tracegen.$iteration";
+    my $TRACEGEN_ITERATION_DIR = "$SUBJECT_DIR/results/$run_name-$iteration/tracegen";
     if (! -e -d $TRACEGEN_ITERATION_DIR) {
         make_path $TRACEGEN_ITERATION_DIR;
     }
