@@ -247,7 +247,7 @@ sub iterate_fuzzer_results {
 
             redis_sadd($processed_files_key, $file_redis_set_value);
             redis_sadd($sha512_key, $sha512);
-            $handler->($session, "$inputs_dir/$file");
+            $handler->($session, "$inputs_dir/$file", $count);
             return "[$session_number/$num_sessions] $session: Input $count of $num_files being processed                  \n";
         },
         stream       => sub {

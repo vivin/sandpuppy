@@ -46,7 +46,8 @@ my $pool = Thread::Pool->new({
     do           => sub {
         my $session = $_[0];
         my $input_file = $_[1];
-        return $session, $input_file, analysis::get_basic_blocks_for_input($subject, $input_file);
+        my $count = $_[2];
+        return $session, $input_file, analysis::get_basic_blocks_for_input($subject, $input_file), $count;
     },
     stream       => sub {
         if ($_[0] eq "__COMPLETED__") {
@@ -55,7 +56,8 @@ my $pool = Thread::Pool->new({
             $queue->enqueue({
                 session      => $_[0],
                 input_file   => $_[1],
-                basic_blocks => $_[2]
+                basic_blocks => $_[2],
+                count        => $_[3]
             });
         }
     },
@@ -89,41 +91,43 @@ print "Analysis done!\n";
 sub iteration_handler {
     my $session = $_[0];
     my $input_file = $_[1];
-    $pool->job($session, $input_file);
+    my $count = $_[2];
+    $pool->job($session, $input_file, $count);
 }
 
 sub process_file_with_coverage_data {
     my $session = $_[0];
     my $input_file = $_[1];
     my @basic_blocks = $_[2];
+    my $count = $_[3];
 
-    print "\n checking coverage $input_file\n";
+    print "\n checking coverage file $count $input_file\n";
     my $has_new_coverage = analysis::is_coverage_new(
         $experiment, $subject, $version, $run_name, $iteration, \@basic_blocks
     );
     if ($has_new_coverage != 0) {
         # New overall coverage implies new session coverage as well, so let's record session coverage in addition to
         # overall coverage. After this we will copy this input over to be used as a seed in the next iteration.
-        print "\n recording input coverage $input_file\n";
+        print "\n recording input coverage $count $input_file\n";
         analysis::record_input_coverage(
             $experiment, $subject, $version, $run_name, $iteration, $input_file, \@basic_blocks
         );
-        print "\n recording session input coverage $input_file\n";
+        print "\n recording session input coverage $count $input_file\n";
         analysis::record_session_input_coverage(
             $experiment, $subject, $version, $run_name, $iteration, $session, $input_file, \@basic_blocks
         );
 
-        print "\n copying for next generation of seeds $input_file\n";
+        print "\n copying for next generation of seeds $count $input_file\n";
         analysis::copy_input_for_next_iteration_seeds(
             $experiment, $subject, $version, $run_name, $iteration, $session, $input_file
         );
     } else {
-        print "\n checking new session coverage $input_file\n";
+        print "\n checking new session coverage $count $input_file\n";
         my $has_new_session_coverage = analysis::is_session_coverage_new(
             $experiment, $subject, $version, $run_name, $iteration, $session, \@basic_blocks
         );
 
-        print "\n 1 is $has_new_session_coverage and will record for $input_file if necessary\n";
+        print "\n session coverage is $has_new_session_coverage and will record for $count $input_file if necessary\n";
         analysis::record_session_input_coverage(
             $experiment, $subject, $version, $run_name, $iteration, $session, $input_file, \@basic_blocks
         ) if $has_new_session_coverage != 0;
@@ -131,12 +135,12 @@ sub process_file_with_coverage_data {
 
     # Copy file for tracegen if checker thinks it is valid
     if ($subject_tracegen_checkers->{$subject}->($input_file) != 0) {
-        print "\nfile is valid for tracegen $input_file\n";
+        print "\nfile is valid for tracegen $count $input_file\n";
         analysis::copy_input_for_tracegen(
             $experiment, $subject, $version, $run_name, $iteration, $session, $input_file
         );
     } else {
-        print "\nfile is invalid for tracegen $input_file\n";
+        print "\nfile is invalid for tracegen $count $input_file\n";
     }
 }
 
