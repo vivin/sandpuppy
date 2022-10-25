@@ -42,7 +42,9 @@ sub check_if_input_processed_successfully {
     $command =~ s/\@\@/$input_file/;
 
     system "$command 2>&1 >/dev/null";
-    return $? == 0;
+    my $ex = $?;
+    print "\n $input_file exit code: $ex\n";
+    return $ex == 0;
 }
 
 sub is_coverage_new {
@@ -194,10 +196,12 @@ sub iterate_fuzzer_results {
         optimize     => 'memory',
         do           => sub {
             my $session = $_[0];
-            my $inputs_dir = $_[1];
-            my $file = $_[2];
-            my $count = $_[3];
-            my $num_files = $_[4];
+            my $session_number = $_[1];
+            my $num_sessions = $_[2];
+            my $inputs_dir = $_[3];
+            my $file = $_[4];
+            my $count = $_[5];
+            my $num_files = $_[6];
 
             if ($session eq "__COMPLETED__") {
                 $handler->("__COMPLETED__", "__COMPLETED__");
@@ -205,12 +209,12 @@ sub iterate_fuzzer_results {
             }
 
             if ($redis->sismember($processed_files_key, "$inputs_dir/$file")) {
-                return "Input $count of $num_files skipped (already processed)      \r";
+                return "[$session_number/$num_sessions] $session: Input $count of $num_files skipped (already processed)      \r";
             }
 
             my $ctime = stat("$inputs_dir/$file")->ctime;
             if (time() - $ctime < 45) {
-                return "Input $count of $num_files skipped (file is too new)        \r";
+                return "[$session_number/$num_sessions] $session: Input $count of $num_files skipped (file is too new)        \r";
             }
 
             # NOTE: It may seem like this will mess up per-session coverage data because we use the same set of seeds
@@ -220,13 +224,13 @@ sub iterate_fuzzer_results {
             chomp(my $sha512 = `sha512sum $inputs_dir/$file | awk '{ print \$1; }'`);
             if ($redis->sismember($sha512_key, $sha512)) {
                 $redis->sadd($processed_files_key, "$inputs_dir/$file");
-                return "Input $count of $num_files skipped (sha512 already seen)    \r";
+                return "[$session_number/$num_sessions] $session: Input $count of $num_files skipped (sha512 already seen)    \r";
             }
 
             $redis->sadd($processed_files_key, "$inputs_dir/$file");
             $redis->sadd($sha512_key, $sha512);
             $handler->($session, "$inputs_dir/$file");
-            return "Input $count of $num_files being processed                  \r";
+            return "[$session_number/$num_sessions] $session: Input $count of $num_files being processed                  \r";
         },
         stream       => sub {
             print $_[0];
@@ -243,7 +247,7 @@ sub iterate_fuzzer_results {
         my $inputs_dir = "$FUZZER_DIR/$session/queue";
         next if ! -e -d $inputs_dir;
 
-        print "[" . (++$i) . "/$num_sessions] Processing inputs in session $session...\n";
+        #print "[" . (++$i) . "/$num_sessions] Processing inputs in session $session...\n";
 
         chomp (my $num_files = `ls -fA $inputs_dir | grep -v "^\\." | grep -v ",sync:" | wc -l`);
         my $count = 0;
@@ -251,13 +255,13 @@ sub iterate_fuzzer_results {
         while (my $file = <FILES>) {
             $count++;
             chomp $file;
-            $pool->job($session, $inputs_dir, $file, $count, $num_files);
+            $pool->job($session, $i, $num_sessions, $inputs_dir, $file, $count, $num_files);
 
         }
         close FILES;
     }
 
-    $pool->job("__COMPLETED__", "__COMPLETED__", "__COMPLETED__", 0, 0);
+    $pool->job("__COMPLETED__", 0, 0, "__COMPLETED__", "__COMPLETED__", 0, 0);
 }
 
 1;
