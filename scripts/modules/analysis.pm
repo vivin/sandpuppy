@@ -229,6 +229,7 @@ sub iterate_fuzzer_results {
             # NOTE: sessions after we process one. However, this is not an issue since we can reconstruct that initial
             # NOTE: coverage by using the calculated overall-coverage from the previous iteration.
             chomp(my $sha512 = `sha512sum $inputs_dir/$file | awk '{ print \$1; }'`);
+            print "checked the sha\n";
             if ($redis->sismember($sha512_key, $sha512)) {
                 $redis->sadd($processed_files_key, $file_redis_set_value);
                 print "Input $count of $num_files skipped (sha512 already seen)    \r";
