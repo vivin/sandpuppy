@@ -206,8 +206,8 @@ sub iterate_fuzzer_results {
                 return "\n";
             }
 
-            if ($redis->sismember($processed_files_key, "$inputs_dir/$file")) {
-                print "\n $session, $file already processed\n";
+            if ($redis->sismember($processed_files_key, "$run_name,$session,$file")) {
+                print "\n $run_name,$session,$file already processed\n";
                 return "[$session_number/$num_sessions] $session: Input $count of $num_files skipped (already processed)      \r";
             }
 
@@ -222,11 +222,11 @@ sub iterate_fuzzer_results {
             # NOTE: coverage by using the calculated overall-coverage from the previous iteration.
             chomp(my $sha512 = `sha512sum $inputs_dir/$file | awk '{ print \$1; }'`);
             if ($redis->sismember($sha512_key, $sha512)) {
-                $redis->sadd($processed_files_key, "$inputs_dir/$file");
+                $redis->sadd($processed_files_key, "$run_name,$session,$file");
                 return "[$session_number/$num_sessions] $session: Input $count of $num_files skipped (sha512 already seen)    \r";
             }
 
-            $redis->sadd($processed_files_key, "$inputs_dir/$file");
+            $redis->sadd($processed_files_key, "$run_name,$session,$file");
             $redis->sadd($sha512_key, $sha512);
             $handler->($session, "$inputs_dir/$file");
             return "[$session_number/$num_sessions] $session: Input $count of $num_files being processed                  \r";
