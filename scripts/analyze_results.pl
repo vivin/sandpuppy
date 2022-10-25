@@ -2,6 +2,9 @@
 use strict;
 use warnings FATAL => 'all';
 
+use Thread::Pool;
+use Thread::Queue;
+
 use lib glob "~/Projects/phd/scripts/modules";
 use analysis;
 use utils;
@@ -36,6 +39,32 @@ if ($full_subject =~ /:/) {
     $full_subject =~ s/:/-/;
 }
 
+my $queue = Thread::Queue->new();
+my $pool = Thread::Pool->new({
+    optimize     => 'memory',
+    do           => sub {
+        my $session = $_[0];
+        my $input_file = $_[1];
+        return $session, $input_file, analysis::get_basic_blocks_for_input($subject, $input_file);
+    },
+    stream       => sub {
+        shift;
+        print "\nstream called for for session $_[0] and file $_[1]\n";
+        if ($_[0] eq "__COMPLETED__") {
+            $queue->end();
+        } else {
+            $queue->enqueue({
+                session      => $_[0],
+                input_file   => $_[1],
+                basic_blocks => $_[2]
+            });
+        }
+    },
+    autoshutdown => 1,                               # default: 1 = yes
+    workers      => 32, # default: 1
+    maxjobs      => 256,
+    minjobs      => 128
+});
 my $SUBJECT_DIR = utils::get_remote_nfs_subject_directory($experiment, $subject, $version);
 my $RUN_DIR = "$SUBJECT_DIR/results/$run_name-$iteration";
 chomp(my @sessions = `grep "^[^- ]" $RUN_DIR/id_to_pod_name_and_target.yml | sed -e 's,:,,'`);
@@ -43,14 +72,26 @@ analysis::iterate_fuzzer_results(
     $experiment, $subject, $version, "$run_name-$iteration", "sandpuppy", \@sessions,
     \&iteration_handler
 );
+while(defined(my $item = $queue->dequeue())) {
+    process_file_with_coverage_data($item->{session}, $item->{input_file}, $item->{basic_blocks});
+}
+$pool->shutdown();
 
 print "Analysis done!\n";
 
 sub iteration_handler {
     my $session = $_[0];
     my $input_file = $_[1];
+    $pool->job($session, $input_file);
+}
 
-    my @basic_blocks = @{analysis::get_basic_blocks_for_input($subject, $input_file)};
+sub process_file_with_coverage_data {
+    my $session = $_[0];
+    my $input_file = $_[1];
+    my @basic_blocks = $_[2];
+
+    print "\nprocessing session $session and file $input_file\n";
+
     my $has_new_coverage = analysis::is_coverage_new(
         $experiment, $subject, $version, $run_name, $iteration, \@basic_blocks
     );
