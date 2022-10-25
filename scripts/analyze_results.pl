@@ -130,11 +130,13 @@ sub process_file_with_coverage_data {
     }
 
     # Copy file for tracegen if checker thinks it is valid
-    print "\n checking if file is valid for tracegen $input_file\n";
     if ($subject_tracegen_checkers->{$subject}->($input_file) != 0) {
+        print "\nfile is valid for tracegen $input_file\n";
         analysis::copy_input_for_tracegen(
             $experiment, $subject, $version, $run_name, $iteration, $session, $input_file
         );
+    } else {
+        print "\nfile is invalid for tracegen $input_file\n";
     }
 }
 

@@ -225,7 +225,6 @@ sub iterate_fuzzer_results {
 
             my $is_processed = redis_sismember($processed_files_key, $file_redis_set_value);
             if ($is_processed) {
-                print "\n $file_redis_set_value already processed\n";
                 return "[$session_number/$num_sessions] $session: Input $count of $num_files skipped (already processed)      \r";
             }
 
@@ -240,7 +239,6 @@ sub iterate_fuzzer_results {
             # NOTE: coverage by using the calculated overall-coverage from the previous iteration.
             chomp(my $sha512 = `sha512sum $inputs_dir/$file | awk '{ print \$1; }'`);
             if (redis_sismember($sha512_key, $sha512)) {
-                print "\nsha512 $sha512 matches for $file_redis_set_value\n";
                 redis_sadd($processed_files_key, $file_redis_set_value);
                 return "[$session_number/$num_sessions] $session: Input $count of $num_files skipped (sha512 already seen)    \r";
             }
