@@ -225,7 +225,7 @@ sub iterate_fuzzer_results {
             # NOTE: coverage by using the calculated overall-coverage from the previous iteration.
             chomp(my $sha512 = `sha512sum $inputs_dir/$file | awk '{ print \$1; }'`);
             if ($redis->sismember($sha512_key, $sha512)) {
-                print "\nsha512 matches for $file_redis_set_value\n";
+                print "\nsha512 $sha512 matches for $file_redis_set_value\n";
                 $redis->sadd($processed_files_key, $file_redis_set_value);
                 return "[$session_number/$num_sessions] $session: Input $count of $num_files skipped (sha512 already seen)    \r";
             }
