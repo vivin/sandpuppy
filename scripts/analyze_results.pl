@@ -97,31 +97,40 @@ sub process_file_with_coverage_data {
     my $input_file = $_[1];
     my @basic_blocks = $_[2];
 
+    print "\n checking coverage $input_file\n";
     my $has_new_coverage = analysis::is_coverage_new(
         $experiment, $subject, $version, $run_name, $iteration, \@basic_blocks
     );
     if ($has_new_coverage != 0) {
         # New overall coverage implies new session coverage as well, so let's record session coverage in addition to
         # overall coverage. After this we will copy this input over to be used as a seed in the next iteration.
+        print "\n recording input coverage $input_file\n";
         analysis::record_input_coverage(
             $experiment, $subject, $version, $run_name, $iteration, $input_file, \@basic_blocks
         );
+        print "\n recording session input coverage $input_file\n";
         analysis::record_session_input_coverage(
             $experiment, $subject, $version, $run_name, $iteration, $session, $input_file, \@basic_blocks
         );
+
+        print "\n copying for next generation of seeds $input_file\n";
         analysis::copy_input_for_next_iteration_seeds(
             $experiment, $subject, $version, $run_name, $iteration, $session, $input_file
         );
     } else {
+        print "\n checking new session coverage $input_file\n";
         my $has_new_session_coverage = analysis::is_session_coverage_new(
             $experiment, $subject, $version, $run_name, $iteration, $session, \@basic_blocks
         );
+
+        print "\n 1 is $has_new_session_coverage and will record for $input_file if necessary\n";
         analysis::record_session_input_coverage(
             $experiment, $subject, $version, $run_name, $iteration, $session, $input_file, \@basic_blocks
         ) if $has_new_session_coverage != 0;
     }
 
     # Copy file for tracegen if checker thinks it is valid
+    print "\n checking if file is valid for tracegen $input_file\n";
     if ($subject_tracegen_checkers->{$subject}->($input_file) != 0) {
         analysis::copy_input_for_tracegen(
             $experiment, $subject, $version, $run_name, $iteration, $session, $input_file
