@@ -43,6 +43,7 @@ sub check_if_input_processed_successfully {
 
     system "$command 2>&1 >/dev/null";
     my $ex = $?;
+    print "\n command is $command \n";
     print "\n $input_file exit code: $ex\n";
     return $ex == 0;
 }
@@ -248,6 +249,7 @@ sub iterate_fuzzer_results {
         next if ! -e -d $inputs_dir;
 
         #print "[" . (++$i) . "/$num_sessions] Processing inputs in session $session...\n";
+        $i++;
 
         chomp (my $num_files = `ls -fA $inputs_dir | grep -v "^\\." | grep -v ",sync:" | wc -l`);
         my $count = 0;
