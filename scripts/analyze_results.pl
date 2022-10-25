@@ -105,7 +105,7 @@ sub iteration_handler {
 sub process_file_with_coverage_data {
     my $session = $_[0];
     my $input_file = $_[1];
-    my @basic_blocks = $_[2];
+    my $basic_blocks = $_[2];
     my $count = $_[3];
 
     #print "\n checking coverage file $count $input_file\n";
@@ -113,7 +113,7 @@ sub process_file_with_coverage_data {
     {
         lock($coverage_lock);
         $has_new_coverage = analysis::is_coverage_new(
-            $experiment, $subject, $version, $run_name, $iteration, \@basic_blocks
+            $experiment, $subject, $version, $run_name, $iteration, $basic_blocks
         );
     }
     if ($has_new_coverage != 0) {
@@ -124,11 +124,11 @@ sub process_file_with_coverage_data {
             lock($coverage_lock);
             lock($session_coverage_lock);
             analysis::record_input_coverage(
-                $experiment, $subject, $version, $run_name, $iteration, $input_file, \@basic_blocks
+                $experiment, $subject, $version, $run_name, $iteration, $input_file, $basic_blocks
             );
             #print "\n recording session input coverage $count $input_file\n";
             analysis::record_session_input_coverage(
-                $experiment, $subject, $version, $run_name, $iteration, $session, $input_file, \@basic_blocks
+                $experiment, $subject, $version, $run_name, $iteration, $session, $input_file, $basic_blocks
             );
         }
 
@@ -142,14 +142,14 @@ sub process_file_with_coverage_data {
         {
             lock($session_coverage_lock);
             $has_new_session_coverage = analysis::is_session_coverage_new(
-                $experiment, $subject, $version, $run_name, $iteration, $session, \@basic_blocks
+                $experiment, $subject, $version, $run_name, $iteration, $session, $basic_blocks
             );
         }
 
         #print "\n session coverage is $has_new_session_coverage and will record for $count $input_file if necessary\n";
         lock($session_coverage_lock);
         analysis::record_session_input_coverage(
-            $experiment, $subject, $version, $run_name, $iteration, $session, $input_file, \@basic_blocks
+            $experiment, $subject, $version, $run_name, $iteration, $session, $input_file, $basic_blocks
         ) if $has_new_session_coverage != 0;
     }
 
