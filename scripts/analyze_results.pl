@@ -120,15 +120,17 @@ sub process_file_with_coverage_data {
         # New overall coverage implies new session coverage as well, so let's record session coverage in addition to
         # overall coverage. After this we will copy this input over to be used as a seed in the next iteration.
         #print "\n recording input coverage $count $input_file\n";
-        lock($coverage_lock);
-        lock($session_coverage_lock);
-        analysis::record_input_coverage(
-            $experiment, $subject, $version, $run_name, $iteration, $input_file, \@basic_blocks
-        );
-        #print "\n recording session input coverage $count $input_file\n";
-        analysis::record_session_input_coverage(
-            $experiment, $subject, $version, $run_name, $iteration, $session, $input_file, \@basic_blocks
-        );
+        {
+            lock($coverage_lock);
+            lock($session_coverage_lock);
+            analysis::record_input_coverage(
+                $experiment, $subject, $version, $run_name, $iteration, $input_file, \@basic_blocks
+            );
+            #print "\n recording session input coverage $count $input_file\n";
+            analysis::record_session_input_coverage(
+                $experiment, $subject, $version, $run_name, $iteration, $session, $input_file, \@basic_blocks
+            );
+        }
 
         #print "\n copying for next generation of seeds $count $input_file\n";
         analysis::copy_input_for_next_iteration_seeds(
