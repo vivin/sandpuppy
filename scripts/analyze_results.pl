@@ -2,6 +2,7 @@
 use strict;
 use warnings FATAL => 'all';
 
+use threads;
 use Thread::Pool;
 use Thread::Queue;
 
@@ -63,6 +64,17 @@ my $pool = Thread::Pool->new({
     maxjobs      => 256,
     minjobs      => 128
 });
+
+my $worker = threads->create(
+    sub {
+        # Thread will loop until no more work
+        while(defined(my $item = $queue->dequeue())) {
+            print "\nprocessing for session $item->{session}, file $item->{input_file}\n";
+            process_file_with_coverage_data($item->{session}, $item->{input_file}, $item->{basic_blocks});
+        }
+    }
+);
+
 my $SUBJECT_DIR = utils::get_remote_nfs_subject_directory($experiment, $subject, $version);
 my $RUN_DIR = "$SUBJECT_DIR/results/$run_name-$iteration";
 chomp(my @sessions = `grep "^[^- ]" $RUN_DIR/id_to_pod_name_and_target.yml | sed -e 's,:,,'`);
@@ -70,10 +82,8 @@ analysis::iterate_fuzzer_results(
     $experiment, $subject, $version, "$run_name-$iteration", "sandpuppy", \@sessions,
     \&iteration_handler
 );
-while(defined(my $item = $queue->dequeue())) {
-    process_file_with_coverage_data($item->{session}, $item->{input_file}, $item->{basic_blocks});
-}
 $pool->shutdown();
+$worker->join();
 
 print "Analysis done!\n";
 
