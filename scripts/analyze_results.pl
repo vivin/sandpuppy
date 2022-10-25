@@ -47,7 +47,7 @@ my $pool = Thread::Pool->new({
         my $session = $_[0];
         my $input_file = $_[1];
         my $count = $_[2];
-        return $session, $input_file, analysis::get_basic_blocks_for_input($subject, $input_file), $count;
+        return $session, $input_file, analysis::get_basic_blocks_for_input($subject, $input_file, $count), $count;
     },
     stream       => sub {
         if ($_[0] eq "__COMPLETED__") {
