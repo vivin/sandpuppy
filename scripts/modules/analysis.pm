@@ -249,8 +249,9 @@ sub iterate_fuzzer_results {
         my $count = 0;
         open FILES, "ls -fA $inputs_dir | grep -v \"^\\.\" | grep -v \",sync:\" | ";
         while (my $file = <FILES>) {
+            $count++;
             chomp $file;
-            $pool->job($session, $inputs_dir, $file, ++$count, $num_files);
+            $pool->job($session, $inputs_dir, $file, $count, $num_files);
 
         }
         close FILES;
