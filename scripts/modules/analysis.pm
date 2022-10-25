@@ -17,7 +17,9 @@ my $BASE_PATH = glob "~/Projects/phd";
 my $RESOURCES = "$BASE_PATH/resources";
 
 my $log = Log::Simple::Color->new;
-my $redis :shared = Redis->new;
+my $redis = Redis->new;
+my $redis_lock :shared;
+
 my $fuzz_config = YAML::XS::LoadFile("$RESOURCES/fuzz_config.yml");
 
 sub get_basic_blocks_for_input {
@@ -46,6 +48,18 @@ sub check_if_input_processed_successfully {
     return $? == 0;
 }
 
+sub redis_sadd {
+    my ($set, $member) = @_;
+    lock($redis_lock);
+    return $redis->sadd($set, $member);
+}
+
+sub redis_sismember {
+    my ($set, $member) = @_;
+    lock($redis_lock);
+    return $redis->sismember($set, $member);
+}
+
 sub is_coverage_new {
     my $experiment = $_[0];
     my $subject = $_[1];
@@ -58,7 +72,7 @@ sub is_coverage_new {
     my $key = "$experiment:$full_subject:$run_name-$iteration.coverage";
     my $has_new_coverage = 0;
     foreach my $bb(@basic_blocks) {
-        my $result = $redis->sadd($key, $bb);
+        my $result = redis_sadd($key, $bb);
         if ($has_new_coverage == 0) {
             $has_new_coverage = $result;
         }
@@ -80,7 +94,7 @@ sub is_session_coverage_new {
     my $key = "$experiment:$full_subject:$run_name-$iteration:$session.coverage";
     my $has_new_coverage = 0;
     foreach my $bb(@basic_blocks) {
-        my $result = $redis->sadd($key, $bb);
+        my $result = redis_sadd($key, $bb);
         if ($has_new_coverage == 0) {
             $has_new_coverage = $result;
         }
@@ -101,7 +115,7 @@ sub record_input_coverage {
     my $full_subject = $subject . ($version ? "-$version" : "");
     my $key = "$experiment:$full_subject:$run_name-$iteration.coverage_over_time";
     my $ctime = stat($input_file)->ctime;
-    $redis->sadd($key, "$ctime," . (join ";", @basic_blocks));
+    redis_sadd($key, "$ctime," . (join ";", @basic_blocks));
 }
 
 sub record_session_input_coverage {
@@ -117,7 +131,7 @@ sub record_session_input_coverage {
     my $full_subject = $subject . ($version ? "-$version" : "");
     my $key = "$experiment:$full_subject:$run_name-$iteration:$session.coverage_over_time";
     my $ctime = stat($input_file)->ctime;
-    $redis->sadd($key, "$ctime," . (join ";", @basic_blocks));
+    redis_sadd($key, "$ctime," . (join ";", @basic_blocks));
 }
 
 sub copy_input_for_tracegen {
@@ -209,7 +223,7 @@ sub iterate_fuzzer_results {
                 return "\n";
             }
 
-            my $is_processed = $redis->sismember($processed_files_key, $file_redis_set_value);
+            my $is_processed = redis_sismember($processed_files_key, $file_redis_set_value);
             if ($is_processed) {
                 print "\n $file_redis_set_value already processed\n";
                 return "[$session_number/$num_sessions] $session: Input $count of $num_files skipped (already processed)      \r";
@@ -225,14 +239,14 @@ sub iterate_fuzzer_results {
             # NOTE: sessions after we process one. However, this is not an issue since we can reconstruct that initial
             # NOTE: coverage by using the calculated overall-coverage from the previous iteration.
             chomp(my $sha512 = `sha512sum $inputs_dir/$file | awk '{ print \$1; }'`);
-            if ($redis->sismember($sha512_key, $sha512)) {
+            if (redis_sismember($sha512_key, $sha512)) {
                 print "\nsha512 $sha512 matches for $file_redis_set_value\n";
-                $redis->sadd($processed_files_key, $file_redis_set_value);
+                redis_sadd($processed_files_key, $file_redis_set_value);
                 return "[$session_number/$num_sessions] $session: Input $count of $num_files skipped (sha512 already seen)    \r";
             }
 
-            $redis->sadd($processed_files_key, $file_redis_set_value);
-            $redis->sadd($sha512_key, $sha512);
+            redis_sadd($processed_files_key, $file_redis_set_value);
+            redis_sadd($sha512_key, $sha512);
             $handler->($session, "$inputs_dir/$file");
             return "[$session_number/$num_sessions] $session: Input $count of $num_files being processed                  \r";
         },
