@@ -62,7 +62,6 @@ sub is_coverage_new {
     my $key = "$experiment:$full_subject:$run_name-$iteration.coverage";
     my $has_new_coverage = 0;
     foreach my $bb(@basic_blocks) {
-        print "bb is $bb\n";
         my $result = $redis->sadd($key, $bb);
         if ($has_new_coverage == 0) {
             $has_new_coverage = $result;
