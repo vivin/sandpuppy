@@ -206,7 +206,9 @@ sub iterate_fuzzer_results {
                 return "\n";
             }
 
-            if ($redis->sismember($processed_files_key, "$run_name,$session,$file")) {
+            my $is_processed = $redis->sismember($processed_files_key, "$run_name,$session,$file");
+            print "\nis_processed: $is_processed for $run_name,$session,$file\n";
+            if ($is_processed) {
                 print "\n $run_name,$session,$file already processed\n";
                 return "[$session_number/$num_sessions] $session: Input $count of $num_files skipped (already processed)      \r";
             }
