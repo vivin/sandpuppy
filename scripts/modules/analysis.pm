@@ -208,35 +208,30 @@ sub iterate_fuzzer_results {
             $count++;
             chomp $file;
 
-            print "file is $file\n";
-
             my $file_redis_set_value = "$full_subject;$run_name;$session;$file";
             if ($redis->sismember($processed_files_key, $file_redis_set_value)) {
                 print "Input $count of $num_files skipped (already processed)      \r";
                 next;
             }
 
-            print "not processed\n";
             my $ctime = stat("$inputs_dir/$file")->ctime;
             if (time() - $ctime < 45) {
                 print "Input $count of $num_files skipped (file is too new)        \r";
                 next;
             }
 
-            print "check the sha\n";
             # NOTE: It may seem like this will mess up per-session coverage data because we use the same set of seeds
             # NOTE: for each session, which means that we will be ignoring them when processing files in subsequent
             # NOTE: sessions after we process one. However, this is not an issue since we can reconstruct that initial
             # NOTE: coverage by using the calculated overall-coverage from the previous iteration.
             chomp(my $sha512 = `sha512sum $inputs_dir/$file | awk '{ print \$1; }'`);
-            print "checked the sha\n";
             if ($redis->sismember($sha512_key, $sha512)) {
                 $redis->sadd($processed_files_key, $file_redis_set_value);
                 print "Input $count of $num_files skipped (sha512 already seen)    \r";
                 next;
             }
 
-            return "Input $count of $num_files being processed                  \r";
+            print "Input $count of $num_files being processed                  \r";
             $redis->sadd($processed_files_key, $file_redis_set_value);
             $redis->sadd($sha512_key, $sha512);
             $handler->($session, "$inputs_dir/$file", $count);
