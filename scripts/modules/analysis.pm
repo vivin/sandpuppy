@@ -239,7 +239,7 @@ sub iterate_fuzzer_results {
             print $_[0];
         },
         autoshutdown => 1,
-        workers      => 8,
+        workers      => 1,
         maxjobs      => 40,
         minjobs      => 20
     });
