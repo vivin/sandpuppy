@@ -45,11 +45,9 @@ my $pool = Thread::Pool->new({
     do           => sub {
         my $session = $_[0];
         my $input_file = $_[1];
-        print "\nrunning job for session $session, input file $input_file\n";
         return $session, $input_file, analysis::get_basic_blocks_for_input($subject, $input_file);
     },
     stream       => sub {
-        print "\nstream called for session $_[0] and file $_[1]\n";
         if ($_[0] eq "__COMPLETED__") {
             $queue->end();
         } else {
@@ -83,7 +81,6 @@ sub iteration_handler {
     my $session = $_[0];
     my $input_file = $_[1];
     $pool->job($session, $input_file);
-    print "\nsubmitted job for session $session, input $input_file\n";
 }
 
 sub process_file_with_coverage_data {

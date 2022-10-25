@@ -227,10 +227,7 @@ sub iterate_fuzzer_results {
 
             if ($file =~ /id:/) {
                 print "Processing input " . (++$count) . " of $num_files                        \r";
-                my $start = time();
                 $handler->($session, "$inputs_dir/$file");
-                my $diff = time() - $start;
-                printf "elapsed: %.9f\n", $diff;
             }
 
             $redis->sadd($processed_files_key, "$inputs_dir/$file");
