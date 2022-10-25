@@ -18,6 +18,7 @@ my $RESOURCES = "$BASE_PATH/resources";
 
 my $log = Log::Simple::Color->new;
 my $redis = Redis->new;
+my $redis_shared = Redis->new;
 my $redis_lock :shared;
 
 my $fuzz_config = YAML::XS::LoadFile("$RESOURCES/fuzz_config.yml");
@@ -54,13 +55,13 @@ sub check_if_input_processed_successfully {
 sub redis_sadd {
     my ($set, $member) = @_;
     lock($redis_lock);
-    return $redis->sadd($set, $member);
+    return $redis_shared->sadd($set, $member);
 }
 
 sub redis_sismember {
     my ($set, $member) = @_;
     lock($redis_lock);
-    return $redis->sismember($set, $member);
+    return $redis_shared->sismember($set, $member);
 }
 
 sub is_coverage_new {
@@ -75,7 +76,7 @@ sub is_coverage_new {
     my $key = "$experiment:$full_subject:$run_name-$iteration.coverage";
     my $has_new_coverage = 0;
     foreach my $bb(@basic_blocks) {
-        my $result = redis_sadd($key, $bb);
+        my $result = $redis->sadd($key, $bb);
         if ($has_new_coverage == 0) {
             $has_new_coverage = $result;
         }
@@ -97,7 +98,7 @@ sub is_session_coverage_new {
     my $key = "$experiment:$full_subject:$run_name-$iteration:$session.coverage";
     my $has_new_coverage = 0;
     foreach my $bb(@basic_blocks) {
-        my $result = redis_sadd($key, $bb);
+        my $result = $redis->sadd($key, $bb);
         if ($has_new_coverage == 0) {
             $has_new_coverage = $result;
         }
@@ -118,7 +119,7 @@ sub record_input_coverage {
     my $full_subject = $subject . ($version ? "-$version" : "");
     my $key = "$experiment:$full_subject:$run_name-$iteration.coverage_over_time";
     my $ctime = stat($input_file)->ctime;
-    redis_sadd($key, "$ctime," . (join ";", @basic_blocks));
+    $redis->sadd($key, "$ctime," . (join ";", @basic_blocks));
 }
 
 sub record_session_input_coverage {
@@ -134,7 +135,7 @@ sub record_session_input_coverage {
     my $full_subject = $subject . ($version ? "-$version" : "");
     my $key = "$experiment:$full_subject:$run_name-$iteration:$session.coverage_over_time";
     my $ctime = stat($input_file)->ctime;
-    redis_sadd($key, "$ctime," . (join ";", @basic_blocks));
+    $redis->sadd($key, "$ctime," . (join ";", @basic_blocks));
 }
 
 sub copy_input_for_tracegen {
