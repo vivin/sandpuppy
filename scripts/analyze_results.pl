@@ -74,8 +74,8 @@ my $pool = Thread::Pool->new({
     #},
     autoshutdown => 1,
     workers      => 8,
-    maxjobs      => 320,
-    minjobs      => 160,
+    maxjobs      => 640,
+    minjobs      => 320,
 });
 
 #my $worker = threads->create(
@@ -103,7 +103,7 @@ $print_remaining = 1;
 $pool->shutdown();
 #$worker->join();
 
-print "Analysis done!\n";
+print "\nAnalysis done!\n";
 
 sub iteration_handler {
     my $session = $_[0];
