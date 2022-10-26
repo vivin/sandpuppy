@@ -73,9 +73,9 @@ my $pool = Thread::Pool->new({
         #}
     #},
     autoshutdown => 1,
-    workers      => 8,
-    maxjobs      => 40,
-    minjobs      => 20,
+    workers      => 16,
+    maxjobs      => 80,
+    minjobs      => 40,
 });
 
 #my $worker = threads->create(
