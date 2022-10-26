@@ -60,7 +60,6 @@ my $pool = Thread::Pool->new({
     },
     stream       => sub {
         $num_jobs--;
-
         print "$num_jobs remaining                                         \n";
     },
     #stream       => sub {
@@ -123,7 +122,7 @@ sub process_file_with_coverage_data {
     my $basic_blocks = $_[2];
     my $count = $_[3];
 
-    #print "\n checking coverage file $count $input_file\n";
+    print "\n checking coverage file $count $input_file\n";
     my $has_new_coverage;
     {
         lock($coverage_lock);

@@ -26,7 +26,7 @@ sub get_basic_blocks_for_input {
     my $input_file = $_[1];
     my $count = $_[2];
 
-    #print "basic blocks for $count $input_file\n";
+    print "basic blocks for $count $input_file\n";
 
     my $binary = "$RESOURCES/$fuzz_config->{$subject}->{binary_name}-bbprinter";
     my $command = "$binary $fuzz_config->{$subject}->{argument}";
