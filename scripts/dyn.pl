@@ -22,6 +22,8 @@ if (scalar @ARGV < 3) {
     die "Syntax:\n $SCRIPT_NAME <experiment> <subject>[:<version>] <run-name> [restart|continue]\n";
 }
 
+$| = 1;
+
 # Check to see if there is already a process running
 chomp(my $previous_dyn_pid = `ps -u | grep -v grep | grep "dyn\\.pl $ARGV[0] $ARGV[1] $ARGV[2]" | grep -v $$ | awk '{ print \$2; }'`);
 if ($previous_dyn_pid) {

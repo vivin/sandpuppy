@@ -43,6 +43,9 @@ if ($full_subject =~ /:/) {
 
 my $queue = Thread::Queue->new();
 
+my $num_jobs :shared = 0;
+my $print_remaining :shared = 0;
+
 my $coverage_lock :shared;
 my $session_coverage_lock :shared;
 my $pool = Thread::Pool->new({
@@ -55,6 +58,11 @@ my $pool = Thread::Pool->new({
         process_file_with_coverage_data($session, $input_file, $basic_blocks, $count);
 
         #return $session, $input_file, analysis::get_basic_blocks_for_input($subject, $input_file, $count), $count;
+    },
+    monitor      => sub {
+        $num_jobs--;
+
+        print "$num_jobs remaining                                         \r" if $print_remaining;
     },
     #stream       => sub {
         #if ($_[0] eq "__COMPLETED__") {
@@ -90,11 +98,13 @@ analysis::iterate_fuzzer_results(
     $experiment, $subject, $version, "$run_name-$iteration", "sandpuppy", \@sessions,
     \&iteration_handler
 );
-print "ok we are done iterating\n";
-until ($pool->todo() == 0) {
-    print "${\($pool->todo())} jobs remaining...\r";
-    sleep 1;
-}
+
+$print_remaining = 1;
+#print "ok we are done iterating\n";
+#until ($pool->todo() == 0) {
+#    print "${\($pool->todo())} jobs remaining...\r";
+#    sleep 1;
+#}
 $pool->shutdown();
 #$worker->join();
 
@@ -105,6 +115,7 @@ sub iteration_handler {
     my $input_file = $_[1];
     my $count = $_[2];
     $pool->job($session, $input_file, $count);
+    $num_jobs++;
 }
 
 sub process_file_with_coverage_data {
