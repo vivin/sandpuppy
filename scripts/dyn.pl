@@ -358,6 +358,10 @@ sub analyze_current_results {
         print "Analysis of current results for run $run_name (iteration $iteration) is already running...\n";
     }
 
+    until (-e -f "$NFS_RESULTS_DIR/$ANALYZE_RESULTS_LOG_FILENAME") {
+        sleep 1;
+    }
+
     my $pid = open TAIL, '-|', "tail -f $NFS_RESULTS_DIR/$ANALYZE_RESULTS_LOG_FILENAME" or die $!;
     my $done = 0;
     while($done == 0) {
@@ -377,6 +381,7 @@ sub generate_traces_from_staged_tracegen_files {
 
     my $SUBJECT_DIR = utils::get_nfs_subject_directory($experiment, $subject, $version);
     my $TRACEGEN_STAGING_DIR = "$SUBJECT_DIR/results/$run_name-$iteration/tracegen-staging";
+    return if ! -e -d $TRACEGEN_STAGING_DIR;
 
     my $TRACEGEN_ITERATION_DIR = "$SUBJECT_DIR/results/$run_name-$iteration/tracegen";
     if (! -e -d $TRACEGEN_ITERATION_DIR) {
