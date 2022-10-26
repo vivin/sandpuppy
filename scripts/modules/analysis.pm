@@ -113,7 +113,7 @@ sub record_input_coverage {
     my $key = "$experiment:$full_subject:$run_name-$iteration.coverage_over_time";
     my $ctime = stat($input_file)->ctime;
 
-    lock($redis_lock);
+    #lock($redis_lock);
     $redis->sadd($key, "$ctime,${\(join ';', @basic_blocks)}");
 }
 
@@ -131,7 +131,7 @@ sub record_session_input_coverage {
     my $key = "$experiment:$full_subject:$run_name-$iteration:$session.coverage_over_time";
     my $ctime = stat($input_file)->ctime;
 
-    lock($redis_lock);
+    #lock($redis_lock);
     $redis->sadd($key, "$ctime,${\(join ';', @basic_blocks)}");
 }
 
