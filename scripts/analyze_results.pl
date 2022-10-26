@@ -2,6 +2,7 @@
 use strict;
 use warnings FATAL => 'all';
 
+use File::Basename;
 use threads;
 use threads::shared;
 use Thread::Pool;
@@ -16,8 +17,15 @@ if (! -e -d "/media/2tb/phd-workspace/nfs") {
     die "Should be run on system that has local results\n";
 }
 
+my $SCRIPT_NAME = basename $0;
+
 if (scalar @ARGV < 4) {
-    die "Syntax: $0 <experiment> <subject>[:version] <run-name> <iteration>\n";
+    die "Syntax: $SCRIPT_NAME <experiment> <subject>[:version] <run-name> <iteration>\n";
+}
+
+chomp(my $previous_pid = `ps -u | grep -v grep | grep "$SCRIPT_NAME $ARGV[0] $ARGV[1] $ARGV[2] $ARGV[3]" | grep -v $$ | awk '{ print \$2; }'`);
+if ($previous_pid) {
+    die "There is already a $SCRIPT_NAME process ($previous_pid) running for the provided arguments\n";
 }
 
 my $subject_tracegen_checkers = {
@@ -41,10 +49,14 @@ if ($full_subject =~ /:/) {
     $full_subject =~ s/:/-/;
 }
 
-my $queue = Thread::Queue->new();
+my $SUBJECT_DIR = utils::get_remote_nfs_subject_directory($experiment, $subject, $version);
+my $RUN_DIR = "$SUBJECT_DIR/results/$run_name-$iteration";
+my $ANALYZE_RESULTS_LOG_FILENAME = "analyze_results.log";
 
 my $num_jobs :shared = 0;
 my $print_remaining :shared = 0;
+
+open LOG, ">", "$RUN_DIR/$ANALYZE_RESULTS_LOG_FILENAME";
 
 my $pool = Thread::Pool->new({
     optimize     => 'memory',
@@ -58,19 +70,19 @@ my $pool = Thread::Pool->new({
     },
     stream       => sub {
         $num_jobs--;
-        print "$num_jobs files remaining to be processed                   \r" if $print_remaining;
+        print LOG "$num_jobs files remaining to be processed                   \r" if $print_remaining;
     },
     #stream       => sub {
-        #if ($_[0] eq "__COMPLETED__") {
-        #    $queue->end();
-        #} else {
-        #    $queue->enqueue({
-        #        session      => $_[0],
-        #        input_file   => $_[1],
-        #        basic_blocks => $_[2],
-        #        count        => $_[3]
-        #    });
-        #}
+    #if ($_[0] eq "__COMPLETED__") {
+    #    $queue->end();
+    #} else {
+    #    $queue->enqueue({
+    #        session      => $_[0],
+    #        input_file   => $_[1],
+    #        basic_blocks => $_[2],
+    #        count        => $_[3]
+    #    });
+    #}
     #},
     autoshutdown => 1,
     workers      => 8,
@@ -87,23 +99,40 @@ my $pool = Thread::Pool->new({
 #    }
 #);
 
-my $SUBJECT_DIR = utils::get_remote_nfs_subject_directory($experiment, $subject, $version);
-my $RUN_DIR = "$SUBJECT_DIR/results/$run_name-$iteration";
-chomp(my @sessions = `grep "^[^- ]" $RUN_DIR/id_to_pod_name_and_target.yml | sed -e 's,:,,'`);
-analysis::iterate_fuzzer_results(
-    $experiment, $subject, $version, "$run_name-$iteration", "sandpuppy", \@sessions,
-    \&iteration_handler
-);
+my $shutdown_requested;
+my $runs_after_shutdown_request = 0;
+until($shutdown_requested && $runs_after_shutdown_request > 0) {
+    $shutdown_requested = -e -f "$RUN_DIR/shutdown_analyze_results";
+    if ($shutdown_requested) {
+        $runs_after_shutdown_request++;
+    }
+
+    $print_remaining = 0;
+
+    chomp(my @sessions = `grep "^[^- ]" $RUN_DIR/id_to_pod_name_and_target.yml | sed -e 's,:,,'`);
+    analysis::iterate_fuzzer_results(
+        $experiment, $subject, $version, "$run_name-$iteration", "sandpuppy", \@sessions,
+        \&iteration_handler,
+        sub {
+            my $line = $_[0];
+            print LOG $line;
+        }
+    );
+
+    truncate LOG, 0;
+    #until ($pool->todo() == 0) {
+    #    print "${\($pool->todo())} jobs remaining...\r";
+    #    sleep 1;
+    #}
+    #$pool->shutdown();
+    #$worker->join();
+}
+
 
 $print_remaining = 1;
-#until ($pool->todo() == 0) {
-#    print "${\($pool->todo())} jobs remaining...\r";
-#    sleep 1;
-#}
 $pool->shutdown();
-#$worker->join();
-
-print "\nAnalysis done!\n";
+print LOG "\nShutting down\n";
+close LOG;
 
 sub iteration_handler {
     my $session = $_[0];

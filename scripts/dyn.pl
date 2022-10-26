@@ -25,7 +25,7 @@ if (scalar @ARGV < 3) {
 $| = 1;
 
 # Check to see if there is already a process running
-chomp(my $previous_dyn_pid = `ps -u | grep -v grep | grep "dyn\\.pl $ARGV[0] $ARGV[1] $ARGV[2]" | grep -v $$ | awk '{ print \$2; }'`);
+chomp(my $previous_dyn_pid = `ps -u | grep -v grep | grep "$SCRIPT_NAME $ARGV[0] $ARGV[1] $ARGV[2]" | grep -v $$ | awk '{ print \$2; }'`);
 if ($previous_dyn_pid) {
     die "There is already a dyn.pl process ($previous_dyn_pid) running for the provided arguments\n";
 }
@@ -259,6 +259,51 @@ sub start_sandpuppy_fuzz {
     });
 }
 
+sub setup_remote_background_results_analysis {
+    my $iteration = $run_state->{iteration};
+
+    my $REMOTE_SUBJECT_DIR = utils::get_remote_nfs_subject_directory($experiment, $subject, $version);
+    my $REMOTE_RESULTS_DIR = "$REMOTE_SUBJECT_DIR/results/$run_name-$iteration";
+
+    my $ANALYZE_RESULTS_LOG_FILENAME = "analyze_results.log";
+
+    print "Analyzing current results from run $run_name (iteration $iteration)...\n";
+    system "ssh -o StrictHostKeyChecking=no -i /mnt/vivin-nfs/vivin/sandpuppy-pod-key vivin\@vivin.is-a-geek.net " .
+        "\"/home/vivin/Projects/phd/scripts/bg_analyze_results.sh $experiment $full_subject $run_name $iteration " .
+        "$REMOTE_RESULTS_DIR/$ANALYZE_RESULTS_LOG_FILENAME\"";
+}
+
+sub shutdown_remote_background_results_analysis {
+    my $iteration = $run_state->{iteration};
+
+    my $NFS_SUBJECT_DIR = utils::get_nfs_subject_directory($experiment, $subject, $version);
+    my $NFS_RESULTS_DIR = "$NFS_SUBJECT_DIR/results/$run_name-$iteration";
+
+    system "touch $NFS_RESULTS_DIR/shutdown_analyze_results";
+}
+
+sub monitor_remote_background_results_analysis_until_done {
+    my $iteration = $run_state->{iteration};
+
+    my $NFS_SUBJECT_DIR = utils::get_nfs_subject_directory($experiment, $subject, $version);
+    my $NFS_RESULTS_DIR = "$NFS_SUBJECT_DIR/results/$run_name-$iteration";
+
+    my $ANALYZE_RESULTS_LOG_FILENAME = "analyze_results.log";
+
+    my $pid = open TAIL, '-|', "tail -f $NFS_RESULTS_DIR/$ANALYZE_RESULTS_LOG_FILENAME" or die $!;
+    my $done = 0;
+    while($done == 0) {
+        my $line = <TAIL>;
+        last if !$line;
+
+        print $line;
+        $done = ($line =~ /Shutting down/);
+    }
+
+    kill 2, $pid;
+    system "rm $NFS_RESULTS_DIR/$ANALYZE_RESULTS_LOG_FILENAME";
+}
+
 sub setup_background_trace_processing {
     return if $VVDPROC_PID; # If it is already running, exit
 
@@ -299,19 +344,16 @@ sub wait_until_iteration_is_done {
     my $start_time = $run_state->{start_time};
 
     # Start up the trace processor in the background so that it can collect traces as the fuzzing run progresses, from
-    # novel input that is deemed interesting.
+    # novel input that is deemed interesting. Also start up the analyze_result.pl script remotely in the background.
+    # This script goes through all inputs that have been generated so far and:
+    #  - Collects all inputs that increase coverage (we will use them as initial seeds in the next run).
+    #  - Keeps track of coverage over time
     setup_background_trace_processing();
+    setup_remote_background_results_analysis();
     while(time() - $start_time < $SANDPUPPY_FUZZING_RUN_TIME_SECONDS) {
         sleep 60; # check every minute
 
-        # Let's take a look at the inputs that have been generated so far. There are a few things that we want to do:
-        #  - Collect all inputs that increase coverage (we will use them as initial seeds in the next run).
-        #  - Keep track of coverage over time
-        #  - Generate traces from new input that we care about.
-        #
-        # Processing the inputs will be done on the server where the copied files are actually local instead of doing it
-        # over NFS because the former way is faster.
-        analyze_current_results();
+        # Generate traces from tracegen files (if any)
         generate_traces_from_staged_tracegen_files();
 
         # TODO: would be nice to keep an eye on the status of pods and then resume them if they disappear or stop
@@ -320,8 +362,8 @@ sub wait_until_iteration_is_done {
     print "Iteration $iteration has ended. Stopping pods...";
     system "pod_names | grep $experiment | grep $full_subject | grep $run_name-$iteration | xargs kubectl delete pod";
 
-    print "Analyzing results one last time (in case pods uploaded more seeds while they were being shut down)...\n";
-    analyze_current_results();
+    shutdown_remote_background_results_analysis();
+    monitor_remote_background_results_analysis_until_done();
 
     print "Generating traces from seeds if any...";
     generate_traces_from_staged_tracegen_files();
@@ -353,9 +395,7 @@ sub analyze_current_results {
     if ($analysis_running == 0) {
         print "Analyzing current results from run $run_name (iteration $iteration)...\n";
         system "ssh -o StrictHostKeyChecking=no -i /mnt/vivin-nfs/vivin/sandpuppy-pod-key vivin\@vivin.is-a-geek.net " .
-            "\"/home/vivin/Projects/phd/scripts/bg_analyze_results.sh $experiment $full_subject $run_name $iteration " .
-            "$REMOTE_RESULTS_DIR/$ANALYZE_RESULTS_LOG_FILENAME\"";
-        sleep 1;
+            "\"/home/vivin/Projects/phd/scripts/bg_analyze_results.sh $experiment $full_subject $run_name $iteration";
     } else {
         print "Analysis of current results for run $run_name (iteration $iteration) is already running...\n";
     }

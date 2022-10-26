@@ -191,6 +191,7 @@ sub iterate_fuzzer_results {
     my $fuzzer = $_[4];
     my @sessions = @{$_[5]};
     my $handler = $_[6];
+    my $logger = $_[7];
 
     my $_redis = Redis->new;
 
@@ -213,7 +214,7 @@ sub iterate_fuzzer_results {
         my $inputs_dir = "$FUZZER_DIR/$session/queue";
         next if ! -e -d $inputs_dir;
 
-        print "[" . (++$i) . "/$num_sessions] Processing inputs in session $session...\n";
+        $logger->("[" . (++$i) . "/$num_sessions] Processing inputs in session $session...\n");
         chomp (my $num_files = `ls -fA $inputs_dir | grep -v "^\\." | grep -v ",sync:" | wc -l`);
         my $count = 0;
         open FILES, "ls -fA $inputs_dir | grep -v \"^\\.\" | grep -v \",sync:\" | ";
@@ -223,13 +224,13 @@ sub iterate_fuzzer_results {
 
             my $file_redis_set_value = "$full_subject;$run_name;$session;$file";
             if ($_redis->sismember($processed_files_key, $file_redis_set_value)) {
-                print "Input $count of $num_files skipped (already processed)      \r";
+                $logger->("Input $count of $num_files skipped (already processed)      \r");
                 next;
             }
 
             my $ctime = stat("$inputs_dir/$file")->ctime;
             if (time() - $ctime < 45) {
-                print "Input $count of $num_files skipped (file is too new)        \r";
+                $logger->("Input $count of $num_files skipped (file is too new)        \r");
                 next;
             }
 
@@ -240,11 +241,11 @@ sub iterate_fuzzer_results {
             chomp(my $sha512 = `sha512sum $inputs_dir/$file | awk '{ print \$1; }'`);
             if ($_redis->sismember($sha512_key, $sha512)) {
                 $_redis->sadd($processed_files_key, $file_redis_set_value);
-                print "Input $count of $num_files skipped (sha512 already seen)    \r";
+                $logger->("Input $count of $num_files skipped (sha512 already seen)    \r");
                 next;
             }
 
-            print "Input $count of $num_files being processed                  \r";
+            $logger->("Input $count of $num_files being processed                  \r");
             $_redis->sadd($processed_files_key, $file_redis_set_value);
             $_redis->sadd($sha512_key, $sha512);
             $handler->($session, "$inputs_dir/$file", $count);
