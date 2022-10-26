@@ -26,7 +26,7 @@ sub get_basic_blocks_for_input {
     my $input_file = $_[1];
     my $count = $_[2];
 
-    print "basic blocks for $count $input_file\n";
+    #print "basic blocks for $count $input_file\n";
 
     my $binary = "$RESOURCES/$fuzz_config->{$subject}->{binary_name}-bbprinter";
     my $command = "$binary $fuzz_config->{$subject}->{argument}";
@@ -35,7 +35,7 @@ sub get_basic_blocks_for_input {
     chomp(my @data = `$command 2> /dev/null | grep \"__#BB#__\" | grep -v $binary | sed 's,__#BB#__: ,,'`);
     my %seen;
     my @basic_blocks = sort(grep !$seen{$_}++, @data);
-    print "num blocks for $count $input_file is " . (scalar @basic_blocks) . "\n";
+    #print "num blocks for $count $input_file is " . (scalar @basic_blocks) . "\n";
     return \@basic_blocks;
 }
 
