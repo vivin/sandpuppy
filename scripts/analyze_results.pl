@@ -62,7 +62,7 @@ my $pool = Thread::Pool->new({
     monitor      => sub {
         $num_jobs--;
 
-        print "$num_jobs remaining                                         \r" if $print_remaining;
+        print "$num_jobs remaining                                         \n";
     },
     #stream       => sub {
         #if ($_[0] eq "__COMPLETED__") {
