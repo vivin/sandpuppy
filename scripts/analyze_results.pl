@@ -53,7 +53,8 @@ my $SUBJECT_DIR = utils::get_remote_nfs_subject_directory($experiment, $subject,
 my $RUN_DIR = "$SUBJECT_DIR/results/$run_name-$iteration";
 my $ANALYZE_RESULTS_LOG_FILENAME = "analyze_results.log";
 
-my $num_jobs :shared = 0;
+my $total_files :shared = 0;
+my $remaining_files :shared = 0;
 my $print_remaining :shared = 0;
 
 open LOG, ">", "$RUN_DIR/$ANALYZE_RESULTS_LOG_FILENAME";
@@ -69,8 +70,9 @@ my $pool = Thread::Pool->new({
         #return $session, $input_file, analysis::get_basic_blocks_for_input($subject, $input_file, $count), $count;
     },
     stream       => sub {
-        $num_jobs--;
-        print LOG "$num_jobs files remaining to be processed                   \r" if $print_remaining;
+        $remaining_files--;
+        print LOG "$remaining_files files remaining to be processed                   \r" if $print_remaining;
+        analysis::record_processing_stats($experiment, $subject, $version, $run_name, $iteration, $total_files, $remaining_files);
     },
     #stream       => sub {
     #if ($_[0] eq "__COMPLETED__") {
@@ -132,6 +134,7 @@ until($shutdown_requested && $runs_after_shutdown_request > 0) {
 
 $print_remaining = 1;
 $pool->shutdown();
+analysis::record_processing_stats($experiment, $subject, $version, $run_name, $iteration, $total_files, 0);
 print LOG "\nShutting down\n";
 close LOG;
 
@@ -140,7 +143,8 @@ sub iteration_handler {
     my $input_file = $_[1];
     my $count = $_[2];
     $pool->job($session, $input_file, $count);
-    $num_jobs++;
+    $remaining_files++;
+    $total_files++;
 }
 
 sub process_file_with_coverage_data {

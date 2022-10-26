@@ -53,6 +53,22 @@ sub check_if_input_processed_successfully {
     return $? == 0;
 }
 
+sub record_processing_stats {
+    my $experiment = $_[0];
+    my $subject = $_[1];
+    my $version = $_[2];
+    my $run_name = $_[3];
+    my $iteration = $_[4];
+    my $total_files = $_[5];
+    my $remaining_files = $_[6];
+
+    my $full_subject = $subject . ($version ? "-$version" : "");
+    my $key = "$experiment:$full_subject:$run_name-$iteration.stats";
+
+    lock($redis_lock);
+    $redis->set($key, "$total_files,$remaining_files");
+}
+
 sub is_coverage_new {
     my $experiment = $_[0];
     my $subject = $_[1];

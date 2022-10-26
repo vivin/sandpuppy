@@ -8,6 +8,7 @@ use File::Basename;
 use File::Path qw(make_path);
 use Log::Simple::Color;
 use POSIX ":sys_wait_h";
+use Redis;
 use Storable qw{lock_store lock_retrieve};
 use YAML::XS;
 
@@ -79,6 +80,8 @@ if ($full_subject =~ /:/) {
     ($subject, $version) = split(/:/, $full_subject);
     $full_subject =~ s/:/-/;
 }
+
+my $remote_redis = Redis->new(server => "192.168.1.17:6379");
 
 my $fuzz_config = YAML::XS::LoadFile("$BASE_PATH/resources/fuzz_config.yml");
 my $num_iterations = $fuzz_config->{$subject}->{num_iterations};
@@ -284,31 +287,47 @@ sub shutdown_remote_background_results_analysis {
     my $NFS_RESULTS_DIR = "$NFS_SUBJECT_DIR/results/$run_name-$iteration";
 
     system "touch $NFS_RESULTS_DIR/shutdown_analyze_results";
+    until (-e -f "$NFS_RESULTS_DIR/shutdown_analyze_results") {
+        print "Waiting for remote background results analysis to shutdown...";
+        sleep 1;
+    }
+    print "Remote background results analysis is shutting down...";
 }
 
 sub monitor_remote_background_results_analysis_until_done {
     my $iteration = $run_state->{iteration};
+
+    my $total_files;
+    my $remaining_files;
+    do {
+        my $stats = $remote_redis->get("$experiment:$full_subject:$run_name-$iteration.stats");
+        ($total_files, $remaining_files) = split /,/, $stats;
+        print "$total_files files total. $remaining_files remaining to be processed.\r";
+        sleep 1;
+    } until ($remaining_files == 0);
+
+    print "\n";
 
     my $NFS_SUBJECT_DIR = utils::get_nfs_subject_directory($experiment, $subject, $version);
     my $NFS_RESULTS_DIR = "$NFS_SUBJECT_DIR/results/$run_name-$iteration";
 
     my $ANALYZE_RESULTS_LOG_FILENAME = "analyze_results.log";
 
-    until (-e -f "$NFS_RESULTS_DIR/$ANALYZE_RESULTS_LOG_FILENAME") {
-        sleep 1;
-    }
+    #until (-e -f "$NFS_RESULTS_DIR/$ANALYZE_RESULTS_LOG_FILENAME") {
+    #    sleep 1;
+    #}
 
-    my $pid = open TAIL, '-|', "tail -f $NFS_RESULTS_DIR/$ANALYZE_RESULTS_LOG_FILENAME" or die $!;
-    my $done = 0;
-    while($done == 0) {
-        my $line = <TAIL>;
-        last if !$line;
+    #my $pid = open TAIL, '-|', "tail -f $NFS_RESULTS_DIR/$ANALYZE_RESULTS_LOG_FILENAME" or die $!;
+    #my $done = 0;
+    #while($done == 0) {
+    #    my $line = <TAIL>;
+    #    last if !$line;
 
-        print $line;
-        $done = ($line =~ /Shutting down/);
-    }
+    #    print $line;
+    #    $done = ($line =~ /Shutting down/);
+    #}
 
-    kill 2, $pid;
+    #kill 2, $pid;
     system "rm $NFS_RESULTS_DIR/$ANALYZE_RESULTS_LOG_FILENAME";
 }
 
@@ -371,63 +390,72 @@ sub wait_until_iteration_is_done {
 
         # Generate traces from tracegen files (if any)
         generate_traces_from_staged_tracegen_files();
+        my $stats = $remote_redis->get("$experiment:$full_subject:$run_name-$iteration.stats");
+        if ($stats) {
+            my ($total_files, $remaining_files) = split /,/, $stats;
+            print "$total_files files total. $remaining_files remaining to be processed.\n";
+        }
 
+        print "${\(time() - $start_time)} seconds remaining in iteration...\n";
         # TODO: would be nice to keep an eye on the status of pods and then resume them if they disappear or stop
     }
 
-    print "Iteration $iteration has ended. Stopping pods...";
+    print "Iteration $iteration has ended. Stopping pods...\n";
     system "pod_names | grep $experiment | grep $full_subject | grep $run_name-$iteration | xargs kubectl delete pod";
 
+    print "Shutting down remote background results-analysis and waiting for it to complete...\n";
     shutdown_remote_background_results_analysis();
     monitor_remote_background_results_analysis_until_done();
 
     print "Generating traces from remaining seeds if any...\n";
     generate_traces_from_staged_tracegen_files();
+    waitpid $RUN_ITERATION_TRACEGEN_PIDS->{"$run_name-$iteration"}, 0;
+
     update_state({
         phase_status => "finished",
         end_time  => time()
     });
 }
 
-sub analyze_current_results {
-    my $iteration = $run_state->{iteration};
-
-    my $NFS_SUBJECT_DIR = utils::get_nfs_subject_directory($experiment, $subject, $version);
-    my $NFS_RESULTS_DIR = "$NFS_SUBJECT_DIR/results/$run_name-$iteration";
-
-    my $ANALYZE_RESULTS_LOG_FILENAME = "analyze_results.log";
-
-    my $analysis_running = 0;
-    if (-e -f "$NFS_RESULTS_DIR/$ANALYZE_RESULTS_LOG_FILENAME") {
-        chomp(my $line = `tail -1 $NFS_RESULTS_DIR/$ANALYZE_RESULTS_LOG_FILENAME`);
-        $analysis_running = ($line !~ /Analysis done!/);
-    }
-
-    if ($analysis_running == 0) {
-        print "Analyzing current results from run $run_name (iteration $iteration)...\n";
-        system "ssh -o StrictHostKeyChecking=no -i /mnt/vivin-nfs/vivin/sandpuppy-pod-key vivin\@vivin.is-a-geek.net " .
-            "\"/home/vivin/Projects/phd/scripts/bg_analyze_results.sh $experiment $full_subject $run_name $iteration";
-    } else {
-        print "Analysis of current results for run $run_name (iteration $iteration) is already running...\n";
-    }
-
-    until (-e -f "$NFS_RESULTS_DIR/$ANALYZE_RESULTS_LOG_FILENAME") {
-        sleep 1;
-    }
-
-    my $pid = open TAIL, '-|', "tail -f $NFS_RESULTS_DIR/$ANALYZE_RESULTS_LOG_FILENAME" or die $!;
-    my $done = 0;
-    while($done == 0) {
-        my $line = <TAIL>;
-        last if !$line;
-
-        print $line;
-        $done = ($line =~ /Analysis done!/);
-    }
-
-    kill 2, $pid;
-    system "rm $NFS_RESULTS_DIR/$ANALYZE_RESULTS_LOG_FILENAME";
-}
+#sub analyze_current_results {
+#    my $iteration = $run_state->{iteration};
+#
+#    my $NFS_SUBJECT_DIR = utils::get_nfs_subject_directory($experiment, $subject, $version);
+#    my $NFS_RESULTS_DIR = "$NFS_SUBJECT_DIR/results/$run_name-$iteration";
+#
+#    my $ANALYZE_RESULTS_LOG_FILENAME = "analyze_results.log";
+#
+#    my $analysis_running = 0;
+#    if (-e -f "$NFS_RESULTS_DIR/$ANALYZE_RESULTS_LOG_FILENAME") {
+#        chomp(my $line = `tail -1 $NFS_RESULTS_DIR/$ANALYZE_RESULTS_LOG_FILENAME`);
+#        $analysis_running = ($line !~ /Analysis done!/);
+#    }
+#
+#    if ($analysis_running == 0) {
+#        print "Analyzing current results from run $run_name (iteration $iteration)...\n";
+#        system "ssh -o StrictHostKeyChecking=no -i /mnt/vivin-nfs/vivin/sandpuppy-pod-key vivin\@vivin.is-a-geek.net " .
+#            "\"/home/vivin/Projects/phd/scripts/bg_analyze_results.sh $experiment $full_subject $run_name $iteration";
+#    } else {
+#        print "Analysis of current results for run $run_name (iteration $iteration) is already running...\n";
+#    }
+#
+#    until (-e -f "$NFS_RESULTS_DIR/$ANALYZE_RESULTS_LOG_FILENAME") {
+#        sleep 1;
+#    }
+#
+#    my $pid = open TAIL, '-|', "tail -f $NFS_RESULTS_DIR/$ANALYZE_RESULTS_LOG_FILENAME" or die $!;
+#    my $done = 0;
+#    while($done == 0) {
+#        my $line = <TAIL>;
+#        last if !$line;
+#
+#        print $line;
+#        $done = ($line =~ /Analysis done!/);
+#    }
+#
+#    kill 2, $pid;
+#    system "rm $NFS_RESULTS_DIR/$ANALYZE_RESULTS_LOG_FILENAME";
+#}
 
 sub generate_traces_from_staged_tracegen_files {
     my $wait_for_existing = $_[0];
