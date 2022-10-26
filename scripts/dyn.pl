@@ -299,10 +299,8 @@ sub wait_until_iteration_is_done {
     # Start up the trace processor in the background so that it can collect traces as the fuzzing run progresses, from
     # novel input that is deemed interesting.
     setup_background_trace_processing();
-
-    sleep 60; # Initial sleep so that pods have a chance to upload results (they are uploaded every 5 minutes).
     while(time() - $start_time < $SANDPUPPY_FUZZING_RUN_TIME_SECONDS) {
-        sleep 5 * 60; # sleep 5 minutes
+        sleep 60; # check every minute
 
         # Let's take a look at the inputs that have been generated so far. There are a few things that we want to do:
         #  - Collect all inputs that increase coverage (we will use them as initial seeds in the next run).
@@ -353,8 +351,8 @@ sub analyze_current_results {
     if ($analysis_running == 0) {
         print "Analyzing current results from run $run_name (iteration $iteration)...\n";
         system "ssh -o StrictHostKeyChecking=no -i /mnt/vivin-nfs/vivin/sandpuppy-pod-key vivin\@vivin.is-a-geek.net " .
-            "\"nohup /home/vivin/Projects/phd/scripts/analyze_results.pl $experiment $full_subject $run_name $iteration " .
-            " > $REMOTE_RESULTS_DIR/$ANALYZE_RESULTS_LOG_FILENAME &\"";
+            "\"/home/vivin/Projects/phd/scripts/bg_analyze_results.sh $experiment $full_subject $run_name $iteration " .
+            "$REMOTE_RESULTS_DIR/$ANALYZE_RESULTS_LOG_FILENAME\"";
         sleep 1;
     } else {
         print "Analysis of current results for run $run_name (iteration $iteration) is already running...\n";
