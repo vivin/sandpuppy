@@ -21,6 +21,8 @@ my $redis = Redis->new;
 
 my $fuzz_config = YAML::XS::LoadFile("$RESOURCES/fuzz_config.yml");
 
+my $redis_lock :shared;
+
 sub get_basic_blocks_for_input {
     my $subject = $_[0];
     my $input_file = $_[1];
@@ -61,6 +63,8 @@ sub is_coverage_new {
 
     my $full_subject = $subject . ($version ? "-$version" : "");
     my $key = "$experiment:$full_subject:$run_name-$iteration.coverage";
+
+    lock($redis_lock);
     my $has_new_coverage = 0;
     foreach my $bb(@basic_blocks) {
         my $result = $redis->sadd($key, $bb);
@@ -83,6 +87,8 @@ sub is_session_coverage_new {
 
     my $full_subject = $subject . ($version ? "-$version" : "");
     my $key = "$experiment:$full_subject:$run_name-$iteration:$session.coverage";
+
+    lock($redis_lock);
     my $has_new_coverage = 0;
     foreach my $bb(@basic_blocks) {
         my $result = $redis->sadd($key, $bb);
@@ -106,6 +112,8 @@ sub record_input_coverage {
     my $full_subject = $subject . ($version ? "-$version" : "");
     my $key = "$experiment:$full_subject:$run_name-$iteration.coverage_over_time";
     my $ctime = stat($input_file)->ctime;
+
+    lock($redis_lock);
     $redis->sadd($key, "$ctime,${\(join ';', @basic_blocks)}");
 }
 
@@ -122,6 +130,8 @@ sub record_session_input_coverage {
     my $full_subject = $subject . ($version ? "-$version" : "");
     my $key = "$experiment:$full_subject:$run_name-$iteration:$session.coverage_over_time";
     my $ctime = stat($input_file)->ctime;
+
+    lock($redis_lock);
     $redis->sadd($key, "$ctime,${\(join ';', @basic_blocks)}");
 }
 

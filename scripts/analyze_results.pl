@@ -46,8 +46,6 @@ my $queue = Thread::Queue->new();
 my $num_jobs :shared = 0;
 my $print_remaining :shared = 0;
 
-my $coverage_lock :shared;
-my $session_coverage_lock :shared;
 my $pool = Thread::Pool->new({
     optimize     => 'memory',
     do           => sub {
