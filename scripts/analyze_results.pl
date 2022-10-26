@@ -57,6 +57,7 @@ my $pool = Thread::Pool->new({
         my $basic_blocks = analysis::get_basic_blocks_for_input($subject, $input_file, $count);
         process_file_with_coverage_data($session, $input_file, $basic_blocks, $count);
 
+        return 1;
         #return $session, $input_file, analysis::get_basic_blocks_for_input($subject, $input_file, $count), $count;
     },
     monitor      => sub {
