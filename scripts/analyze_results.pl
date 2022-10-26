@@ -90,6 +90,7 @@ analysis::iterate_fuzzer_results(
     $experiment, $subject, $version, "$run_name-$iteration", "sandpuppy", \@sessions,
     \&iteration_handler
 );
+print "ok we are done iterating\n";
 until ($pool->todo() == 0) {
     print "${\($pool->todo())} jobs remaining...\r";
     sleep 1;
