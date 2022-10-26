@@ -20,10 +20,15 @@ my $SANDPUPPY_SYNC_DIRECTORY = "sandpuppy-sync";
 
 my $ASAN_MEMORY_LIMIT = 1024; #20971586; # Depends on the system. For 64-bit ASAN allocates something ridiculous like 20 TB.
 
+my $NAMED_PIPE = "/tmp/vvdump";
+
 srand(time);
 
+sub get_named_pipe_path {
+    return $NAMED_PIPE;
+}
+
 sub setup_named_pipe {
-    my $NAMED_PIPE = "/tmp/vvdump";
     if (!-e $NAMED_PIPE) {
         $log->info("Creating named pipe at $NAMED_PIPE");
         POSIX::mkfifo($NAMED_PIPE, 0700) or die "Could not create $NAMED_PIPE";

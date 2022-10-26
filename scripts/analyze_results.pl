@@ -104,6 +104,7 @@ my $runs_after_shutdown_request = 0;
 until($shutdown_requested && $runs_after_shutdown_request > 0) {
     $shutdown_requested = -e -f "$RUN_DIR/shutdown_analyze_results";
     if ($shutdown_requested) {
+        print "\nShutdown requested. Will run one last iteration before shutdown.\n";
         $runs_after_shutdown_request++;
     }
 

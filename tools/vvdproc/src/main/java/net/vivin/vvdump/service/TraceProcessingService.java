@@ -125,7 +125,12 @@ public class TraceProcessingService {
             var pipe = new BufferedReader(new FileReader(namedPipePath), 8192 * 8);
 
             String line;
-            while ((line = pipe.readLine()) != null && !END_TRACE_MARKER.equals(line)) {
+            do {
+                line = pipe.readLine();
+                if (line == null || END_TRACE_MARKER.equals(line)) {
+                    continue;
+                }
+
                 if (start == -1) {
                     start = System.currentTimeMillis();
                 }
@@ -165,7 +170,7 @@ public class TraceProcessingService {
                 } else {
                     log.warn("Malformed line: {}", line);
                 }
-            }
+            } while (!END_TRACE_MARKER.equals(line));
         } catch (FileNotFoundException e) {
             throw new UncheckedIOException("Could not find named pipe", e);
         } catch (IOException e) {

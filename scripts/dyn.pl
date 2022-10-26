@@ -7,6 +7,7 @@ use Data::Dumper;
 use File::Basename;
 use File::Path qw(make_path);
 use Log::Simple::Color;
+use POSIX ":sys_wait_h";
 use Storable qw{lock_store lock_retrieve};
 use YAML::XS;
 
@@ -56,8 +57,8 @@ my $state_machine = {
     "sandpuppy_fuzz,launching"     => \&start_sandpuppy_fuzz,
     "sandpuppy_fuzz,launched"      => \&wait_until_pods_are_ready,
     "sandpuppy_fuzz,started"       => \&wait_until_iteration_is_done,
-    "sandpuppy_fuzz;finished"      => \&analyze_traces,
-    "sandpuppy_fuzz;completed"     => sub {
+    "sandpuppy_fuzz,finished"      => \&analyze_traces,
+    "sandpuppy_fuzz,completed"     => sub {
         print "All iterations finished! Exiting...";
         exit 0;
     }
@@ -65,7 +66,7 @@ my $state_machine = {
 
 my @CHILDREN = ();
 my $VVDPROC_PID = 0;
-my $TRACEGEN_PID = 0;
+my $RUN_ITERATION_TRACEGEN_PIDS = {};
 
 my $experiment = $ARGV[0];
 my $full_subject = $ARGV[1];
@@ -131,6 +132,8 @@ exit 0;
 sub handle_signal {
     my $signame = shift;
     print "Got $signame. Cleaning up...\n";
+    shutdown_background_trace_processing();
+    shutdown_remote_background_results_analysis();
     clean_up_children(@CHILDREN);
     die "Dying for $signame signal";
 }
@@ -208,6 +211,7 @@ sub analyze_traces {
         system "mv $SUBJECT_PATH/results/sandpuppy_interesting_variables.yml $SUBJECT_PATH/results/sandpuppy_interesting_variables.yml.$suffix";
         system "mv $SUBJECT_PATH/results/sandpuppy-target-name-to-id.yml $SUBJECT_PATH/results/sandpuppy-target-name-to-id.yml.$suffix";
         system "mv $SUBJECT_PATH/results/sandpuppy-vvmax-variables.txt $SUBJECT_PATH/results/sandpuppy-vvmax-variables.txt.$suffix";
+        system "mkdir $SUBJECT_PATH/results/$TRACEGEN_EXEC_CONTEXT";
 
         print "Analyzing traces for run $run_name, iteration $iteration...\n";
     } else {
@@ -262,14 +266,15 @@ sub start_sandpuppy_fuzz {
 sub setup_remote_background_results_analysis {
     my $iteration = $run_state->{iteration};
 
-    my $REMOTE_SUBJECT_DIR = utils::get_remote_nfs_subject_directory($experiment, $subject, $version);
-    my $REMOTE_RESULTS_DIR = "$REMOTE_SUBJECT_DIR/results/$run_name-$iteration";
+    my $NFS_SUBJECT_DIR = utils::get_nfs_subject_directory($experiment, $subject, $version);
+    my $NFS_RESULTS_DIR = "$NFS_SUBJECT_DIR/results/$run_name-$iteration";
 
-    my $ANALYZE_RESULTS_LOG_FILENAME = "analyze_results.log";
+    if (-e "$NFS_RESULTS_DIR/shutdown_analyze_results") {
+        system "rm $NFS_RESULTS_DIR/shutdown_analyze_results";
+    }
 
     system "ssh -o StrictHostKeyChecking=no -i /mnt/vivin-nfs/vivin/sandpuppy-pod-key vivin\@vivin.is-a-geek.net " .
-        "\"/home/vivin/Projects/phd/scripts/bg_analyze_results.sh $experiment $full_subject $run_name $iteration " .
-        "$REMOTE_RESULTS_DIR/$ANALYZE_RESULTS_LOG_FILENAME\"";
+        "\"/home/vivin/Projects/phd/scripts/bg_analyze_results.sh $experiment $full_subject $run_name $iteration\"";
 }
 
 sub shutdown_remote_background_results_analysis {
@@ -288,6 +293,10 @@ sub monitor_remote_background_results_analysis_until_done {
     my $NFS_RESULTS_DIR = "$NFS_SUBJECT_DIR/results/$run_name-$iteration";
 
     my $ANALYZE_RESULTS_LOG_FILENAME = "analyze_results.log";
+
+    until (-e -f "$NFS_RESULTS_DIR/$ANALYZE_RESULTS_LOG_FILENAME") {
+        sleep 1;
+    }
 
     my $pid = open TAIL, '-|', "tail -f $NFS_RESULTS_DIR/$ANALYZE_RESULTS_LOG_FILENAME" or die $!;
     my $done = 0;
@@ -317,6 +326,14 @@ sub setup_background_trace_processing {
 
     push @CHILDREN, $pid;
     $VVDPROC_PID = $pid;
+}
+
+sub shutdown_background_trace_processing {
+    return if !$VVDPROC_PID;
+
+    open PIPE, ">", utils::get_named_pipe_path();
+    print PIPE "__\$VVDUMP_END\$__\n";
+    close PIPE;
 }
 
 sub wait_until_pods_are_ready {
@@ -364,10 +381,8 @@ sub wait_until_iteration_is_done {
     shutdown_remote_background_results_analysis();
     monitor_remote_background_results_analysis_until_done();
 
-    print "Generating traces from seeds if any...";
+    print "Generating traces from remaining seeds if any...\n";
     generate_traces_from_staged_tracegen_files();
-    waitpid $TRACEGEN_PID, 0;
-
     update_state({
         phase_status => "finished",
         end_time  => time()
@@ -376,9 +391,6 @@ sub wait_until_iteration_is_done {
 
 sub analyze_current_results {
     my $iteration = $run_state->{iteration};
-
-    my $REMOTE_SUBJECT_DIR = utils::get_remote_nfs_subject_directory($experiment, $subject, $version);
-    my $REMOTE_RESULTS_DIR = "$REMOTE_SUBJECT_DIR/results/$run_name-$iteration";
 
     my $NFS_SUBJECT_DIR = utils::get_nfs_subject_directory($experiment, $subject, $version);
     my $NFS_RESULTS_DIR = "$NFS_SUBJECT_DIR/results/$run_name-$iteration";
@@ -418,7 +430,22 @@ sub analyze_current_results {
 }
 
 sub generate_traces_from_staged_tracegen_files {
+    my $wait_for_existing = $_[0];
     my $iteration = $run_state->{iteration};
+
+    my $tracegen_pid = $RUN_ITERATION_TRACEGEN_PIDS->{"$run_name-$iteration"};
+    if (defined $tracegen_pid && kill 0, $tracegen_pid) {
+        if (!defined $wait_for_existing && !waitpid $tracegen_pid, WNOHANG) {
+            print "Tracegen (pid: $tracegen_pid) is already running for $run_name-$iteration\n";
+            return;
+        }
+
+        my $start = time();
+        while (kill 0, $tracegen_pid) {
+            print "Waiting for existing tracgen (pid: $tracegen_pid) to finish (${\(time() - $start)}s elapsed)...\r";
+            sleep 1;
+        }
+    }
 
     my $SUBJECT_DIR = utils::get_nfs_subject_directory($experiment, $subject, $version);
     my $TRACEGEN_STAGING_DIR = "$SUBJECT_DIR/results/$run_name-$iteration/tracegen-staging";
@@ -436,13 +463,6 @@ sub generate_traces_from_staged_tracegen_files {
 
     my $pid = fork;
     if (!$pid) {
-        if ($TRACEGEN_PID != 0) {
-            # Wait until existing one is done
-            while (kill 0, $TRACEGEN_PID) {
-                sleep 5;
-            }
-        }
-
         $ENV{"__VVD_EXP_NAME"} = $experiment;
         $ENV{"__VVD_SUBJECT"} = $version ? "$subject-$version" : $subject;
         $ENV{"__VVD_BIN_CONTEXT"} = $TRACEGEN_BIN_CONTEXT;
@@ -477,5 +497,5 @@ sub generate_traces_from_staged_tracegen_files {
     }
 
     push @CHILDREN, $pid;
-    $TRACEGEN_PID = $pid;
+    $RUN_ITERATION_TRACEGEN_PIDS->{"$run_name-$iteration"} = $pid;
 }
