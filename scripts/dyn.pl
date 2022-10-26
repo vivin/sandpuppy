@@ -267,7 +267,6 @@ sub setup_remote_background_results_analysis {
 
     my $ANALYZE_RESULTS_LOG_FILENAME = "analyze_results.log";
 
-    print "Analyzing current results from run $run_name (iteration $iteration)...\n";
     system "ssh -o StrictHostKeyChecking=no -i /mnt/vivin-nfs/vivin/sandpuppy-pod-key vivin\@vivin.is-a-geek.net " .
         "\"/home/vivin/Projects/phd/scripts/bg_analyze_results.sh $experiment $full_subject $run_name $iteration " .
         "$REMOTE_RESULTS_DIR/$ANALYZE_RESULTS_LOG_FILENAME\"";
