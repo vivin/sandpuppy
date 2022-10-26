@@ -56,11 +56,9 @@ my $pool = Thread::Pool->new({
         my $count = $_[2];
         my $basic_blocks = analysis::get_basic_blocks_for_input($subject, $input_file, $count);
         process_file_with_coverage_data($session, $input_file, $basic_blocks, $count);
-
-        return 1;
         #return $session, $input_file, analysis::get_basic_blocks_for_input($subject, $input_file, $count), $count;
     },
-    stream       => sub {
+    post         => sub {
         $num_jobs--;
 
         print "$num_jobs remaining                                         \n";
