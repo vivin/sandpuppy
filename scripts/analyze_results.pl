@@ -60,7 +60,7 @@ my $pool = Thread::Pool->new({
         return 1;
         #return $session, $input_file, analysis::get_basic_blocks_for_input($subject, $input_file, $count), $count;
     },
-    monitor      => sub {
+    stream       => sub {
         $num_jobs--;
 
         print "$num_jobs remaining                                         \n";
