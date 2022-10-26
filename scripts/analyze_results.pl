@@ -58,7 +58,7 @@ my $pool = Thread::Pool->new({
     },
     stream       => sub {
         $num_jobs--;
-        print "$num_jobs remaining                                         \n";
+        print "$num_jobs remaining                                         \r" if $print_remaining;
     },
     #stream       => sub {
         #if ($_[0] eq "__COMPLETED__") {
@@ -96,7 +96,6 @@ analysis::iterate_fuzzer_results(
 );
 
 $print_remaining = 1;
-print "\nok we are done iterating\n";
 #until ($pool->todo() == 0) {
 #    print "${\($pool->todo())} jobs remaining...\r";
 #    sleep 1;
