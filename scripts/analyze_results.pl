@@ -58,7 +58,7 @@ my $pool = Thread::Pool->new({
     },
     stream       => sub {
         $num_jobs--;
-        print "$num_jobs remaining                                         \r" if $print_remaining;
+        print "$num_jobs files remaining to be processed                   \r" if $print_remaining;
     },
     #stream       => sub {
         #if ($_[0] eq "__COMPLETED__") {
@@ -74,8 +74,8 @@ my $pool = Thread::Pool->new({
     #},
     autoshutdown => 1,
     workers      => 8,
-    maxjobs      => 160,
-    minjobs      => 80,
+    maxjobs      => 320,
+    minjobs      => 160,
 });
 
 #my $worker = threads->create(
