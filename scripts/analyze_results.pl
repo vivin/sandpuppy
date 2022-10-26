@@ -101,11 +101,11 @@ analysis::iterate_fuzzer_results(
 );
 
 $print_remaining = 1;
-print "ok we are done iterating\n";
-until ($pool->todo() == 0) {
-    print "${\($pool->todo())} jobs remaining...\r";
-    sleep 1;
-}
+print "\nok we are done iterating\n";
+#until ($pool->todo() == 0) {
+#    print "${\($pool->todo())} jobs remaining...\r";
+#    sleep 1;
+#}
 $pool->shutdown();
 #$worker->join();
 
