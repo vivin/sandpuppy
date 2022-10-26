@@ -73,7 +73,7 @@ my $pool = Thread::Pool->new({
         #}
     #},
     autoshutdown => 1,
-    workers      => 16,
+    workers      => 8,
     maxjobs      => 160,
     minjobs      => 80,
 });
