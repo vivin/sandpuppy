@@ -104,6 +104,7 @@ print "\nShutting Down\n";
 sub iteration_handler {
     my $session = $_[0];
     my $input_file = $_[1];
+    my $ctime = $_[2];
 
     my $CONTAINER_SUBJECT_DIR = utils::get_container_nfs_subject_directory($experiment, $subject, $version);
     my $renamed_file = $input_file;
@@ -111,7 +112,7 @@ sub iteration_handler {
 
     $redis->publish(
         "analysis.channel.$channel_number",
-        "$experiment#$original_subject#$run_name#$iteration#$session#$renamed_file"
+        "$experiment#$original_subject#$run_name#$iteration#$session#$renamed_file#$ctime"
     );
 
     my $total_files_key = "$experiment:$full_subject:$run_name-$iteration.total_files";

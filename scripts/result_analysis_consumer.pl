@@ -45,12 +45,13 @@ $redis->subscribe(
     $CHANNEL_NAME,
     \&subscribe_handler
 );
-$redis->wait_for_messages(0);
+$redis->wait_for_messages(5) while 1;
 
 sub subscribe_handler {
     my ($message, $topic, $subscribed_topic) = @_;
+    print "Received message from topic $topic: $message\n";
 
-    my ($experiment, $full_subject, $run_name, $iteration, $session, $input_file) = split /#/, $message;
+    my ($experiment, $full_subject, $run_name, $iteration, $session, $input_file, $ctime) = split /#/, $message;
     my $original_subject = $full_subject;
     my $subject = $full_subject;
     my $version;
@@ -67,10 +68,10 @@ sub subscribe_handler {
         # New overall coverage implies new session coverage as well, so let's record session coverage in addition to
         # overall coverage. After this we will copy this input over to be used as a seed in the next iteration.
         analysis::record_input_coverage(
-            $experiment, $subject, $version, $run_name, $iteration, $input_file, $basic_blocks
+            $experiment, $subject, $version, $run_name, $iteration, $input_file, $basic_blocks, $ctime
         );
         analysis::record_session_input_coverage(
-            $experiment, $subject, $version, $run_name, $iteration, $session, $input_file, $basic_blocks
+            $experiment, $subject, $version, $run_name, $iteration, $session, $input_file, $basic_blocks, $ctime
         );
         analysis::copy_input_for_next_iteration_seeds(
             $experiment, $subject, $version, $run_name, $iteration, $session, $input_file
@@ -80,7 +81,7 @@ sub subscribe_handler {
             $experiment, $subject, $version, $run_name, $iteration, $session, $basic_blocks
         );
         analysis::record_session_input_coverage(
-            $experiment, $subject, $version, $run_name, $iteration, $session, $input_file, $basic_blocks
+            $experiment, $subject, $version, $run_name, $iteration, $session, $input_file, $basic_blocks, $ctime
         ) if $has_new_session_coverage != 0;
     }
 

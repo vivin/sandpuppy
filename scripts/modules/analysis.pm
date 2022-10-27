@@ -130,10 +130,14 @@ sub record_input_coverage {
     my $iteration = $_[4];
     my $input_file = $_[5];
     my @basic_blocks = @{$_[6]};
+    my $ctime = $_[7];
 
     my $full_subject = $subject . ($version ? "-$version" : "");
     my $key = "$experiment:$full_subject:$run_name-$iteration.coverage_over_time";
-    my $ctime = stat($input_file)->ctime;
+
+    if (!defined $ctime) {
+        $ctime = stat($input_file)->ctime;
+    }
 
     $redis->sadd($key, "$ctime,${\(join ';', @basic_blocks)}");
 }
@@ -147,10 +151,14 @@ sub record_session_input_coverage {
     my $session = $_[5];
     my $input_file = $_[6];
     my @basic_blocks = @{$_[7]};
+    my $ctime = $_[8];
 
     my $full_subject = $subject . ($version ? "-$version" : "");
     my $key = "$experiment:$full_subject:$run_name-$iteration:$session.coverage_over_time";
-    my $ctime = stat($input_file)->ctime;
+
+    if (!defined $ctime) {
+        $ctime = stat($input_file)->ctime;
+    }
 
     $redis->sadd($key, "$ctime,${\(join ';', @basic_blocks)}");
 }
@@ -275,7 +283,7 @@ sub iterate_fuzzer_results {
             $logger->("Input $count of $num_files being processed                  \r");
             $_redis->sadd($processed_files_key, $file_redis_set_value);
             $_redis->sadd($sha512_key, $sha512);
-            $handler->($session, "$inputs_dir/$file");
+            $handler->($session, "$inputs_dir/$file", $ctime);
         }
         close FILES;
     }
