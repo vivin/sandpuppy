@@ -17,6 +17,8 @@ my $RESOURCES = "$BASE_PATH/resources";
 my $log = Log::Simple::Color->new;
 
 my $redis_credentials;
+
+my $local_server;
 my $server;
 if (-e utils::get_base_container_nfs_path()) {
     my $REDIS_HOST = $ENV{REDIS_SERVICE_HOST};
@@ -24,6 +26,9 @@ if (-e utils::get_base_container_nfs_path()) {
     $server = "$REDIS_HOST:$REDIS_PORT";
 } elsif (-e utils::get_base_nfs_path()) {
     $server = "206.206.192.29:31111";
+} else {
+    $local_server = "127.0.0.1:6379";
+    $redis_credentials = "${\(utils::get_base_remote_nfs_path())}/redis-credentials";
 }
 
 my $redis = Redis->new(
@@ -225,7 +230,7 @@ sub iterate_fuzzer_results {
     my $logger = $_[7];
 
     my $_redis = Redis->new(
-        server   => $server,
+        server   => $local_server,
         password => $redis_credentials
     );
 
