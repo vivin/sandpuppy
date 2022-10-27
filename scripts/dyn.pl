@@ -87,8 +87,7 @@ if (! -e -f "$BASE_NFS_PATH/redis-credentials") {
 
 chomp(my $redis_credentials = `cat $BASE_NFS_PATH/redis-credentials`);
 my $remote_redis = Redis->new(
-    server   => "192.168.1.17:6379",
-    password => $redis_credentials
+    server   => "206.206.192.29:31111"
 );
 
 my $fuzz_config = YAML::XS::LoadFile("$BASE_PATH/resources/fuzz_config.yml");

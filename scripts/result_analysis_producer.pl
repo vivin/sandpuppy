@@ -39,13 +39,13 @@ my $RUN_DIR = "$SUBJECT_DIR/results/$run_name-$iteration";
 my $ANALYZE_RESULTS_LOG_FILENAME = "analyze_results.log";
 
 my $redis = Redis->new(
-    server   => "206.206.192.29:31111",
+    server                 => "206.206.192.29:31111",
     conservative_reconnect => 1,
     cnx_timeout            => 900,
     reconnect              => 900
 );
 my $redis_status_client = Redis->new(
-    server   => "206.206.192.29:31111",
+    server                 => "206.206.192.29:31111",
     conservative_reconnect => 1,
     cnx_timeout            => 900,
     reconnect              => 900
