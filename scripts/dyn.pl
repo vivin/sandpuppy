@@ -280,7 +280,7 @@ sub start_sandpuppy_fuzz {
 }
 
 sub setup_analysis_consumer_pods_if_necessary {
-    my $NUM_CONSUMERS = 100;
+    my $NUM_CONSUMERS = 200;
 
     my $consumers_created = 0;
     chomp(my @pods = `pod_names | grep "sandpuppy-analysis-consumer"`);
@@ -340,6 +340,9 @@ sub shutdown_remote_background_results_analysis {
 
     my $NFS_SUBJECT_DIR = utils::get_nfs_subject_directory($experiment, $subject, $version);
     my $NFS_RESULTS_DIR = "$NFS_SUBJECT_DIR/results/$run_name-$iteration";
+    if (! -e -d $NFS_RESULTS_DIR) {
+        return;
+    }
 
     system "touch $NFS_RESULTS_DIR/shutdown_analyze_results";
     until (-e -f "$NFS_RESULTS_DIR/shutdown_analyze_results") {
@@ -456,7 +459,7 @@ sub wait_until_iteration_is_done {
             }
 
             my $remaining_files = $total_files - $processed_files;
-            print "$total_files files total. $remaining_files remaining to be processed.\r";
+            print "$total_files files total. $remaining_files remaining to be processed.\n";
         }
 
         print "${\($SANDPUPPY_FUZZING_RUN_TIME_SECONDS - (time() - $start_time))} seconds remaining in iteration...\n";
