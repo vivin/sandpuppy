@@ -52,7 +52,7 @@ my $redis_status_client = Redis->new(
     password => $redis_credentials
 );
 
-my $NUM_CONSUMERS = 5; # 100;
+my $NUM_CONSUMERS = 1; # 100;
 open LOG, ">", "$RUN_DIR/$ANALYZE_RESULTS_LOG_FILENAME";
 
 my $channel_number = 1;

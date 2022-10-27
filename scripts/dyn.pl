@@ -32,6 +32,7 @@ if ($previous_dyn_pid) {
     die "There is already a dyn.pl process ($previous_dyn_pid) running for the provided arguments\n";
 }
 
+$SIG{INT} = \&handle_signal;
 $SIG{TERM} = \&handle_signal;
 
 my $log = Log::Simple::Color->new;
@@ -81,7 +82,16 @@ if ($full_subject =~ /:/) {
     $full_subject =~ s/:/-/;
 }
 
-my $remote_redis = Redis->new(server => "192.168.1.17:6379");
+my $BASE_NFS_PATH = utils::get_base_nfs_path();
+if (! -e -f "$BASE_NFS_PATH/redis-credentials") {
+    die "Could not find redis credentials\n";
+}
+
+chomp(my $redis_credentials = `cat $BASE_NFS_PATH/redis-credentials`);
+my $remote_redis = Redis->new(
+    server   => "192.168.1.17:6379",
+    password => $redis_credentials
+);
 
 my $fuzz_config = YAML::XS::LoadFile("$BASE_PATH/resources/fuzz_config.yml");
 my $num_iterations = $fuzz_config->{$subject}->{num_iterations};
@@ -396,14 +406,22 @@ sub wait_until_iteration_is_done {
             print "$total_files files total. $remaining_files remaining to be processed.\n";
         }
 
-        print "${\(time() - $start_time)} seconds remaining in iteration...\n";
+        print "${\($SANDPUPPY_FUZZING_RUN_TIME_SECONDS - (time() - $start_time))} seconds remaining in iteration...\n";
         # TODO: would be nice to keep an eye on the status of pods and then resume them if they disappear or stop
     }
 
     print "Iteration $iteration has ended. Stopping pods...\n";
     system "pod_names | grep $experiment | grep $full_subject | grep $run_name-$iteration | xargs kubectl delete pod";
 
-    print "Shutting down remote background results-analysis and waiting for it to complete...\n";
+    print "Sleeping for a minute so that files are old enough for results-analysis to process...\n";
+    my $time = 60;
+    do {
+        sleep 1;
+        $time--;
+        print "$time seconds remaining...\r";
+    } until ($time == 0);
+
+    print "\nShutting down remote background results-analysis and waiting for it to complete...\n";
     shutdown_remote_background_results_analysis();
     monitor_remote_background_results_analysis_until_done();
 

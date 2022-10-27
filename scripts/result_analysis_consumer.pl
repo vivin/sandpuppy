@@ -45,6 +45,7 @@ $redis->subscribe(
     $CHANNEL_NAME,
     \&subscribe_handler
 );
+$redis->wait_for_messages(0);
 
 sub subscribe_handler {
     my ($message, $topic, $subscribed_topic) = @_;
