@@ -260,6 +260,8 @@ sub start_sandpuppy_fuzz {
 
     my $iteration = $run_state->{iteration};
 
+    setup_analysis_consumer_pods_if_necessary();
+
     # Next we will start the sandpuppy fuzzing run
     print "Starting SandPuppy run $run_name (iteration $iteration)...\n";
     system "scripts/exp.pl $experiment spfuzz $full_subject as $run_name-$iteration";
@@ -280,7 +282,7 @@ sub setup_analysis_consumer_pods_if_necessary {
     my $NUM_CONSUMERS = 100;
 
     my $consumers_created = 0;
-    chomp(my @pods = `pod_names | grep sandpuppy-analysis-consumer`);
+    chomp(my @pods = `pod_names | grep \"sandpuppy-analysis-consumer\"`);
     foreach my $consumer(1..$NUM_CONSUMERS) {
         my $consumer_name = "sandpuppy-analysis-consumer-$consumer";
         if(! grep /^$consumer_name$/, @pods) {
@@ -294,7 +296,7 @@ sub setup_analysis_consumer_pods_if_necessary {
         my $existing_pods = scalar @pods;
         my $running_pods = 0;
         do {
-            chomp($running_pods = "kubectl get pods | grep sandpuppy-analysis-consumer | grep Running | wc -l");
+            chomp($running_pods = "kubectl get pods | grep \"sandpuppy-analysis-consumer\" | grep Running | wc -l");
             print "Waiting on ${\($existing_pods + $consumers_created - $running_pods)} to be ready...\r";
             sleep 1;
         } until($running_pods == $existing_pods + $consumers_created);
@@ -307,7 +309,6 @@ sub shutdown_analysis_consumer_pods {
 }
 
 sub setup_remote_background_results_analysis {
-    setup_analysis_consumer_pods_if_necessary();
 
     my $iteration = $run_state->{iteration};
 
