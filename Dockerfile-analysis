@@ -1,9 +1,12 @@
-FROM ubuntu:20.04
+FROM alpine:latest
 ARG UNAME=vivin
 ARG UID=1000
-ARG GID=1000
-RUN dpkg --add-architecture i386 && apt-get update && env DEBIAN_FRONTEND="noninteractive" TZ="America/Phoenix" apt-get -y install sudo curl parallel rsync ssh libc6-i386 lib32stdc++6 lib32gcc1 lib32ncurses6 lib32z1 libsdl2-2.0 libsdl2-2.0:i386 libc6:i386 libncurses6:i386 libstdc++6:i386 libbz2-dev libbz2-dev:i386 libpython3.8 libpcap0.8 libpcap0.8:i386 gcc make cpanminus
-RUN groupadd -g $GID -o $UNAME && useradd -m -u $UID -g $GID -o -s /bin/bash $UNAME && echo "$UNAME:$UNAME" | chpasswd && adduser $UNAME sudo && echo '%sudo ALL=(ALL) NOPASSWD:ALL' >> /etc/sudoers && cpanm install inc::Module::Install Redis YAML::XS Log::Simple::Color List::Util Cpanel::JSON::XS
+RUN apk update && apk add sudo bash curl libc-dev libpcap gcc make perl perl-dev perl-app-cpanminus
+RUN adduser -h /home/vivin -u $UID -s /bin/bash --disabled-password $UNAME \
+    && mkdir -p /etc/sudoers.d \
+    && echo "$UNAME ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/$UNAME \
+    && chmod 0440 /etc/sudoers.d/$UNAME \
+    && cpanm install inc::latest inc::Module::Install Redis YAML::XS Log::Simple::Color List::Util Cpanel::JSON::XS
 COPY resources/docker/container_bashrc /home/vivin/.bashrc
 COPY resources/binaries /home/vivin/Projects/phd/resources/binaries
 COPY tools/FuzzFactory /home/vivin/Projects/phd/tools/FuzzFactory

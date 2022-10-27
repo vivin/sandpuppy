@@ -314,6 +314,9 @@ sub wait_until_iteration_is_done {
     while(time() - $start_time < $SANDPUPPY_FUZZING_RUN_TIME_SECONDS) {
         sleep 60; # check every minute
 
+        my $elapsed_time = time() - $start_time;
+        my $remaining_time = $SANDPUPPY_FUZZING_RUN_TIME_SECONDS - $elapsed_time;
+
         # Generate traces from tracegen files (if any)
         generate_traces_from_staged_tracegen_files();
         my $total_files = $remote_redis->get("$experiment:$full_subject:$run_name-$iteration.total_files");
@@ -323,11 +326,13 @@ sub wait_until_iteration_is_done {
                 $processed_files = 0;
             }
 
+            my $throughput = sprintf("%.2f", ($processed_files / $elapsed_time));
             my $remaining_files = $total_files - $processed_files;
-            print "$total_files files total. $remaining_files remaining to be processed.\n";
+            print "${remaining_time}s remaining. $processed_files processed. $remaining_files remaining to be processed. $total_files files total. ($throughput files/s)\n";
+        } else {
+            print "${remaining_time}s remaining.\n"
         }
 
-        print "${\($SANDPUPPY_FUZZING_RUN_TIME_SECONDS - (time() - $start_time))} seconds remaining in iteration...\n";
         # TODO: would be nice to keep an eye on the status of pods and then resume them if they disappear or stop
 
         # If any analysis pods went down, start them up
