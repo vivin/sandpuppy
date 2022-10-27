@@ -45,14 +45,14 @@ if (! -e -f "$BASE_NFS_PATH/redis-credentials") {
 
 chomp(my $redis_credentials = `cat $BASE_NFS_PATH/redis-credentials`);
 my $redis = Redis->new(
-    server   => "127.0.0.1:6379",
+    server   => "206.206.192.29:31111",
     password => $redis_credentials,
     conservative_reconnect => 1,
     cnx_timeout            => 900,
     reconnect              => 900
 );
 my $redis_status_client = Redis->new(
-    server   => "127.0.0.1:6379",
+    server   => "206.206.192.29:31111",
     password => $redis_credentials,
     conservative_reconnect => 1,
     cnx_timeout            => 900,
