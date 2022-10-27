@@ -19,19 +19,15 @@ my $log = Log::Simple::Color->new;
 my $redis_credentials;
 my $server;
 if (-e utils::get_base_container_nfs_path()) {
-    chomp($redis_credentials = `cat ${\(utils::get_base_container_nfs_path())}/redis-credentials`);
-    $server = "vivin.is-a-geek.net:16379";
+    my $REDIS_HOST = $ENV{REDIS_SERVICE_HOST};
+    my $REDIS_PORT = $ENV{REDIS_SERVICE_PORT};
+    $server = "$REDIS_HOST:$REDIS_PORT";
 } elsif (-e utils::get_base_nfs_path()) {
-    chomp($redis_credentials = `cat ${\(utils::get_base_nfs_path())}/redis-credentials`);
-    $server = "192.168.1.17:6379";
-} else {
-    chomp($redis_credentials = `cat ${\(utils::get_base_remote_nfs_path())}/redis-credentials`);
-    $server = "127.0.0.1:6379";
+    $server = "206.206.192.29:31111";
 }
 
 my $redis = Redis->new(
     server                 => $server,
-    password               => $redis_credentials,
     conservative_reconnect => 1,
     cnx_timeout            => 900,
     reconnect              => 900

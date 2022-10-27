@@ -149,7 +149,6 @@ sub handle_signal {
     print "Got $signame. Cleaning up...\n";
     shutdown_background_trace_processing();
     shutdown_remote_background_results_analysis_producer();
-    shutdown_analysis_consumer_pods();
     clean_up_children(@CHILDREN);
     die "Dying for $signame signal";
 }

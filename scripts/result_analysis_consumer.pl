@@ -31,14 +31,13 @@ my $subject_tracegen_checkers = {
     jsoncpp      => create_wrapped_checker("jsoncpp", \&jsoncpp::check_input_is_valid_json)
 };
 
-chomp(my $redis_credentials = `cat $BASE_NFS_PATH/redis-credentials`);
+my $REDIS_HOST = $ENV{REDIS_SERVICE_HOST};
+my $REDIS_PORT = $ENV{REDIS_SERVICE_PORT};
 my $redis = Redis->new(
-    server   => "vivin.is-a-geek.net:16379",
-    password => $redis_credentials
+    server   => "$REDIS_HOST:$REDIS_PORT"
 );
 my $redis_status_client = Redis->new(
-    server   => "vivin.is-a-geek.net:16379",
-    password => $redis_credentials
+    server   => "$REDIS_HOST:$REDIS_PORT"
 );
 
 #$redis->subscribe(
