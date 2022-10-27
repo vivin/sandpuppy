@@ -52,7 +52,7 @@ my $redis = Redis->new(
 );
 my $redis_status_client = Redis->new(
     server   => "206.206.192.29:31111",
-    password => $redis_credentials,
+    conservative_reconnect => 1,
     cnx_timeout            => 900,
     reconnect              => 900
 );
