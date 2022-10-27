@@ -435,10 +435,15 @@ sub wait_until_iteration_is_done {
 
         # Generate traces from tracegen files (if any)
         generate_traces_from_staged_tracegen_files();
-        my $stats = $remote_redis->get("$experiment:$full_subject:$run_name-$iteration.stats");
-        if ($stats) {
-            my ($total_files, $remaining_files) = split /,/, $stats;
-            print "$total_files files total. $remaining_files remaining to be processed.\n";
+        my $total_files = $remote_redis->get("$experiment:$full_subject:$run_name-$iteration.total_files");
+        my $processed_files = $remote_redis->get("$experiment:$full_subject:$run_name-$iteration.processed_files");
+        if (defined $total_files) {
+            if (!defined $processed_files) {
+                $processed_files = 0;
+            }
+
+            my $remaining_files = $total_files - $processed_files;
+            print "$total_files files total. $remaining_files remaining to be processed.\r";
         }
 
         print "${\($SANDPUPPY_FUZZING_RUN_TIME_SECONDS - (time() - $start_time))} seconds remaining in iteration...\n";
