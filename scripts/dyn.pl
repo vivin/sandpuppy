@@ -280,7 +280,10 @@ sub start_sandpuppy_fuzz {
 }
 
 sub setup_analysis_consumer_pods_if_necessary {
-    my $NUM_CONSUMERS = 200;
+    my $NUM_CONSUMERS = 300;
+
+    chomp(my @errored_pods = `kubectl get pods | grep "sandpuppy-analysis-consumer" | grep Error | awk '{ print \$1; }'`);
+    system "kubectl delete pod $_" for @errored_pods;
 
     my $consumers_created = 0;
     chomp(my @pods = `pod_names | grep "sandpuppy-analysis-consumer"`);
@@ -302,7 +305,7 @@ sub setup_analysis_consumer_pods_if_necessary {
             sleep 1;
 
             # Restart error pods if any
-            chomp(my @errored_pods = `kubectl get pods | grep "sandpuppy-analysis-consumer" | grep Error | awk '{ print \$1; }'`);
+            chomp(@errored_pods = `kubectl get pods | grep "sandpuppy-analysis-consumer" | grep Error | awk '{ print \$1; }'`);
             foreach my $errored_pod(@errored_pods) {
                 my $consumer = $errored_pod;
                 $consumer =~ s/sandpuppy-analysis-consumer-//;
@@ -350,8 +353,6 @@ sub shutdown_remote_background_results_analysis {
         sleep 1;
     }
     print "Remote background results analysis is shutting down...";
-
-    shutdown_analysis_consumer_pods();
 }
 
 sub monitor_remote_background_results_analysis_until_done {
@@ -365,6 +366,9 @@ sub monitor_remote_background_results_analysis_until_done {
 
         print "$total_files files total. $remaining_files remaining to be processed.\r";
         sleep 1;
+
+        # Sometimes these guys go down. Bring them back up if necessary.
+        setup_analysis_consumer_pods_if_necessary();
     } until ($remaining_files == 0);
 
     print "\n";
@@ -464,6 +468,9 @@ sub wait_until_iteration_is_done {
 
         print "${\($SANDPUPPY_FUZZING_RUN_TIME_SECONDS - (time() - $start_time))} seconds remaining in iteration...\n";
         # TODO: would be nice to keep an eye on the status of pods and then resume them if they disappear or stop
+
+        # If any analysis pods went down, start them up
+        setup_analysis_consumer_pods_if_necessary();
     }
 
     print "Iteration $iteration has ended. Stopping pods...\n";

@@ -45,14 +45,20 @@ if (! -e -f "$BASE_NFS_PATH/redis-credentials") {
 chomp(my $redis_credentials = `cat $BASE_NFS_PATH/redis-credentials`);
 my $redis = Redis->new(
     server   => "127.0.0.1:6379",
-    password => $redis_credentials
+    password => $redis_credentials,
+    conservative_reconnect => 1,
+    cnx_timeout            => 900,
+    reconnect              => 900
 );
 my $redis_status_client = Redis->new(
     server   => "127.0.0.1:6379",
-    password => $redis_credentials
+    password => $redis_credentials,
+    conservative_reconnect => 1,
+    cnx_timeout            => 900,
+    reconnect              => 900
 );
 
-my $NUM_CONSUMERS = 200;
+my $NUM_CONSUMERS = 300;
 open LOG, ">", "$RUN_DIR/$ANALYZE_RESULTS_LOG_FILENAME";
 
 my $channel_number = 1;
