@@ -41,14 +41,20 @@ my $redis_status_client = Redis->new(
     password => $redis_credentials
 );
 
-$redis->subscribe(
-    $CHANNEL_NAME,
-    \&subscribe_handler
-);
-$redis->wait_for_messages(5) while 1;
+#$redis->subscribe(
+#    $CHANNEL_NAME,
+#    \&subscribe_handler
+#);
+#$redis->wait_for_messages(5) while 1;
+while (1) {
+    my $message = $redis->brpop($CHANNEL_NAME, 5);
+    if (defined $message) {
+        subscribe_handler($message, $CHANNEL_NAME);
+    }
+}
 
 sub subscribe_handler {
-    my ($message, $topic, $subscribed_topic) = @_;
+    my ($message, $topic) = @_;
     print "Received message from topic $topic: $message\n";
 
     my ($experiment, $full_subject, $run_name, $iteration, $session, $input_file, $ctime) = split /#/, $message;

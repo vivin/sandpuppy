@@ -110,7 +110,7 @@ sub iteration_handler {
     my $renamed_file = $input_file;
     $renamed_file =~ s,^.*results/,$CONTAINER_SUBJECT_DIR/results/,;
 
-    $redis->publish(
+    $redis->lpush(
         "analysis.channel.$channel_number",
         "$experiment#$original_subject#$run_name#$iteration#$session#$renamed_file#$ctime"
     );
