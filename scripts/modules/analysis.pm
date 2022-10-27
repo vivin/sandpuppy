@@ -28,7 +28,7 @@ if (-e utils::get_base_container_nfs_path()) {
     $server = "206.206.192.29:31111";
 } else {
     $local_server = "127.0.0.1:6379";
-    $redis_credentials = "${\(utils::get_base_remote_nfs_path())}/redis-credentials";
+    $redis_credentials = `cat ${\(utils::get_base_remote_nfs_path())}/redis-credentials`;
 }
 
 my $redis = Redis->new(
