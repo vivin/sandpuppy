@@ -465,7 +465,7 @@ sub generate_startup_script {
       while :
       do
         # Start control SSH session
-        ssh -nNf -M -S "/home/vivin/.ssh/ctl/$target->{id}\@%h:%p" -o StrictHostKeyChecking=no -i /home/vivin/sandpuppy-pod-key \\
+        ssh -nNf -M -S "/home/vivin/.ssh/ctl/$target->{id}\@%h:%p" -o StrictHostKeyChecking=no -o ConnectTimeout=900 -i /home/vivin/sandpuppy-pod-key \\
             vivin\@vivin.is-a-geek.net
 
         # First copy this target's results over to the share
@@ -527,7 +527,7 @@ sub generate_startup_script {
       date +%s >"$container_nfs_subject_directory/results/\$RUN_NAME/$SANDPUPPY_SYNC_DIRECTORY/start_ts"
     else
       # Start control SSH session
-      ssh -nNf -M -S "/home/vivin/.ssh/ctl/$target->{id}\@%h:%p" -o StrictHostKeyChecking=no -i /home/vivin/sandpuppy-pod-key \\
+      ssh -nNf -M -S "/home/vivin/.ssh/ctl/$target->{id}\@%h:%p" -o StrictHostKeyChecking=no -o ConnectTimeout=900 -i /home/vivin/sandpuppy-pod-key \\
           vivin\@vivin.is-a-geek.net
 
       # We are resuming, so first copy over this target's results directory, and then the queues from other targets
@@ -675,7 +675,7 @@ sub generate_fuzz_eval_startup_script {
       while :
       do
         # Start control SSH session
-        ssh -nNf -M -S "/home/vivin/.ssh/ctl/\$TARGET_ID\@%h:%p" -o StrictHostKeyChecking=no -i /home/vivin/sandpuppy-pod-key \\
+        ssh -nNf -M -S "/home/vivin/.ssh/ctl/\$TARGET_ID\@%h:%p" -o StrictHostKeyChecking=no -o ConnectTimeout=900 -i /home/vivin/sandpuppy-pod-key \\
             vivin\@vivin.is-a-geek.net
 
         # First copy this target's results over to the share
@@ -733,7 +733,7 @@ sub generate_fuzz_eval_startup_script {
       date +%s >"$container_nfs_subject_directory/results/\$RUN_NAME/$fuzzer-sync/start_ts"
     else
       # Start control SSH session
-      ssh -nNf -M -S "/home/vivin/.ssh/ctl/\$TARGET_ID\@%h:%p" -o StrictHostKeyChecking=no -i /home/vivin/sandpuppy-pod-key \\
+      ssh -nNf -M -S "/home/vivin/.ssh/ctl/\$TARGET_ID\@%h:%p" -o StrictHostKeyChecking=no -o ConnectTimeout=900 -i /home/vivin/sandpuppy-pod-key \\
           vivin\@vivin.is-a-geek.net
 
       # We are resuming, so first copy over this target's results directory, and then the queues from other targets
@@ -873,7 +873,7 @@ sub generate_startup_script_without_import_sync {
       while :
       do
         # Start control SSH session
-        ssh -nNf -M -S "/home/vivin/.ssh/ctl/$target->{id}\@%h:%p" -o StrictHostKeyChecking=no -i /home/vivin/sandpuppy-pod-key \\
+        ssh -nNf -M -S "/home/vivin/.ssh/ctl/$target->{id}\@%h:%p" -o StrictHostKeyChecking=no -o ConnectTimeout=900 -i /home/vivin/sandpuppy-pod-key \\
             vivin\@vivin.is-a-geek.net
 
         # First copy this target's results over to the share
@@ -911,7 +911,7 @@ sub generate_startup_script_without_import_sync {
       date +%s >"$container_nfs_subject_directory/results/\$RUN_NAME/$SANDPUPPY_SYNC_DIRECTORY/start_ts"
     else
       # Start control SSH session
-      ssh -nNf -M -S "/home/vivin/.ssh/ctl/$target->{id}\@%h:%p" -o StrictHostKeyChecking=no -i /home/vivin/sandpuppy-pod-key \\
+      ssh -nNf -M -S "/home/vivin/.ssh/ctl/$target->{id}\@%h:%p" -o StrictHostKeyChecking=no -o ConnectTimeout=900 -i /home/vivin/sandpuppy-pod-key \\
           vivin\@vivin.is-a-geek.net
 
       # We are resuming, so first copy over this target's results directory
