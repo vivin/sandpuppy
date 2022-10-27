@@ -432,7 +432,6 @@ sub shutdown_background_trace_processing {
 }
 
 sub setup_remote_background_results_analysis_producer {
-
     my $iteration = $run_state->{iteration};
 
     my $NFS_SUBJECT_DIR = utils::get_nfs_subject_directory($experiment, $subject, $version);

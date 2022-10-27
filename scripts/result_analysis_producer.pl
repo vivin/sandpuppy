@@ -38,12 +38,6 @@ my $SUBJECT_DIR = utils::get_remote_nfs_subject_directory($experiment, $subject,
 my $RUN_DIR = "$SUBJECT_DIR/results/$run_name-$iteration";
 my $ANALYZE_RESULTS_LOG_FILENAME = "analyze_results.log";
 
-my $BASE_NFS_PATH = utils::get_base_remote_nfs_path();
-if (! -e -f "$BASE_NFS_PATH/redis-credentials") {
-    die "Could not find redis credentials\n";
-}
-
-chomp(my $redis_credentials = `cat $BASE_NFS_PATH/redis-credentials`);
 my $redis = Redis->new(
     server   => "206.206.192.29:31111",
     conservative_reconnect => 1,
