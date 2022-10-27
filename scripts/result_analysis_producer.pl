@@ -10,6 +10,7 @@ use analysis;
 use utils;
 use jsoncpp;
 
+my $BASE_PATH = glob "~/Projects/phd";
 my $SCRIPT_NAME = basename $0;
 
 if (scalar @ARGV < 4) {
@@ -58,7 +59,9 @@ my $redis_status_client = Redis->new(
     reconnect              => 900
 );
 
-my $NUM_CONSUMERS = 300;
+my $fuzz_config = YAML::XS::LoadFile("$BASE_PATH/resources/fuzz_config.yml");
+my $NUM_CONSUMERS = $fuzz_config->{__global__}->{num_consumers};
+
 open LOG, ">", "$RUN_DIR/$ANALYZE_RESULTS_LOG_FILENAME";
 
 my $channel_number = 1;

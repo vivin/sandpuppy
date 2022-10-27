@@ -47,8 +47,6 @@ my $BASE_PATH = glob "~/Projects/phd";
 my $TOOLS = "$BASE_PATH/tools";
 my $TRACEGEN_BIN_CONTEXT = "vvdump-instrumented";
 my $TRACEGEN_EXEC_CONTEXT = "vvdump-tracegen";
-my $SANDPUPPY_FUZZING_RUN_TIME_HOURS = 0.5;
-my $SANDPUPPY_FUZZING_RUN_TIME_SECONDS = $SANDPUPPY_FUZZING_RUN_TIME_HOURS * 60 * 60;
 
 my $state_machine = {
     "initial_tracegen,not_started" => \&initial_tracegen,
@@ -94,6 +92,10 @@ my $remote_redis = Redis->new(
 );
 
 my $fuzz_config = YAML::XS::LoadFile("$BASE_PATH/resources/fuzz_config.yml");
+
+my $SANDPUPPY_FUZZING_RUN_TIME_HOURS = $fuzz_config->{__global__}->{hours_per_iteration};
+my $SANDPUPPY_FUZZING_RUN_TIME_SECONDS = $SANDPUPPY_FUZZING_RUN_TIME_HOURS * 60 * 60;
+
 my $num_iterations = $fuzz_config->{$subject}->{num_iterations};
 
 my $SCRIPT_STATE_DIR = glob "~/.script-state/$SCRIPT_NAME";
@@ -146,7 +148,7 @@ sub handle_signal {
     my $signame = shift;
     print "Got $signame. Cleaning up...\n";
     shutdown_background_trace_processing();
-    shutdown_remote_background_results_analysis();
+    shutdown_remote_background_results_analysis_producer();
     shutdown_analysis_consumer_pods();
     clean_up_children(@CHILDREN);
     die "Dying for $signame signal";
@@ -279,8 +281,86 @@ sub start_sandpuppy_fuzz {
     });
 }
 
+sub wait_until_pods_are_ready {
+    my $iteration = $run_state->{iteration};
+    my $num_pods = $run_state->{num_pods};
+
+    my $num_ready_pods_command = "pod_names | grep $experiment | grep $full_subject | grep $run_name-$iteration | " .
+        "xargs -I% kubectl logs % | grep \"All set\" | wc -l";
+    chomp(my $num_ready_pods = `$num_ready_pods_command`);
+    while ($num_ready_pods < $num_pods) {
+        print "Waiting on " . ($num_pods - $num_ready_pods) . " to be ready... \r";
+        sleep 1;
+        chomp($num_ready_pods = `$num_ready_pods_command`);
+    }
+
+    update_state({
+        phase_status => "started",
+        start_time  => time()
+    });
+}
+
+sub wait_until_iteration_is_done {
+    my $iteration = $run_state->{iteration};
+    my $start_time = $run_state->{start_time};
+
+    # Start up the trace processor in the background so that it can collect traces as the fuzzing run progresses, from
+    # novel input that is deemed interesting. Also start up the analyze_result.pl script remotely in the background.
+    # This script goes through all inputs that have been generated so far and:
+    #  - Collects all inputs that increase coverage (we will use them as initial seeds in the next run).
+    #  - Keeps track of coverage over time
+    setup_background_trace_processing();
+    setup_remote_background_results_analysis_producer();
+    while(time() - $start_time < $SANDPUPPY_FUZZING_RUN_TIME_SECONDS) {
+        sleep 60; # check every minute
+
+        # Generate traces from tracegen files (if any)
+        generate_traces_from_staged_tracegen_files();
+        my $total_files = $remote_redis->get("$experiment:$full_subject:$run_name-$iteration.total_files");
+        my $processed_files = $remote_redis->get("$experiment:$full_subject:$run_name-$iteration.processed_files");
+        if (defined $total_files) {
+            if (!defined $processed_files) {
+                $processed_files = 0;
+            }
+
+            my $remaining_files = $total_files - $processed_files;
+            print "$total_files files total. $remaining_files remaining to be processed.\n";
+        }
+
+        print "${\($SANDPUPPY_FUZZING_RUN_TIME_SECONDS - (time() - $start_time))} seconds remaining in iteration...\n";
+        # TODO: would be nice to keep an eye on the status of pods and then resume them if they disappear or stop
+
+        # If any analysis pods went down, start them up
+        setup_analysis_consumer_pods_if_necessary();
+    }
+
+    print "Iteration $iteration has ended. Stopping pods...\n";
+    system "pod_names | grep $experiment | grep $full_subject | grep $run_name-$iteration | xargs kubectl delete pod";
+
+    print "Sleeping for a minute so that files are old enough for results-analysis to process...\n";
+    my $time = 60;
+    do {
+        sleep 1;
+        $time--;
+        print "$time seconds remaining...\r";
+    } until ($time == 0);
+
+    print "\nShutting down remote background results-analysis and waiting for it to complete...\n";
+    shutdown_remote_background_results_analysis_producer();
+    monitor_remote_background_results_analysis_until_done();
+
+    print "Generating traces from remaining seeds if any...\n";
+    generate_traces_from_staged_tracegen_files();
+    waitpid $RUN_ITERATION_TRACEGEN_PIDS->{"$run_name-$iteration"}, 0;
+
+    update_state({
+        phase_status => "finished",
+        end_time  => time()
+    });
+}
+
 sub setup_analysis_consumer_pods_if_necessary {
-    my $NUM_CONSUMERS = 300;
+    my $NUM_CONSUMERS = $fuzz_config->{__global__}->{num_consumers};
 
     chomp(my @errored_pods = `kubectl get pods | grep "sandpuppy-analysis-consumer" | grep Error | awk '{ print \$1; }'`);
     system "kubectl delete pod $_" for @errored_pods;
@@ -323,79 +403,6 @@ sub shutdown_analysis_consumer_pods {
     system  "pod_names | grep sandpuppy-analysis-consumer | xargs kubectl delete pod"
 }
 
-sub setup_remote_background_results_analysis {
-
-    my $iteration = $run_state->{iteration};
-
-    my $NFS_SUBJECT_DIR = utils::get_nfs_subject_directory($experiment, $subject, $version);
-    my $NFS_RESULTS_DIR = "$NFS_SUBJECT_DIR/results/$run_name-$iteration";
-
-    if (-e "$NFS_RESULTS_DIR/shutdown_analyze_results") {
-        system "rm $NFS_RESULTS_DIR/shutdown_analyze_results";
-    }
-
-    system "ssh -o StrictHostKeyChecking=no -i /mnt/vivin-nfs/vivin/sandpuppy-pod-key vivin\@vivin.is-a-geek.net " .
-        "\"/home/vivin/Projects/phd/scripts/bg_analyze_results.sh $experiment $full_subject $run_name $iteration\"";
-}
-
-sub shutdown_remote_background_results_analysis {
-    my $iteration = $run_state->{iteration};
-
-    my $NFS_SUBJECT_DIR = utils::get_nfs_subject_directory($experiment, $subject, $version);
-    my $NFS_RESULTS_DIR = "$NFS_SUBJECT_DIR/results/$run_name-$iteration";
-    if (! -e -d $NFS_RESULTS_DIR) {
-        return;
-    }
-
-    system "touch $NFS_RESULTS_DIR/shutdown_analyze_results";
-    until (-e -f "$NFS_RESULTS_DIR/shutdown_analyze_results") {
-        print "Waiting for remote background results analysis to shutdown...";
-        sleep 1;
-    }
-    print "Remote background results analysis is shutting down...";
-}
-
-sub monitor_remote_background_results_analysis_until_done {
-    my $iteration = $run_state->{iteration};
-
-    my $remaining_files;
-    do {
-        my $total_files = $remote_redis->get("$experiment:$full_subject:$run_name-$iteration.total_files");
-        my $processed_files = $remote_redis->get("$experiment:$full_subject:$run_name-$iteration.processed_files");
-        $remaining_files = $total_files - $processed_files;
-
-        print "$total_files files total. $remaining_files remaining to be processed.\r";
-        sleep 1;
-
-        # Sometimes these guys go down. Bring them back up if necessary.
-        setup_analysis_consumer_pods_if_necessary();
-    } until ($remaining_files == 0);
-
-    print "\n";
-
-    my $NFS_SUBJECT_DIR = utils::get_nfs_subject_directory($experiment, $subject, $version);
-    my $NFS_RESULTS_DIR = "$NFS_SUBJECT_DIR/results/$run_name-$iteration";
-
-    my $ANALYZE_RESULTS_LOG_FILENAME = "analyze_results.log";
-
-    #until (-e -f "$NFS_RESULTS_DIR/$ANALYZE_RESULTS_LOG_FILENAME") {
-    #    sleep 1;
-    #}
-
-    #my $pid = open TAIL, '-|', "tail -f $NFS_RESULTS_DIR/$ANALYZE_RESULTS_LOG_FILENAME" or die $!;
-    #my $done = 0;
-    #while($done == 0) {
-    #    my $line = <TAIL>;
-    #    last if !$line;
-
-    #    print $line;
-    #    $done = ($line =~ /Shutting down/);
-    #}
-
-    #kill 2, $pid;
-    system "rm $NFS_RESULTS_DIR/$ANALYZE_RESULTS_LOG_FILENAME";
-}
-
 sub setup_background_trace_processing {
     return if $VVDPROC_PID; # If it is already running, exit
 
@@ -420,82 +427,61 @@ sub shutdown_background_trace_processing {
     close PIPE;
 }
 
-sub wait_until_pods_are_ready {
-    my $iteration = $run_state->{iteration};
-    my $num_pods = $run_state->{num_pods};
+sub setup_remote_background_results_analysis_producer {
 
-    my $num_ready_pods_command = "pod_names | grep $experiment | grep $full_subject | grep $run_name-$iteration | " .
-        "xargs -I% kubectl logs % | grep \"All set\" | wc -l";
-    chomp(my $num_ready_pods = `$num_ready_pods_command`);
-    while ($num_ready_pods < $num_pods) {
-        print "Waiting on " . ($num_pods - $num_ready_pods) . " to be ready... \r";
-        sleep 1;
-        chomp($num_ready_pods = `$num_ready_pods_command`);
+    my $iteration = $run_state->{iteration};
+
+    my $NFS_SUBJECT_DIR = utils::get_nfs_subject_directory($experiment, $subject, $version);
+    my $NFS_RESULTS_DIR = "$NFS_SUBJECT_DIR/results/$run_name-$iteration";
+
+    if (-e "$NFS_RESULTS_DIR/shutdown_analyze_results") {
+        system "rm $NFS_RESULTS_DIR/shutdown_analyze_results";
     }
 
-    update_state({
-        phase_status => "started",
-        start_time  => time()
-    });
+    system "ssh -o StrictHostKeyChecking=no -i /mnt/vivin-nfs/vivin/sandpuppy-pod-key vivin\@vivin.is-a-geek.net " .
+        "\"/home/vivin/Projects/phd/scripts/bg_analyze_results.sh $experiment $full_subject $run_name $iteration\"";
 }
 
-sub wait_until_iteration_is_done {
+sub shutdown_remote_background_results_analysis_producer {
     my $iteration = $run_state->{iteration};
-    my $start_time = $run_state->{start_time};
 
-    # Start up the trace processor in the background so that it can collect traces as the fuzzing run progresses, from
-    # novel input that is deemed interesting. Also start up the analyze_result.pl script remotely in the background.
-    # This script goes through all inputs that have been generated so far and:
-    #  - Collects all inputs that increase coverage (we will use them as initial seeds in the next run).
-    #  - Keeps track of coverage over time
-    setup_background_trace_processing();
-    setup_remote_background_results_analysis();
-    while(time() - $start_time < $SANDPUPPY_FUZZING_RUN_TIME_SECONDS) {
-        sleep 60; # check every minute
-
-        # Generate traces from tracegen files (if any)
-        generate_traces_from_staged_tracegen_files();
-        my $total_files = $remote_redis->get("$experiment:$full_subject:$run_name-$iteration.total_files");
-        my $processed_files = $remote_redis->get("$experiment:$full_subject:$run_name-$iteration.processed_files");
-        if (defined $total_files) {
-            if (!defined $processed_files) {
-                $processed_files = 0;
-            }
-
-            my $remaining_files = $total_files - $processed_files;
-            print "$total_files files total. $remaining_files remaining to be processed.\n";
-        }
-
-        print "${\($SANDPUPPY_FUZZING_RUN_TIME_SECONDS - (time() - $start_time))} seconds remaining in iteration...\n";
-        # TODO: would be nice to keep an eye on the status of pods and then resume them if they disappear or stop
-
-        # If any analysis pods went down, start them up
-        setup_analysis_consumer_pods_if_necessary();
+    my $NFS_SUBJECT_DIR = utils::get_nfs_subject_directory($experiment, $subject, $version);
+    my $NFS_RESULTS_DIR = "$NFS_SUBJECT_DIR/results/$run_name-$iteration";
+    if (! -e -d $NFS_RESULTS_DIR) {
+        return;
     }
 
-    print "Iteration $iteration has ended. Stopping pods...\n";
-    system "pod_names | grep $experiment | grep $full_subject | grep $run_name-$iteration | xargs kubectl delete pod";
-
-    print "Sleeping for a minute so that files are old enough for results-analysis to process...\n";
-    my $time = 60;
-    do {
+    system "touch $NFS_RESULTS_DIR/shutdown_analyze_results";
+    until (-e -f "$NFS_RESULTS_DIR/shutdown_analyze_results") {
+        print "Waiting for remote background results analysis to shutdown...\n";
         sleep 1;
-        $time--;
-        print "$time seconds remaining...\r";
-    } until ($time == 0);
+    }
+    print "Remote background results analysis is shutting down...\n";
+}
 
-    print "\nShutting down remote background results-analysis and waiting for it to complete...\n";
-    shutdown_remote_background_results_analysis();
-    monitor_remote_background_results_analysis_until_done();
+sub monitor_remote_background_results_analysis_until_done {
+    my $iteration = $run_state->{iteration};
 
-    print "Generating traces from remaining seeds if any...\n";
-    generate_traces_from_staged_tracegen_files();
-    waitpid $RUN_ITERATION_TRACEGEN_PIDS->{"$run_name-$iteration"}, 0;
+    my $remaining_files;
+    do {
+        my $total_files = $remote_redis->get("$experiment:$full_subject:$run_name-$iteration.total_files");
+        my $processed_files = $remote_redis->get("$experiment:$full_subject:$run_name-$iteration.processed_files");
+        $remaining_files = $total_files - $processed_files;
 
-    update_state({
-        phase_status => "finished",
-        end_time  => time()
-    });
+        print "$total_files files total. $remaining_files remaining to be processed.\r";
+        sleep 1;
+
+        # Sometimes these guys go down. Bring them back up if necessary.
+        setup_analysis_consumer_pods_if_necessary();
+    } until ($remaining_files == 0);
+
+    print "\n";
+
+    my $NFS_SUBJECT_DIR = utils::get_nfs_subject_directory($experiment, $subject, $version);
+    my $NFS_RESULTS_DIR = "$NFS_SUBJECT_DIR/results/$run_name-$iteration";
+
+    my $ANALYZE_RESULTS_LOG_FILENAME = "analyze_results.log";
+    system "rm $NFS_RESULTS_DIR/$ANALYZE_RESULTS_LOG_FILENAME";
 }
 
 sub generate_traces_from_staged_tracegen_files {
