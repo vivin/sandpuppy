@@ -276,7 +276,39 @@ sub start_sandpuppy_fuzz {
     });
 }
 
+sub setup_analysis_consumer_pods_if_necessary {
+    my $NUM_CONSUMERS = 100;
+
+    my $consumers_created = 0;
+    chomp(my @pods = `pod_names | grep sandpuppy-analysis-consumer`);
+    foreach my $consumer(1..$NUM_CONSUMERS) {
+        my $consumer_name = "sandpuppy-analysis-consumer-$consumer";
+        if(! grep /^$consumer_name$/, @pods) {
+            system "kuboid/scripts/pod_create -n $consumer_name -i vivin/sandpuppy-analysis " .
+                "/home/vivin/Projects/phd/scripts/result_analysis_consumer.pl analysis.channel.$consumer";
+            $consumers_created++;
+        }
+    }
+
+    if ($consumers_created > 0) {
+        my $existing_pods = scalar @pods;
+        my $running_pods = 0;
+        do {
+            chomp($running_pods = "kubectl get pods | grep sandpuppy-analysis-consumer | grep Running | wc -l");
+            print "Waiting on ${\($existing_pods + $consumers_created - $running_pods)} to be ready...\r";
+            sleep 1;
+        } until($running_pods == $existing_pods + $consumers_created);
+        print "\n";
+    }
+}
+
+sub shutdown_analysis_consumer_pods {
+    system  "pod_names | grep sandpuppy-analysis-consumer | xargs kubectl delete pod"
+}
+
 sub setup_remote_background_results_analysis {
+    setup_analysis_consumer_pods_if_necessary();
+
     my $iteration = $run_state->{iteration};
 
     my $NFS_SUBJECT_DIR = utils::get_nfs_subject_directory($experiment, $subject, $version);
@@ -302,16 +334,19 @@ sub shutdown_remote_background_results_analysis {
         sleep 1;
     }
     print "Remote background results analysis is shutting down...";
+
+    shutdown_analysis_consumer_pods();
 }
 
 sub monitor_remote_background_results_analysis_until_done {
     my $iteration = $run_state->{iteration};
 
-    my $total_files;
     my $remaining_files;
     do {
-        my $stats = $remote_redis->get("$experiment:$full_subject:$run_name-$iteration.stats");
-        ($total_files, $remaining_files) = split /,/, $stats;
+        my $total_files = $remote_redis->get("$experiment:$full_subject:$run_name-$iteration.total_files");
+        my $processed_files = $remote_redis->get("$experiment:$full_subject:$run_name-$iteration.processed_files");
+        $remaining_files = $total_files - $processed_files;
+
         print "$total_files files total. $remaining_files remaining to be processed.\r";
         sleep 1;
     } until ($remaining_files == 0);
@@ -434,46 +469,6 @@ sub wait_until_iteration_is_done {
         end_time  => time()
     });
 }
-
-#sub analyze_current_results {
-#    my $iteration = $run_state->{iteration};
-#
-#    my $NFS_SUBJECT_DIR = utils::get_nfs_subject_directory($experiment, $subject, $version);
-#    my $NFS_RESULTS_DIR = "$NFS_SUBJECT_DIR/results/$run_name-$iteration";
-#
-#    my $ANALYZE_RESULTS_LOG_FILENAME = "analyze_results.log";
-#
-#    my $analysis_running = 0;
-#    if (-e -f "$NFS_RESULTS_DIR/$ANALYZE_RESULTS_LOG_FILENAME") {
-#        chomp(my $line = `tail -1 $NFS_RESULTS_DIR/$ANALYZE_RESULTS_LOG_FILENAME`);
-#        $analysis_running = ($line !~ /Analysis done!/);
-#    }
-#
-#    if ($analysis_running == 0) {
-#        print "Analyzing current results from run $run_name (iteration $iteration)...\n";
-#        system "ssh -o StrictHostKeyChecking=no -i /mnt/vivin-nfs/vivin/sandpuppy-pod-key vivin\@vivin.is-a-geek.net " .
-#            "\"/home/vivin/Projects/phd/scripts/bg_analyze_results.sh $experiment $full_subject $run_name $iteration";
-#    } else {
-#        print "Analysis of current results for run $run_name (iteration $iteration) is already running...\n";
-#    }
-#
-#    until (-e -f "$NFS_RESULTS_DIR/$ANALYZE_RESULTS_LOG_FILENAME") {
-#        sleep 1;
-#    }
-#
-#    my $pid = open TAIL, '-|', "tail -f $NFS_RESULTS_DIR/$ANALYZE_RESULTS_LOG_FILENAME" or die $!;
-#    my $done = 0;
-#    while($done == 0) {
-#        my $line = <TAIL>;
-#        last if !$line;
-#
-#        print $line;
-#        $done = ($line =~ /Analysis done!/);
-#    }
-#
-#    kill 2, $pid;
-#    system "rm $NFS_RESULTS_DIR/$ANALYZE_RESULTS_LOG_FILENAME";
-#}
 
 sub generate_traces_from_staged_tracegen_files {
     my $wait_for_existing = $_[0];

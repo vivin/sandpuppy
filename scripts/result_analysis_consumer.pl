@@ -49,12 +49,12 @@ my $redis_status_client = Redis->new(
 while (1) {
     my $message = $redis->brpop($CHANNEL_NAME, 5);
     if (defined $message) {
-        subscribe_handler(@{$message}[0], $CHANNEL_NAME);
+        subscribe_handler(@{$message});
     }
 }
 
 sub subscribe_handler {
-    my ($message, $topic) = @_;
+    my ($topic, $message) = @_;
     print "Received message from topic $topic: $message\n";
 
     my ($experiment, $full_subject, $run_name, $iteration, $session, $input_file, $ctime) = split /#/, $message;
