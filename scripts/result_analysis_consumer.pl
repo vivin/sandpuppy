@@ -49,7 +49,7 @@ my $redis_status_client = Redis->new(
 while (1) {
     my $message = $redis->brpop($CHANNEL_NAME, 5);
     if (defined $message) {
-        subscribe_handler($message, $CHANNEL_NAME);
+        subscribe_handler(@{$message}[0], $CHANNEL_NAME);
     }
 }
 
