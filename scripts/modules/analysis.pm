@@ -30,8 +30,11 @@ if (-e utils::get_base_container_nfs_path()) {
 }
 
 my $redis = Redis->new(
-    server   => $server,
-    password => $redis_credentials
+    server                 => $server,
+    password               => $redis_credentials,
+    conservative_reconnect => 1,
+    cnx_timeout            => 900,
+    reconnect              => 900
 );
 
 my $fuzz_config = YAML::XS::LoadFile("$RESOURCES/fuzz_config.yml");
