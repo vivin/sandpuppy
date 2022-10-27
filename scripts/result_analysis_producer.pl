@@ -108,7 +108,7 @@ sub iteration_handler {
 
     my $CONTAINER_SUBJECT_DIR = utils::get_container_nfs_subject_directory($experiment, $subject, $version);
     my $renamed_file = $input_file;
-    $renamed_file =~ s,^.*results/,$CONTAINER_SUBJECT_DIR/results,;
+    $renamed_file =~ s,^.*results/,$CONTAINER_SUBJECT_DIR/results/,;
 
     $redis->publish(
         "analysis.channel.$channel_number",
