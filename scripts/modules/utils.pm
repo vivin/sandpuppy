@@ -61,7 +61,7 @@ sub setup_named_pipe {
             $log->info("New pipe size: $new_size");
         }
 
-        kill 'INT', $pid;
+        kill 'KILL', $pid;
     }
 }
 
@@ -79,6 +79,14 @@ sub get_clang_asan_static_lib {
 
 sub get_base_nfs_path {
     return $BASE_NFS_PATH;
+}
+
+sub get_base_remote_nfs_path {
+    return $BASE_REMOTE_NFS_PATH;
+}
+
+sub get_base_container_nfs_path {
+    return $BASE_CONTAINER_NFS_PATH;
 }
 
 sub __get_subject_directory_for_root {

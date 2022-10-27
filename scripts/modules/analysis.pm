@@ -7,8 +7,6 @@ use File::Path qw(make_path);
 use File::stat;
 use Redis;
 use YAML::XS;
-use threads::shared;
-use Thread::Pool;
 use Time::HiRes qw(time);
 
 use utils;
@@ -17,27 +15,38 @@ my $BASE_PATH = glob "~/Projects/phd";
 my $RESOURCES = "$BASE_PATH/resources";
 
 my $log = Log::Simple::Color->new;
-my $redis = Redis->new;
+
+my $redis_credentials;
+my $server;
+if (-e utils::get_base_container_nfs_path()) {
+    chomp($redis_credentials = `cat ${\(utils::get_base_container_nfs_path())}/redis-credentials`);
+    $server = "vivin.is-a-geek.net:16379";
+} elsif (-e utils::get_base_nfs_path()) {
+    chomp($redis_credentials = `cat ${\(utils::get_base_nfs_path())}/redis-credentials`);
+    $server = "192.168.1.17:6379";
+} else {
+    chomp($redis_credentials = `cat ${\(utils::get_base_remote_nfs_path())}/redis-credentials`);
+    $server = "127.0.0.1:6379";
+}
+
+my $redis = Redis->new(
+    server   => $server,
+    password => $redis_credentials
+);
 
 my $fuzz_config = YAML::XS::LoadFile("$RESOURCES/fuzz_config.yml");
-
-my $redis_lock :shared;
 
 sub get_basic_blocks_for_input {
     my $subject = $_[0];
     my $input_file = $_[1];
-    my $count = $_[2];
 
-    #print "basic blocks for $count $input_file\n";
-
-    my $binary = "$RESOURCES/$fuzz_config->{$subject}->{binary_name}-bbprinter";
+    my $binary = "$RESOURCES/binaries/$fuzz_config->{$subject}->{binary_name}-bbprinter";
     my $command = "$binary $fuzz_config->{$subject}->{argument}";
     $command =~ s/\@\@/$input_file/;
 
     chomp(my @data = `$command 2> /dev/null | grep \"__#BB#__\" | grep -v $binary | sed 's,__#BB#__: ,,'`);
     my %seen;
     my @basic_blocks = sort(grep !$seen{$_}++, @data);
-    #print "num blocks for $count $input_file is " . (scalar @basic_blocks) . "\n";
     return \@basic_blocks;
 }
 
@@ -45,7 +54,7 @@ sub check_if_input_processed_successfully {
     my $subject = $_[0];
     my $input_file = $_[1];
 
-    my $binary = "$RESOURCES/$fuzz_config->{$subject}->{binary_name}";
+    my $binary = "$RESOURCES/binaries/$fuzz_config->{$subject}->{binary_name}";
     my $command = "$binary $fuzz_config->{$subject}->{argument}";
     $command =~ s/\@\@/$input_file/;
 
@@ -65,7 +74,6 @@ sub record_processing_stats {
     my $full_subject = $subject . ($version ? "-$version" : "");
     my $key = "$experiment:$full_subject:$run_name-$iteration.stats";
 
-    lock($redis_lock);
     $redis->set($key, "$total_files,$remaining_files");
 }
 
@@ -80,7 +88,6 @@ sub is_coverage_new {
     my $full_subject = $subject . ($version ? "-$version" : "");
     my $key = "$experiment:$full_subject:$run_name-$iteration.coverage";
 
-    lock($redis_lock);
     my $has_new_coverage = 0;
     foreach my $bb(@basic_blocks) {
         my $result = $redis->sadd($key, $bb);
@@ -104,7 +111,6 @@ sub is_session_coverage_new {
     my $full_subject = $subject . ($version ? "-$version" : "");
     my $key = "$experiment:$full_subject:$run_name-$iteration:$session.coverage";
 
-    lock($redis_lock);
     my $has_new_coverage = 0;
     foreach my $bb(@basic_blocks) {
         my $result = $redis->sadd($key, $bb);
@@ -129,7 +135,6 @@ sub record_input_coverage {
     my $key = "$experiment:$full_subject:$run_name-$iteration.coverage_over_time";
     my $ctime = stat($input_file)->ctime;
 
-    lock($redis_lock);
     $redis->sadd($key, "$ctime,${\(join ';', @basic_blocks)}");
 }
 
@@ -147,7 +152,6 @@ sub record_session_input_coverage {
     my $key = "$experiment:$full_subject:$run_name-$iteration:$session.coverage_over_time";
     my $ctime = stat($input_file)->ctime;
 
-    lock($redis_lock);
     $redis->sadd($key, "$ctime,${\(join ';', @basic_blocks)}");
 }
 
@@ -163,8 +167,10 @@ sub copy_input_for_tracegen {
     my $SUBJECT_DIR;
     if (-d "/mnt/vivin-nfs") {
         $SUBJECT_DIR = utils::get_nfs_subject_directory($experiment, $subject, $version);
-    } else {
+    } elsif (-d "/media/2tb") {
         $SUBJECT_DIR = utils::get_remote_nfs_subject_directory($experiment, $subject, $version);
+    } elsif (-e "/private-nfs/vivin") {
+        $SUBJECT_DIR = utils::get_container_nfs_subject_directory($experiment, $subject, $version);
     }
 
     my $TRACEGEN_DIR = "$SUBJECT_DIR/results/$run_name-$iteration/tracegen-staging";
@@ -186,8 +192,10 @@ sub copy_input_for_next_iteration_seeds {
     my $SUBJECT_DIR;
     if (-d "/mnt/vivin-nfs") {
         $SUBJECT_DIR = utils::get_nfs_subject_directory($experiment, $subject, $version);
-    } else {
+    } elsif (-d "/media/2tb") {
         $SUBJECT_DIR = utils::get_remote_nfs_subject_directory($experiment, $subject, $version);
+    } elsif (-e "/private-nfs/vivin") {
+        $SUBJECT_DIR = utils::get_container_nfs_subject_directory($experiment, $subject, $version);
     }
 
     my $SEEDS_DIR = "$SUBJECT_DIR/seeds/$run_name-${\($iteration + 1)}";
@@ -209,7 +217,10 @@ sub iterate_fuzzer_results {
     my $handler = $_[6];
     my $logger = $_[7];
 
-    my $_redis = Redis->new;
+    my $_redis = Redis->new(
+        server   => $server,
+        password => $redis_credentials
+    );
 
     my $full_subject = $subject . ($version ? "-$version" : "");
 
@@ -264,12 +275,10 @@ sub iterate_fuzzer_results {
             $logger->("Input $count of $num_files being processed                  \r");
             $_redis->sadd($processed_files_key, $file_redis_set_value);
             $_redis->sadd($sha512_key, $sha512);
-            $handler->($session, "$inputs_dir/$file", $count);
+            $handler->($session, "$inputs_dir/$file");
         }
         close FILES;
     }
-
-    #$handler->("__COMPLETED__", "__COMPLETED__", 0);
 }
 
 1;
