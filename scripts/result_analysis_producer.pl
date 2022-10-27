@@ -4,6 +4,8 @@ use warnings FATAL => 'all';
 
 use File::Basename;
 use Redis;
+use Thread::Pool;
+use threads::shared;
 
 use lib glob "~/Projects/phd/scripts/modules";
 use analysis;
@@ -58,11 +60,37 @@ my $redis_status_client = Redis->new(
     cnx_timeout            => 900,
     reconnect              => 900
 );
+my $redis_lock :shared;
 
 my $fuzz_config = YAML::XS::LoadFile("$BASE_PATH/resources/fuzz_config.yml");
 my $NUM_CONSUMERS = $fuzz_config->{__global__}->{num_consumers};
 
 open LOG, ">", "$RUN_DIR/$ANALYZE_RESULTS_LOG_FILENAME";
+
+my $pool = Thread::Pool->new({
+    optimize     => 'memory',
+    do           => sub {
+        my $session = $_[0];
+        my $input_file = $_[1];
+        my $ctime = $_[2];
+        my $channel_number = $_[3];
+        my $basic_blocks = analysis::get_basic_blocks_for_input($subject, $input_file);
+        my $basic_blocks_str = join ",", @{$basic_blocks};
+
+        my $CONTAINER_SUBJECT_DIR = utils::get_container_nfs_subject_directory($experiment, $subject, $version);
+        my $renamed_file = $input_file;
+        $renamed_file =~ s,^.*results/,$CONTAINER_SUBJECT_DIR/results/,;
+        lock($redis_lock);
+        $redis->lpush(
+            "analysis.channel.$channel_number",
+            "$experiment#$original_subject#$run_name#$iteration#$session#$renamed_file#$basic_blocks_str#$ctime"
+        );
+    },
+    autoshutdown => 1,
+    workers      => 8,
+    maxjobs      => 163840,
+    minjobs      => 81920,
+});
 
 my $channel_number = 1;
 my $shutdown_requested;
@@ -108,6 +136,7 @@ until ($done) {
     $done = ($total_files - $processed_files) == 0;
 }
 
+$pool->shutdown();
 print "\nShutting Down\n";
 
 sub iteration_handler {
@@ -115,14 +144,7 @@ sub iteration_handler {
     my $input_file = $_[1];
     my $ctime = $_[2];
 
-    my $CONTAINER_SUBJECT_DIR = utils::get_container_nfs_subject_directory($experiment, $subject, $version);
-    my $renamed_file = $input_file;
-    $renamed_file =~ s,^.*results/,$CONTAINER_SUBJECT_DIR/results/,;
-
-    $redis->lpush(
-        "analysis.channel.$channel_number",
-        "$experiment#$original_subject#$run_name#$iteration#$session#$renamed_file#$ctime"
-    );
+    $pool->job($session, $input_file, $ctime, $channel_number);
 
     my $total_files_key = "$experiment:$full_subject:$run_name-$iteration.total_files";
     $redis_status_client->incr($total_files_key);

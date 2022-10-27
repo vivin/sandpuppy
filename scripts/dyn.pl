@@ -149,7 +149,7 @@ sub handle_signal {
     print "Got $signame. Cleaning up...\n";
     shutdown_background_trace_processing();
     shutdown_remote_background_results_analysis_producer();
-    shutdown_analysis_consumer_pods();
+    #shutdown_analysis_consumer_pods();
     clean_up_children(@CHILDREN);
     die "Dying for $signame signal";
 }
@@ -324,7 +324,7 @@ sub wait_until_iteration_is_done {
             }
 
             my $remaining_files = $total_files - $processed_files;
-            print "$total_files files total. $remaining_files remaining to be processed.\n";
+            print "$total_files files total. $processed_files processed. $remaining_files remaining to be processed.\n";
         }
 
         print "${\($SANDPUPPY_FUZZING_RUN_TIME_SECONDS - (time() - $start_time))} seconds remaining in iteration...\n";
@@ -336,14 +336,6 @@ sub wait_until_iteration_is_done {
 
     print "Iteration $iteration has ended. Stopping pods...\n";
     system "pod_names | grep $experiment | grep $full_subject | grep $run_name-$iteration | xargs kubectl delete pod";
-
-    print "Sleeping for a minute so that files are old enough for results-analysis to process...\n";
-    my $time = 60;
-    do {
-        sleep 1;
-        $time--;
-        print "$time seconds remaining...\r";
-    } until ($time == 0);
 
     print "\nShutting down remote background results-analysis and waiting for it to complete...\n";
     shutdown_remote_background_results_analysis_producer();
@@ -468,7 +460,7 @@ sub monitor_remote_background_results_analysis_until_done {
         my $processed_files = $remote_redis->get("$experiment:$full_subject:$run_name-$iteration.processed_files");
         $remaining_files = $total_files - $processed_files;
 
-        print "$total_files files total. $remaining_files remaining to be processed.\r";
+        print "$total_files files total. $processed_files processed. $remaining_files remaining to be processed.\r";
         sleep 1;
 
         # Sometimes these guys go down. Bring them back up if necessary.
