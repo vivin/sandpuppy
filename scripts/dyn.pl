@@ -370,7 +370,7 @@ sub setup_analysis_consumer_pods_if_necessary {
     foreach my $consumer(1..$NUM_CONSUMERS) {
         my $consumer_name = "sandpuppy-analysis-consumer-$consumer";
         if(! grep /^$consumer_name$/, @pods) {
-            system "kuboid/scripts/pod_create -n $consumer_name -i vivin/sandpuppy-analysis " .
+            system "kuboid/scripts/pod_create -c 2000m -C 3000m -n $consumer_name -i vivin/sandpuppy-analysis " .
                 "/home/vivin/Projects/phd/scripts/result_analysis_consumer.pl analysis.channel.$consumer";
             $consumers_created++;
         }
