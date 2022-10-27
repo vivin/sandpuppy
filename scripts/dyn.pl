@@ -147,6 +147,7 @@ sub handle_signal {
     print "Got $signame. Cleaning up...\n";
     shutdown_background_trace_processing();
     shutdown_remote_background_results_analysis();
+    shutdown_analysis_consumer_pods();
     clean_up_children(@CHILDREN);
     die "Dying for $signame signal";
 }
@@ -282,7 +283,7 @@ sub setup_analysis_consumer_pods_if_necessary {
     my $NUM_CONSUMERS = 100;
 
     my $consumers_created = 0;
-    chomp(my @pods = `pod_names | grep \"sandpuppy-analysis-consumer\"`);
+    chomp(my @pods = `pod_names | grep "sandpuppy-analysis-consumer"`);
     foreach my $consumer(1..$NUM_CONSUMERS) {
         my $consumer_name = "sandpuppy-analysis-consumer-$consumer";
         if(! grep /^$consumer_name$/, @pods) {
@@ -296,9 +297,20 @@ sub setup_analysis_consumer_pods_if_necessary {
         my $existing_pods = scalar @pods;
         my $running_pods = 0;
         do {
-            chomp($running_pods = "kubectl get pods | grep \"sandpuppy-analysis-consumer\" | grep Running | wc -l");
+            chomp($running_pods = `kubectl get pods | grep "sandpuppy-analysis-consumer" | grep Running | wc -l`);
             print "Waiting on ${\($existing_pods + $consumers_created - $running_pods)} to be ready...\r";
             sleep 1;
+
+            # Restart error pods if any
+            chomp(my @errored_pods = `kubectl get pods | grep "sandpuppy-analysis-consumer" | grep Error | awk '{ print \$1; }'`);
+            foreach my $errored_pod(@errored_pods) {
+                my $consumer = $errored_pod;
+                $consumer =~ s/sandpuppy-analysis-consumer-//;
+
+                system "kubectl delete pod $errored_pod";
+                system "kuboid/scripts/pod_create -n $errored_pod -i vivin/sandpuppy-analysis " .
+                    "/home/vivin/Projects/phd/scripts/result_analysis_consumer.pl analysis.channel.$consumer";
+            }
         } until($running_pods == $existing_pods + $consumers_created);
         print "\n";
     }
