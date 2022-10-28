@@ -1,0 +1,54 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: redis-backup
+spec:
+  affinity:
+    nodeAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        nodeSelectorTerms:
+          - matchExpressions:
+            - key: kubernetes.io/hostname
+              operator: NotIn
+              values:
+                - node06
+  containers:
+    - name: sandpuppy
+      command:
+        - "/bin/bash"
+        - "-c"
+        - "/home/vivin/Projects/phd/scripts/backup_redis.pl"
+      image: vivin/sandpuppy-analysis
+      imagePullPolicy: Always
+      stdin: true
+      tty: true
+      volumeMounts:
+        - name: private-nfs
+          mountPath: "/private-nfs"
+        - name: redis-pvc
+          mountPath: "/redis"
+      resources:
+        limits:
+          cpu: 3000m
+          memory: 32Gi
+        requests:
+          cpu: 2000m
+          memory: 2Gi
+      securityContext:
+        privileged: true
+  dnsPolicy: "None"
+  dnsConfig:
+    nameservers:
+      - 8.8.8.8
+      - 8.8.4.4
+  restartPolicy: Never
+  imagePullSecrets:
+    - name: docker-secret
+  volumes:
+    - name: private-nfs
+      nfs:
+        server: vivin.is-a-geek.net
+        path: /media/2tb/phd-workspace/nfs
+    - name: redis-pvc
+      persistentVolumeClaim:
+        claimName: redis-pvc

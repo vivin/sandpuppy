@@ -113,7 +113,7 @@ until($shutdown_requested && $runs_after_shutdown_request > 0) {
     $print_remaining = 0;
 
     chomp(my @sessions = `grep "^[^- ]" $RUN_DIR/id_to_pod_name_and_target.yml | sed -e 's,:,,'`);
-    analysis::iterate_fuzzer_results(
+    utils::iterate_fuzzer_results(
         $experiment, $subject, $version, "$run_name-$iteration", "sandpuppy", \@sessions,
         \&iteration_handler,
         sub {

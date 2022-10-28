@@ -4,6 +4,8 @@ use warnings FATAL => 'all';
 
 use File::Basename;
 use Redis;
+use Thread::Pool;
+use Thread::Queue;
 
 use lib glob "~/Projects/phd/scripts/modules";
 use analysis;
@@ -38,12 +40,22 @@ my $SUBJECT_DIR = utils::get_remote_nfs_subject_directory($experiment, $subject,
 my $RUN_DIR = "$SUBJECT_DIR/results/$run_name-$iteration";
 my $ANALYZE_RESULTS_LOG_FILENAME = "analyze_results.log";
 
-my $redis = Redis->new(
-    server                 => "206.206.192.29:31111",
-    conservative_reconnect => 1,
-    cnx_timeout            => 900,
-    reconnect              => 900
-);
+my $NUM_CPUS = 8;
+my $NUM_WORKERS = $NUM_CPUS;
+my $NUM_REDIS_CLIENTS = $NUM_CPUS;
+
+my @redis_client_pool = map {
+    Redis->new(
+        server                 => "206.206.192.29:31111",
+        conservative_reconnect => 1,
+        cnx_timeout            => 900,
+        reconnect              => 900
+    );
+} (1..$NUM_REDIS_CLIENTS);
+
+my $client_index_queue = Thread::Queue->new();
+$client_index_queue->enqueue((0..$NUM_REDIS_CLIENTS - 1));
+
 my $redis_status_client = Redis->new(
     server                 => "206.206.192.29:31111",
     conservative_reconnect => 1,
@@ -55,6 +67,23 @@ my $fuzz_config = YAML::XS::LoadFile("$BASE_PATH/resources/fuzz_config.yml");
 my $NUM_CONSUMERS = $fuzz_config->{__global__}->{num_consumers};
 
 open LOG, ">", "$RUN_DIR/$ANALYZE_RESULTS_LOG_FILENAME";
+
+my $pool = Thread::Pool->new({
+    optimize     => 'memory',
+    do           => sub {
+        my ($channel, $message) = @_;
+        my $client_pool_index = $client_index_queue->dequeue();
+        my $redis = $redis_client_pool[$client_pool_index];
+
+        $redis->lpush($channel, $message);
+
+        $client_index_queue->enqueue($client_pool_index);
+    },
+    autoshutdown => 1,
+    workers      => $NUM_WORKERS,
+    maxjobs      => 163840,
+    minjobs      => 81920,
+});
 
 my $channel_number = 1;
 my $shutdown_requested;
@@ -76,7 +105,7 @@ until($shutdown_requested && $runs_after_shutdown_request > 0) {
     }
 
     chomp(my @sessions = `grep "^[^- ]" $RUN_DIR/id_to_pod_name_and_target.yml | sed -e 's,:,,'`);
-    analysis::iterate_fuzzer_results(
+    utils::iterate_fuzzer_results(
         $experiment, $subject, $version, "$run_name-$iteration", "sandpuppy", \@sessions,
         \&iteration_handler,
         sub {
@@ -100,6 +129,7 @@ until ($done) {
     $done = ($total_files - $processed_files) == 0;
 }
 
+$pool->shutdown();
 print "\nShutting Down\n";
 
 sub iteration_handler {
@@ -111,7 +141,7 @@ sub iteration_handler {
     my $renamed_file = $input_file;
     $renamed_file =~ s,^.*results/,$CONTAINER_SUBJECT_DIR/results/,;
 
-    $redis->lpush(
+    $pool->job(
         "analysis.channel.$channel_number",
         "$experiment#$original_subject#$run_name#$iteration#$session#$renamed_file#$ctime"
     );
