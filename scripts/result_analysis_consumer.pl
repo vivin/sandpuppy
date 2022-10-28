@@ -40,11 +40,7 @@ my $redis_status_client = Redis->new(
     server   => "$REDIS_HOST:$REDIS_PORT"
 );
 
-#$redis->subscribe(
-#    $CHANNEL_NAME,
-#    \&subscribe_handler
-#);
-#$redis->wait_for_messages(5) while 1;
+print "Listening on channel $CHANNEL_NAME...\n";
 while (1) {
     my $message = $redis->brpop($CHANNEL_NAME, 5);
     if (defined $message) {

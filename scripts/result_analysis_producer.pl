@@ -142,7 +142,7 @@ sub iteration_handler {
     $renamed_file =~ s,^.*results/,$CONTAINER_SUBJECT_DIR/results/,;
 
     $pool->job(
-        "analysis.channel.$channel_number",
+        "analysis-channel-$channel_number",
         "$experiment#$original_subject#$run_name#$iteration#$session#$renamed_file#$ctime"
     );
 

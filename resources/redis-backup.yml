@@ -13,7 +13,7 @@ spec:
               values:
                 - node06
   containers:
-    - name: sandpuppy
+    - name: redis-backup
       command:
         - "/bin/bash"
         - "-c"
