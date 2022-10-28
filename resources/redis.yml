@@ -95,4 +95,4 @@ spec:
     - ReadWriteOnce
   resources:
     requests:
-      storage: 20Gi   # CHANGEME - the total disk space you will be able to use
+      storage: 60Gi   # CHANGEME - the total disk space you will be able to use

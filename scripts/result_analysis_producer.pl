@@ -75,6 +75,9 @@ my $pool = Thread::Pool->new({
         my $client_pool_index = $client_index_queue->dequeue();
         my $redis = $redis_client_pool[$client_pool_index];
 
+        my $total_files_key = "$experiment:$full_subject:$run_name-$iteration.total_files";
+        $redis->incr($total_files_key);
+
         $redis->lpush($channel, $message);
 
         $client_index_queue->enqueue($client_pool_index);
@@ -146,7 +149,5 @@ sub iteration_handler {
         "$experiment#$original_subject#$run_name#$iteration#$session#$renamed_file#$ctime"
     );
 
-    my $total_files_key = "$experiment:$full_subject:$run_name-$iteration.total_files";
-    $redis_status_client->incr($total_files_key);
     $channel_number = ($channel_number % $NUM_CONSUMERS) + 1;
 }
