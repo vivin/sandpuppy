@@ -400,8 +400,8 @@ sub generate_startup_script {
     NUM_CORES=\$(lscpu | grep -e "^CPU(s):" | sed -e 's,^.* ,,')
     AVAILABLE_CORES=\$(( NUM_CORES - 2 )) # One for AFL and one for sync() running in the background
 
-    SYNC_DELAY=300
-    ATTEMPTS_BEFORE_FULL_SYNC=6
+    SYNC_DELAY=150
+    ATTEMPTS_BEFORE_FULL_SYNC=12
 
     DELAY=0.1
     EXPONENT=2
@@ -610,8 +610,8 @@ sub generate_fuzz_eval_startup_script {
     NUM_CORES=\$(lscpu | grep -e "^CPU(s):" | sed -e 's,^.* ,,')
     AVAILABLE_CORES=\$(( NUM_CORES - 2 )) # One for AFL and one for sync() running in the background
 
-    SYNC_DELAY=300
-    ATTEMPTS_BEFORE_FULL_SYNC=6
+    SYNC_DELAY=150
+    ATTEMPTS_BEFORE_FULL_SYNC=12
 
     DELAY=0.1
     EXPONENT=2
@@ -819,8 +819,8 @@ sub generate_startup_script_without_import_sync {
     NUM_CORES=\$(lscpu | grep -e "^CPU(s):" | sed -e 's,^.* ,,')
     AVAILABLE_CORES=\$(( NUM_CORES - 2 )) # One for AFL and one for sync() running in the background
 
-    SYNC_DELAY=300
-    ATTEMPTS_BEFORE_FULL_SYNC=6
+    SYNC_DELAY=150
+    ATTEMPTS_BEFORE_FULL_SYNC=12
 
     DELAY=0.1
     EXPONENT=2
