@@ -5,6 +5,7 @@ use warnings FATAL => 'all';
 use Log::Simple::Color;
 use Fcntl;
 use File::Path qw(make_path);
+use File::stat;
 use List::Util qw(reduce);
 use POSIX;
 
