@@ -1,7 +1,7 @@
 ---
 __global__:
-  num_consumers: 500
-  hours_per_iteration: 2
+  num_consumers: 250
+  hours_per_iteration: 4
 jsoncpp:
   fuzz_time: 300
   num_iterations: 3
