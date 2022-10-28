@@ -967,9 +967,10 @@ sub iterate_fuzzer_results {
         die "Could not find redis credentials\n";
     }
 
-    my $_redis = Redis->new(
+    chomp(my $redis_credentials = `cat $redis_credentials_path`);
+    my $redis = Redis->new(
         server   => "127.0.0.1:6379",
-        password => chomp(`cat $redis_credentials_path`)
+        password => $redis_credentials
     );
 
     my $full_subject = $subject . ($version ? "-$version" : "");
@@ -999,8 +1000,8 @@ sub iterate_fuzzer_results {
             $count++;
             chomp $file;
 
-            my $file_redis_set_value = "$full_subject;$run_name;$session;$file";
-            if ($_redis->sismember($processed_files_key, $file_redis_set_value)) {
+            my $fileredis_set_value = "$full_subject;$run_name;$session;$file";
+            if ($redis->sismember($processed_files_key, $fileredis_set_value)) {
                 $logger->("Input $count of $num_files skipped (already processed)      \r");
                 next;
             }
@@ -1016,15 +1017,15 @@ sub iterate_fuzzer_results {
             # NOTE: sessions after we process one. However, this is not an issue since we can reconstruct that initial
             # NOTE: coverage by using the calculated overall-coverage from the previous iteration.
             chomp(my $sha512 = `sha512sum $inputs_dir/$file | awk '{ print \$1; }'`);
-            if ($_redis->sismember($sha512_key, $sha512)) {
-                $_redis->sadd($processed_files_key, $file_redis_set_value);
+            if ($redis->sismember($sha512_key, $sha512)) {
+                $redis->sadd($processed_files_key, $fileredis_set_value);
                 $logger->("Input $count of $num_files skipped (sha512 already seen)    \r");
                 next;
             }
 
             $logger->("Input $count of $num_files being processed                  \r");
-            $_redis->sadd($processed_files_key, $file_redis_set_value);
-            $_redis->sadd($sha512_key, $sha512);
+            $redis->sadd($processed_files_key, $fileredis_set_value);
+            $redis->sadd($sha512_key, $sha512);
             $handler->($session, "$inputs_dir/$file", $ctime);
         }
         close FILES;
