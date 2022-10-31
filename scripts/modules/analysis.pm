@@ -5,7 +5,6 @@ use warnings FATAL => 'all';
 use File::Basename;
 use File::Path qw(make_path);
 use File::stat;
-use Redis;
 use YAML::XS;
 use Time::HiRes qw(time);
 
@@ -13,24 +12,6 @@ use utils;
 
 my $BASE_PATH = glob "~/Projects/phd";
 my $RESOURCES = "$BASE_PATH/resources";
-
-my $log = Log::Simple::Color->new;
-
-my $server;
-if (-e utils::get_base_container_nfs_path()) {
-    my $REDIS_HOST = $ENV{REDIS_SERVICE_HOST};
-    my $REDIS_PORT = $ENV{REDIS_SERVICE_PORT};
-    $server = "$REDIS_HOST:$REDIS_PORT";
-} elsif (-e utils::get_base_nfs_path()) {
-    $server = "206.206.192.29:31111";
-}
-
-my $redis = Redis->new(
-    server                 => $server,
-    conservative_reconnect => 1,
-    cnx_timeout            => 900,
-    reconnect              => 900
-);
 
 my $fuzz_config = YAML::XS::LoadFile("$RESOURCES/fuzz_config.yml");
 
@@ -61,13 +42,14 @@ sub check_if_input_processed_successfully {
 }
 
 sub record_processing_stats {
-    my $experiment = $_[0];
-    my $subject = $_[1];
-    my $version = $_[2];
-    my $run_name = $_[3];
-    my $iteration = $_[4];
-    my $total_files = $_[5];
-    my $remaining_files = $_[6];
+    my $redis = $_[0];
+    my $experiment = $_[1];
+    my $subject = $_[2];
+    my $version = $_[3];
+    my $run_name = $_[4];
+    my $iteration = $_[5];
+    my $total_files = $_[6];
+    my $remaining_files = $_[7];
 
     my $full_subject = $subject . ($version ? "-$version" : "");
     my $key = "$experiment:$full_subject:$run_name-$iteration.stats";
@@ -76,12 +58,13 @@ sub record_processing_stats {
 }
 
 sub is_coverage_new {
-    my $experiment = $_[0];
-    my $subject = $_[1];
-    my $version = $_[2];
-    my $run_name = $_[3];
-    my $iteration = $_[4];
-    my @basic_blocks = @{$_[5]};
+    my $redis = $_[0];
+    my $experiment = $_[1];
+    my $subject = $_[2];
+    my $version = $_[3];
+    my $run_name = $_[4];
+    my $iteration = $_[5];
+    my @basic_blocks = @{$_[6]};
 
     my $full_subject = $subject . ($version ? "-$version" : "");
     my $key = "$experiment:$full_subject:$run_name-$iteration.coverage";
@@ -98,13 +81,14 @@ sub is_coverage_new {
 }
 
 sub is_session_coverage_new {
-    my $experiment = $_[0];
-    my $subject = $_[1];
-    my $version = $_[2];
-    my $run_name = $_[3];
-    my $iteration = $_[4];
-    my $session = $_[5];
-    my @basic_blocks = @{$_[6]};
+    my $redis = $_[0];
+    my $experiment = $_[1];
+    my $subject = $_[2];
+    my $version = $_[3];
+    my $run_name = $_[4];
+    my $iteration = $_[5];
+    my $session = $_[6];
+    my @basic_blocks = @{$_[7]};
 
     my $full_subject = $subject . ($version ? "-$version" : "");
     my $key = "$experiment:$full_subject:$run_name-$iteration:$session.coverage";
@@ -121,14 +105,15 @@ sub is_session_coverage_new {
 }
 
 sub record_input_coverage {
-    my $experiment = $_[0];
-    my $subject = $_[1];
-    my $version = $_[2];
-    my $run_name = $_[3];
-    my $iteration = $_[4];
-    my $input_file = $_[5];
-    my @basic_blocks = @{$_[6]};
-    my $ctime = $_[7];
+    my $redis = $_[0];
+    my $experiment = $_[1];
+    my $subject = $_[2];
+    my $version = $_[3];
+    my $run_name = $_[4];
+    my $iteration = $_[5];
+    my $input_file = $_[6];
+    my @basic_blocks = @{$_[7]};
+    my $ctime = $_[8];
 
     my $full_subject = $subject . ($version ? "-$version" : "");
     my $key = "$experiment:$full_subject:$run_name-$iteration.coverage_over_time";
@@ -141,15 +126,16 @@ sub record_input_coverage {
 }
 
 sub record_session_input_coverage {
-    my $experiment = $_[0];
-    my $subject = $_[1];
-    my $version = $_[2];
-    my $run_name = $_[3];
-    my $iteration = $_[4];
-    my $session = $_[5];
-    my $input_file = $_[6];
-    my @basic_blocks = @{$_[7]};
-    my $ctime = $_[8];
+    my $redis = $_[0];
+    my $experiment = $_[1];
+    my $subject = $_[2];
+    my $version = $_[3];
+    my $run_name = $_[4];
+    my $iteration = $_[5];
+    my $session = $_[6];
+    my $input_file = $_[7];
+    my @basic_blocks = @{$_[8]};
+    my $ctime = $_[9];
 
     my $full_subject = $subject . ($version ? "-$version" : "");
     my $key = "$experiment:$full_subject:$run_name-$iteration:$session.coverage_over_time";

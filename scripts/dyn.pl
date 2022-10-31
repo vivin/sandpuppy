@@ -309,14 +309,20 @@ sub wait_until_iteration_is_done {
     #  - Keeps track of coverage over time
     setup_background_trace_processing();
     setup_remote_background_results_analysis_producer();
+
+    my $last_generated_traces_time = time();
     while(time() - $start_time < $SANDPUPPY_FUZZING_RUN_TIME_SECONDS) {
-        sleep 60; # check every minute
+        sleep 5; # check every minute
 
         my $elapsed_time = time() - $start_time;
         my $remaining_time = $SANDPUPPY_FUZZING_RUN_TIME_SECONDS - $elapsed_time;
 
-        # Generate traces from tracegen files (if any)
-        generate_traces_from_staged_tracegen_files();
+        if (time() - $last_generated_traces_time >= 60) {
+            # Generate traces from tracegen files (if any)
+            generate_traces_from_staged_tracegen_files();
+            $last_generated_traces_time = time();
+        }
+
         my $total_files = $remote_redis->get("$experiment:$full_subject:$run_name-$iteration.total_files");
         my $processed_files = $remote_redis->get("$experiment:$full_subject:$run_name-$iteration.processed_files");
         if (defined $total_files) {
@@ -326,9 +332,9 @@ sub wait_until_iteration_is_done {
 
             my $throughput = sprintf("%.2f", ($processed_files / $elapsed_time));
             my $remaining_files = $total_files - $processed_files;
-            print "${remaining_time}s remaining. $processed_files processed. $remaining_files remaining to be processed. $total_files files total. ($throughput files/s)\n";
+            print "${remaining_time}s remaining. $processed_files processed. $remaining_files remaining to be processed. $total_files files total. ($throughput files/s)\r";
         } else {
-            print "${remaining_time}s remaining.\n"
+            print "${remaining_time}s remaining.\r"
         }
 
         # TODO: would be nice to keep an eye on the status of pods and then resume them if they disappear or stop
@@ -337,7 +343,7 @@ sub wait_until_iteration_is_done {
         setup_analysis_consumer_pods_if_necessary();
     }
 
-    print "Iteration $iteration has ended. Stopping pods...\n";
+    print "\nIteration $iteration has ended. Stopping pods...\n";
     system "pod_names | grep $experiment | grep $full_subject | grep $run_name-$iteration | xargs kubectl delete pod";
 
     print "Sleeping for a minute so that files are old enough for results-analysis to process...\n";
@@ -373,7 +379,11 @@ sub setup_analysis_consumer_pods_if_necessary {
     foreach my $consumer(1..$NUM_CONSUMERS) {
         my $consumer_name = "sandpuppy-analysis-consumer-$consumer";
         if(! grep /^$consumer_name$/, @pods) {
-            system "kuboid/scripts/pod_create -c 750m -C 2000m -n $consumer_name -i vivin/sandpuppy-analysis " .
+            if ($consumers_created == 0) {
+                print "\n";
+            }
+
+            system "kuboid/scripts/pod_create -c 1000m -C 2000m -n $consumer_name -i vivin/sandpuppy-analysis " .
                 "/home/vivin/Projects/phd/scripts/result_analysis_consumer.pl analysis-channel-$consumer";
             $consumers_created++;
         }
