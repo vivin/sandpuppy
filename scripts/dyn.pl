@@ -384,7 +384,7 @@ sub setup_analysis_consumer_pods_if_necessary {
             }
 
             system "kuboid/scripts/pod_create -c 1000m -C 2000m -n $consumer_name -i vivin/sandpuppy-analysis " .
-                "/home/vivin/Projects/phd/scripts/result_analysis_consumer.pl analysis-channel-$consumer";
+                "/home/vivin/Projects/phd/scripts/result_analysis_consumer.pl sandpuppy-analysis-channel";
             $consumers_created++;
         }
     }
