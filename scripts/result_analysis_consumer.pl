@@ -65,7 +65,7 @@ my $pool = Thread::Pool->new({
     minjobs      => 81920,
 });
 
-print "Listening on channel $CHANNEL_NAME...\n";
+print "Listening on channel $CHANNEL_NAME with $NUM_WORKERS workers...\n";
 while (1) {
     my $message = $redis_subscriber_client->brpop($CHANNEL_NAME, 5);
     if (defined $message) {
