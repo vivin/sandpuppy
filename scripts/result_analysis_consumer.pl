@@ -6,6 +6,7 @@ use File::Basename;
 use Redis;
 use Thread::Pool;
 use Thread::Queue;
+use Time::HiRes qw(time);
 
 use lib glob "~/Projects/phd/scripts/modules";
 use analysis;
@@ -75,6 +76,7 @@ while (1) {
 
 sub subscribe_handler {
     my ($topic, $message) = @_;
+    my $start = time();
     print "Received message from topic $topic: $message\n";
 
     my ($experiment, $full_subject, $run_name, $iteration, $session, $input_file, $ctime) = split /#/, $message;
@@ -125,6 +127,9 @@ sub subscribe_handler {
     my $processed_files_key = "$experiment:$full_subject:$run_name-$iteration.processed_files";
     $redis->incr($processed_files_key);
     $client_index_queue->enqueue($client_pool_index);
+
+    my $elapsed = time() - $start;
+    print "Done in $elapsed ms...\n";
 }
 
 sub create_wrapped_checker {
