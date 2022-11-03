@@ -1,0 +1,14 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: analysis-job
+spec:
+  parallelism: 50
+  template:
+    metadata:
+      name: analysis-job
+    spec:
+      containers:
+      - name: sandpuppy-analysis
+        image: vivin/sandpuppy-analysis
+      restartPolicy: OnFailure

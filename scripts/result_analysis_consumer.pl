@@ -20,11 +20,6 @@ if (scalar @ARGV == 0) {
 
 my $CHANNEL_NAME = $ARGV[0];
 
-my $BASE_NFS_PATH = utils::get_base_container_nfs_path();
-if (! -e -f "$BASE_NFS_PATH/redis-credentials") {
-    die "Could not find redis credentials\n";
-}
-
 chomp(my $NUM_CPUS = `lscpu | grep "CPU(s):" | head -1 | awk '{ print \$2; }'`);
 my $NUM_WORKERS = $NUM_CPUS;
 my $NUM_REDIS_CLIENTS = $NUM_CPUS;

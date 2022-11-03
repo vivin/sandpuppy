@@ -261,7 +261,7 @@ sub start_sandpuppy_fuzz {
 
     my $iteration = $run_state->{iteration};
 
-    setup_analysis_consumer_pods_if_necessary();
+    #setup_analysis_consumer_pods_if_necessary();
 
     # Next we will start the sandpuppy fuzzing run
     print "Starting SandPuppy run $run_name (iteration $iteration)...\n";
@@ -340,7 +340,7 @@ sub wait_until_iteration_is_done {
         # TODO: would be nice to keep an eye on the status of pods and then resume them if they disappear or stop
 
         # If any analysis pods went down, start them up
-        setup_analysis_consumer_pods_if_necessary();
+        #setup_analysis_consumer_pods_if_necessary();
     }
 
     print "\nIteration $iteration has ended. Stopping pods...\n";
@@ -484,7 +484,7 @@ sub monitor_remote_background_results_analysis_until_done {
         sleep 1;
 
         # Sometimes these guys go down. Bring them back up if necessary.
-        setup_analysis_consumer_pods_if_necessary();
+        #setup_analysis_consumer_pods_if_necessary();
     } until ($remaining_files == 0);
 
     print "\n";
