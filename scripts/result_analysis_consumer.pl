@@ -20,24 +20,8 @@ if (scalar @ARGV == 0) {
 
 my $CHANNEL_NAME = $ARGV[0];
 
-chomp(my $NUM_CPUS = `lscpu | grep "CPU(s):" | head -1 | awk '{ print \$2; }'`);
-my $NUM_WORKERS = $NUM_CPUS;
-my $NUM_REDIS_CLIENTS = $NUM_CPUS;
-
 my $REDIS_HOST = $ENV{REDIS_SERVICE_HOST};
 my $REDIS_PORT = $ENV{REDIS_SERVICE_PORT};
-
-my @redis_client_pool = map {
-    Redis->new(
-        server                 => "206.206.192.29:31111",
-        conservative_reconnect => 1,
-        cnx_timeout            => 900,
-        reconnect              => 900
-    );
-} (1..$NUM_REDIS_CLIENTS);
-
-my $client_index_queue = Thread::Queue->new();
-$client_index_queue->enqueue((0..$NUM_REDIS_CLIENTS - 1));
 
 my $subject_tracegen_checkers = {
     libpng       => create_wrapped_checker("libpng", \&passthru),
@@ -48,24 +32,15 @@ my $subject_tracegen_checkers = {
     jsoncpp      => create_wrapped_checker("jsoncpp", \&jsoncpp::check_input_is_valid_json)
 };
 
-my $redis_subscriber_client = Redis->new(
+my $redis = Redis->new(
     server   => "$REDIS_HOST:$REDIS_PORT"
 );
 
-my $pool = Thread::Pool->new({
-    optimize     => 'memory',
-    do           => \&subscribe_handler,
-    autoshutdown => 1,
-    workers      => $NUM_WORKERS,
-    maxjobs      => 163840,
-    minjobs      => 81920,
-});
-
-print "Listening on channel $CHANNEL_NAME with $NUM_WORKERS workers...\n";
+print "Listening on channel $CHANNEL_NAME...\n";
 while (1) {
-    my $message = $redis_subscriber_client->brpop($CHANNEL_NAME, 5);
+    my $message = $redis->brpop($CHANNEL_NAME, 5);
     if (defined $message) {
-        $pool->job(@{$message});
+        subscribe_handler(@{$message});
     }
 }
 
@@ -84,9 +59,6 @@ sub subscribe_handler {
     }
 
     my $basic_blocks = analysis::get_basic_blocks_for_input($subject, $input_file);
-
-    my $client_pool_index = $client_index_queue->dequeue();
-    my $redis = $redis_client_pool[$client_pool_index];
 
     my $has_new_coverage = analysis::is_coverage_new(
         $redis, $experiment, $subject, $version, $run_name, $iteration, $basic_blocks
@@ -121,7 +93,6 @@ sub subscribe_handler {
 
     my $processed_files_key = "$experiment:$full_subject:$run_name-$iteration.processed_files";
     $redis->incr($processed_files_key);
-    $client_index_queue->enqueue($client_pool_index);
 
     my $elapsed = time() - $start;
     print "Done in $elapsed ms...\n";
