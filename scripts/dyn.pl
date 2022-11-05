@@ -6,7 +6,7 @@ use lib glob "~/Projects/phd/scripts/modules";
 use Data::Dumper;
 use File::Basename;
 use File::Path qw(make_path);
-use File::stat
+use File::stat;
 use Log::Simple::Color;
 use POSIX ":sys_wait_h";
 use Redis;
