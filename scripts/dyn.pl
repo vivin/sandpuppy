@@ -6,6 +6,7 @@ use lib glob "~/Projects/phd/scripts/modules";
 use Data::Dumper;
 use File::Basename;
 use File::Path qw(make_path);
+use File::stat
 use Log::Simple::Color;
 use POSIX ":sys_wait_h";
 use Redis;
@@ -539,6 +540,11 @@ sub generate_traces_from_staged_tracegen_files {
         # directory we use for keeping track of trace-generation seeds per iteration.
         chomp(my @files = `ls -fA $TRACEGEN_STAGING_DIR`);
         foreach my $file(@files) {
+            my $ctime = stat("$TRACEGEN_STAGING_DIR/$file")->ctime;
+            if (time() - $ctime < 30) {
+                next;
+            }
+
             my $tracegen_command = "$TRACEGEN_BINARY $TRACEGEN_BINARY_ARGUMENT_TEMPLATE";
             $tracegen_command =~ s,\@\@,$TRACEGEN_STAGING_DIR/$file,;
 
