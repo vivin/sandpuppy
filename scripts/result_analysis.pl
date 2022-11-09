@@ -181,9 +181,10 @@ sub iteration_handler {
     my $input_file = $_[1];
     my $ctime = $_[2];
 
-    $pool->job("$session#$input_file#$ctime");
     my $total_files_key = "$experiment:$full_subject:$run_name-$iteration.total_files";
     $redis_status_client->incr($total_files_key);
+
+    $pool->job("$session#$input_file#$ctime");
 }
 
 sub create_wrapped_checker {
