@@ -324,16 +324,10 @@ sub wait_until_iteration_is_done {
             $last_generated_traces_time = time();
         }
 
-        my $total_files = $remote_redis->get("$experiment:$full_subject:$run_name-$iteration.total_files");
         my $processed_files = $remote_redis->get("$experiment:$full_subject:$run_name-$iteration.processed_files");
-        if (defined $total_files) {
-            if (!defined $processed_files) {
-                $processed_files = 0;
-            }
-
+        if (defined $processed_files) {
             my $throughput = sprintf("%.2f", ($processed_files / $elapsed_time));
-            my $remaining_files = $total_files - $processed_files;
-            print "${remaining_time}s remaining. $processed_files processed. $remaining_files remaining to be processed. $total_files files total. ($throughput files/s)\r";
+            print "${remaining_time}s remaining. $processed_files processed. ($throughput files/s)\r";
         } else {
             print "${remaining_time}s remaining.\r"
         }
