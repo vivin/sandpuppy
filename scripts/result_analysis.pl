@@ -114,7 +114,6 @@ my $pool = Thread::Pool->new({
 
         # Copy file for tracegen if checker thinks it is valid
         if ($subject_tracegen_checkers->{$subject}->($input_file) != 0) {
-            print LOG "copying the file for tracegen\n";
             analysis::copy_input_for_tracegen(
                 $experiment, $subject, $version, $run_name, $iteration, $session, $input_file
             );
