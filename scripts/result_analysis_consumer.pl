@@ -18,7 +18,7 @@ if (scalar @ARGV == 0) {
     die "Syntax: $SCRIPT_NAME <channel-name>";
 }
 
-my $CHANNEL_NAME = $ARGV[0];
+my $CHANNEL_NAME = "sandpuppy-analysis-channel";
 
 my $REDIS_HOST = $ENV{REDIS_SERVICE_HOST};
 my $REDIS_PORT = $ENV{REDIS_SERVICE_PORT};
@@ -58,30 +58,32 @@ sub subscribe_handler {
         $full_subject =~ s/:/-/;
     }
 
-    my $basic_blocks = analysis::get_basic_blocks_for_input($subject, $input_file);
+    if ($input_file =~ /\+cov/) {
+        my $basic_blocks = analysis::get_basic_blocks_for_input($subject, $input_file);
 
-    my $has_new_coverage = analysis::is_coverage_new(
-        $redis, $experiment, $subject, $version, $run_name, $iteration, $basic_blocks
-    );
-    if ($has_new_coverage != 0) {
-        # New overall coverage implies new session coverage as well, so let's record session coverage in addition to
-        # overall coverage. After this we will copy this input over to be used as a seed in the next iteration.
-        analysis::record_input_coverage(
-            $redis, $experiment, $subject, $version, $run_name, $iteration, $input_file, $basic_blocks, $ctime
+        my $has_new_coverage = analysis::is_coverage_new(
+            $redis, $experiment, $subject, $version, $run_name, $iteration, $basic_blocks
         );
-        analysis::record_session_input_coverage(
-            $redis, $experiment, $subject, $version, $run_name, $iteration, $session, $input_file, $basic_blocks, $ctime
-        );
-        analysis::copy_input_for_next_iteration_seeds(
-            $experiment, $subject, $version, $run_name, $iteration, $session, $input_file
-        );
-    } else {
-        my $has_new_session_coverage = analysis::is_session_coverage_new(
-            $redis, $experiment, $subject, $version, $run_name, $iteration, $session, $basic_blocks
-        );
-        analysis::record_session_input_coverage(
-            $redis, $experiment, $subject, $version, $run_name, $iteration, $session, $input_file, $basic_blocks, $ctime
-        ) if $has_new_session_coverage != 0;
+        if ($has_new_coverage != 0) {
+            # New overall coverage implies new session coverage as well, so let's record session coverage in addition to
+            # overall coverage. After this we will copy this input over to be used as a seed in the next iteration.
+            analysis::record_input_coverage(
+                $redis, $experiment, $subject, $version, $run_name, $iteration, $input_file, $basic_blocks, $ctime
+            );
+            analysis::record_session_input_coverage(
+                $redis, $experiment, $subject, $version, $run_name, $iteration, $session, $input_file, $basic_blocks, $ctime
+            );
+            analysis::copy_input_for_next_iteration_seeds(
+                $experiment, $subject, $version, $run_name, $iteration, $session, $input_file
+            );
+        } else {
+            my $has_new_session_coverage = analysis::is_session_coverage_new(
+                $redis, $experiment, $subject, $version, $run_name, $iteration, $session, $basic_blocks
+            );
+            analysis::record_session_input_coverage(
+                $redis, $experiment, $subject, $version, $run_name, $iteration, $session, $input_file, $basic_blocks, $ctime
+            ) if $has_new_session_coverage != 0;
+        }
     }
 
     # Copy file for tracegen if checker thinks it is valid
