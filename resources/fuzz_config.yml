@@ -4,7 +4,7 @@ __global__:
   hours_per_iteration: 4
 jsoncpp:
   fuzz_time: 300
-  num_iterations: 3
+  num_iterations: 12
   binary_name: readjson
   argument: "@@"
 libtpms:

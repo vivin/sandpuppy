@@ -360,6 +360,7 @@ sub wait_until_iteration_is_done {
     monitor_remote_background_results_analysis_until_done();
 
     print "Generating traces from remaining seeds if any...\n";
+    sleep 45;
     generate_traces_from_staged_tracegen_files();
     waitpid $RUN_ITERATION_TRACEGEN_PIDS->{"$run_name-$iteration"}, 0;
 
@@ -384,7 +385,7 @@ sub setup_analysis_consumer_pods_if_necessary {
                 print "\n";
             }
 
-            system "kuboid/scripts/pod_create -c 250m -C 4000m -n $consumer_name -i vivin/sandpuppy-analysis " .
+            system "kuboid/scripts/pod_create -c 250m -C 4000m -n $consumer_name -i vivin/sandpuppy-analysis:latest " .
                 "/home/vivin/Projects/phd/scripts/result_analysis_consumer.pl sandpuppy-analysis-channel";
             $consumers_created++;
         }
@@ -486,7 +487,7 @@ sub monitor_remote_background_results_analysis_until_done {
 
         # Sometimes these guys go down. Bring them back up if necessary.
         setup_analysis_consumer_pods_if_necessary();
-    } until ($remaining_files == 0);
+    } until ($remaining_files <= 0);
 
     print "\n";
 
