@@ -476,18 +476,23 @@ sub shutdown_remote_background_results_analysis_producer {
 sub monitor_remote_background_results_analysis_until_done {
     my $iteration = $run_state->{iteration};
 
-    my $remaining_files;
+    my $last_files_processed_time = time();
+    my $last_processed_files = 0;
+    my $done = 0;
     do {
-        my $total_files = $remote_redis->get("$experiment:$full_subject:$run_name-$iteration.total_files");
         my $processed_files = $remote_redis->get("$experiment:$full_subject:$run_name-$iteration.processed_files");
-        $remaining_files = $total_files - $processed_files;
+        if ($processed_files != $last_processed_files) {
+            $last_files_processed_time = time();
+        }
 
-        print "$total_files files total. $remaining_files remaining to be processed.\r";
+        print "$processed_files processed.\r";
         sleep 1;
+
+        $done = (time() - $last_files_processed_time > 60); # If it has been a minute since we processed any files we are done
 
         # Sometimes these guys go down. Bring them back up if necessary.
         setup_analysis_consumer_pods_if_necessary();
-    } until ($remaining_files <= 0);
+    } until ($done == 1);
 
     print "\n";
 

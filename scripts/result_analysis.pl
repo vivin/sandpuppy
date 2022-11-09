@@ -130,6 +130,7 @@ my $pool = Thread::Pool->new({
     minjobs      => 81920,
 });
 
+my $total_files = 0;
 my $shutdown_requested;
 my $runs_after_shutdown_request = 0;
 until($shutdown_requested && $runs_after_shutdown_request > 0) {
@@ -163,9 +164,6 @@ until($shutdown_requested && $runs_after_shutdown_request > 0) {
 
 my $done = 0;
 until ($done) {
-    my $total_files_key = "$experiment:$full_subject:$run_name-$iteration.total_files";
-    my $total_files = $redis_status_client->get($total_files_key);
-
     my $processed_files_key = "$experiment:$full_subject:$run_name-$iteration.processed_files";
     my $processed_files = $redis_status_client->get($processed_files_key);
 
@@ -181,9 +179,7 @@ sub iteration_handler {
     my $input_file = $_[1];
     my $ctime = $_[2];
 
-    my $total_files_key = "$experiment:$full_subject:$run_name-$iteration.total_files";
-    $redis_status_client->incr($total_files_key);
-
+    $total_files++;
     $pool->job("$session#$input_file#$ctime");
 }
 
