@@ -970,8 +970,7 @@ sub iterate_fuzzer_results {
 
     chomp(my $redis_credentials = `cat $redis_credentials_path`);
     my $redis = Redis->new(
-        server   => "127.0.0.1:6379",
-        password => $redis_credentials
+        server   => "127.0.0.1:6379"
     );
 
     my $full_subject = $subject . ($version ? "-$version" : "");
