@@ -311,6 +311,8 @@ sub wait_until_iteration_is_done {
     setup_background_trace_processing();
     setup_remote_background_results_analysis_producer();
 
+    my $last_processed_files = 0;
+    my $last_retrieved_processed_files_time = time();
     my $last_generated_traces_time = time();
     while(time() - $start_time < $SANDPUPPY_FUZZING_RUN_TIME_SECONDS) {
         sleep 5; # check every minute
@@ -326,14 +328,19 @@ sub wait_until_iteration_is_done {
 
         my $total_files = $remote_redis->get("$experiment:$full_subject:$run_name-$iteration.total_files");
         my $processed_files = $remote_redis->get("$experiment:$full_subject:$run_name-$iteration.processed_files");
+        my $seconds_since_last_retrieved_processed_files = time() - $last_retrieved_processed_files_time;
+        $last_retrieved_processed_files_time = time();
         if (defined $total_files) {
             if (!defined $processed_files) {
+                print "no processed files defined\n";
                 $processed_files = 0;
             }
 
-            my $throughput = sprintf("%.2f", ($processed_files / $elapsed_time));
+            my $throughput = sprintf("%.2f", (($processed_files - $last_processed_files) / $seconds_since_last_retrieved_processed_files));
             my $remaining_files = $total_files - $processed_files;
             print "${remaining_time}s remaining. $processed_files processed. $remaining_files remaining to be processed. $total_files files total. ($throughput files/s)\r";
+
+            $last_processed_files = $processed_files;
         } else {
             print "${remaining_time}s remaining.\r"
         }

@@ -117,7 +117,7 @@ until($shutdown_requested && $runs_after_shutdown_request > 0) {
         }
     );
 
-    truncate LOG, 0;
+    truncate LOG, 256;
 }
 
 my $done = 0;

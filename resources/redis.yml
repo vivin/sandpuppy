@@ -19,17 +19,15 @@ spec:
           imagePullPolicy: "Always"
           args:
             - "redis-server"
-            - "--save"
-            - "60"
-            - "1"
-            - "--loglevel"
-            - "warning"
+            - "/private-nfs/vivin/redis.conf"
           ports:
             - containerPort: 6379
               protocol: TCP
           volumeMounts:
             - mountPath: "/data"
               name: redis-pvc
+            - mountPath: "/private-nfs"
+              name: private-nfs
           resources:
             limits:
               memory: 32Gi
