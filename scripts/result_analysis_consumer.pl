@@ -33,7 +33,10 @@ my $subject_tracegen_checkers = {
 };
 
 my $redis = Redis->new(
-    server   => "$REDIS_HOST:$REDIS_PORT"
+    server   => "$REDIS_HOST:$REDIS_PORT",
+    conservative_reconnect => 1,
+    cnx_timeout            => 900,
+    reconnect              => 900
 );
 
 print "Listening on channel $CHANNEL_NAME...\n";

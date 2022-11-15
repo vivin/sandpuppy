@@ -86,9 +86,11 @@ if (! -e -f "$BASE_NFS_PATH/redis-credentials") {
     die "Could not find redis credentials\n";
 }
 
-chomp(my $redis_credentials = `cat $BASE_NFS_PATH/redis-credentials`);
 my $remote_redis = Redis->new(
-    server   => "206.206.192.29:31111"
+    server   => "206.206.192.29:31111",
+    conservative_reconnect => 1,
+    cnx_timeout            => 900,
+    reconnect              => 900
 );
 
 my $fuzz_config = YAML::XS::LoadFile("$BASE_PATH/resources/fuzz_config.yml");
@@ -194,15 +196,15 @@ sub initial_tracegen {
         system "python tools/analysis/clean_redis_subject_data.py $experiment $full_subject $TRACEGEN_BIN_CONTEXT";
         exit if $choice eq "c"; # Quit after cleaning traces; option c chosen.
     } else {
-        print "Building instrumented version of $full_subject for trace generation...\n";
-        system "scripts/exp.pl $experiment build $full_subject with waypoints vvdump as $TRACEGEN_BIN_CONTEXT";
+        print "Building instrumented version of $original_subject for trace generation...\n";
+        system "scripts/exp.pl $experiment build $original_subject with waypoints vvdump as $TRACEGEN_BIN_CONTEXT";
     }
 
     # Option b also ends up here because we restart trace generation after cleaning up existing traces
-    print "Fuzzing instrumented version of $full_subject for trace generation...\n";
+    print "Fuzzing instrumented version of $original_subject for trace generation...\n";
     update_state({ phase_status => "started" });
 
-    system "scripts/exp.pl $experiment fuzz $full_subject with waypoints vvdump using $TRACEGEN_BIN_CONTEXT as $TRACEGEN_EXEC_CONTEXT";
+    system "scripts/exp.pl $experiment fuzz $original_subject with waypoints vvdump using $TRACEGEN_BIN_CONTEXT as $TRACEGEN_EXEC_CONTEXT";
     if ($? != 0) {
         die "Trace-generation fuzzing run failed: $!\n";
     }
@@ -338,7 +340,7 @@ sub wait_until_iteration_is_done {
 
             my $throughput = sprintf("%.2f", (($processed_files - $last_processed_files) / $seconds_since_last_retrieved_processed_files));
             my $remaining_files = $total_files - $processed_files;
-            print "${remaining_time}s remaining. $processed_files processed. $remaining_files remaining to be processed. $total_files files total. ($throughput files/s)\r";
+            print "${remaining_time}s remaining. $processed_files processed. $remaining_files remaining to be processed. $total_files files total. ($throughput files/s)        \r";
 
             $last_processed_files = $processed_files;
         } else {
@@ -425,7 +427,8 @@ sub shutdown_analysis_consumer_pods {
 }
 
 sub setup_background_trace_processing {
-    return if $VVDPROC_PID; # If it is already running, exit
+    chomp(my $existing = `ps -ux | grep "target/vvdproc" | grep -v grep`);
+    return if $existing; # If it is already running, exit
 
     utils::setup_named_pipe();
 

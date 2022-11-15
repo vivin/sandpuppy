@@ -298,6 +298,8 @@ sub build_fuzz_command {
 
     if ($hang_timeout) {
         $fuzz_command .= " -t $hang_timeout";
+    } else {
+        $fuzz_command .= " -t 5000"; # just for now
     }
 
     # Only honor request for non-deterministic fuzzing if we are not doing parallel fuzzing.

@@ -264,7 +264,7 @@ def classify_variables(experiment: str, subject: str, binary: str, execution: st
         print(f"Retrieving traces for {num_retrieved_variables} variables and classifying...")
 
     done = threading.Event()
-    with concurrent.futures.ThreadPoolExecutor(max_workers=1024) as thread_pool_executor,\
+    with concurrent.futures.ThreadPoolExecutor(max_workers=512) as thread_pool_executor,\
          concurrent.futures.ProcessPoolExecutor(max_workers=12) as process_pool_executor:
 
         counts = {'processed': 0}
