@@ -49,6 +49,7 @@ make_path $RESULTS_DIR;
 my $json = Cpanel::JSON::XS->new->ascii->pretty->allow_nonref;
 
 my @fuzzers = ("afl-plain", "aflplusplus-plain", "aflplusplus-lafintel", "aflplusplus-redqueen");
+my $fuzzers_coverage = { map { $_ => {} } @ fuzzers };
 my $fuzzers_coverage_by_hour = { map { $_ => {} } @ fuzzers };
 foreach my $fuzzer(@fuzzers) {
     my $basic_blocks_hit = {};
@@ -93,6 +94,8 @@ foreach my $fuzzer(@fuzzers) {
         close FILES;
     }
 
+    $fuzzers_coverage->{$fuzzer} = scalar keys(%{$basic_blocks_hit});
+
     open BBS_HIT, ">", "$RESULTS_DIR/$fuzzer-basic-blocks-hit.txt";
     foreach my $bb(sort(keys(%{$basic_blocks_hit}))) {
         print BBS_HIT "$bb\n";
@@ -136,7 +139,16 @@ foreach my $fuzzer(@fuzzers) {
             $fuzzers_coverage_by_hour->{$fuzzer}->{$hour}->{$basic_block} = 1;
         }
     }
+
+    # Replace the basic-blocks hash with the count of the keys
+    foreach my $hour(1..24) {
+        $fuzzers_coverage_by_hour->{$fuzzer}->{$hour} = scalar keys(%{$fuzzers_coverage_by_hour->{$fuzzer}->{$hour}});
+    }
 }
+
+open JSON, ">", "$RESULTS_DIR/fuzzers-coverage.json";
+print JSON $json->encode($fuzzers_coverage);
+close JSON;
 
 open JSON, ">", "$RESULTS_DIR/fuzzers-coverage-over-time.json";
 print JSON $json->encode($fuzzers_coverage_by_hour);
