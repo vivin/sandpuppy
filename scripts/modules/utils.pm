@@ -565,6 +565,12 @@ sub generate_startup_script {
     cp -a $container_nfs_subject_directory/seeds/\$RUN_NAME/. /home/vivin/Projects/phd/resources/seeds/$subject/fuzz/
     log "Done copying seeds"
 
+    if [[ -d "$container_nfs_subject_directory/dictionary/\$RUN_NAME" ]]; then
+      log "Copying dictionary..."
+      mkdir -p /home/vivin/Projects/phd/resources/seeds/$subject/dictionary
+      cp -a $container_nfs_subject_directory/dictionary/\$RUN_NAME/. /home/vivin/Projects/phd/resources/seeds/$subject/dictionary/
+    fi
+
     # Since we don't copy over the symlinks created for binary directories with colons (we do this because when linking
     # the linker has issues with paths containing colons) dynamically linked binaries have issues finding their shared
     # library. So we will create a symlink to the local binary directory and set LD_LIBRARY_PATH to it.
@@ -771,6 +777,12 @@ sub generate_fuzz_eval_startup_script {
     cp -a $container_nfs_subject_directory/seeds/\$RUN_NAME/. /home/vivin/Projects/phd/resources/seeds/$subject/fuzz/
     log "Done copying seeds"
 
+    if [[ -d "$container_nfs_subject_directory/dictionary/\$RUN_NAME" ]]; then
+      log "Copying dictionary..."
+      mkdir -p /home/vivin/Projects/phd/resources/seeds/$subject/dictionary
+      cp -a $container_nfs_subject_directory/dictionary/\$RUN_NAME/. /home/vivin/Projects/phd/resources/seeds/$subject/dictionary/
+    fi
+
     # Since we don't copy over the symlinks created for binary directories with colons (we do this because when linking
     # the linker has issues with paths containing colons) dynamically linked binaries have issues finding their shared
     # library. So we will create a symlink to the local binary directory and set LD_LIBRARY_PATH to it.
@@ -934,6 +946,12 @@ sub generate_startup_script_without_import_sync {
     mkdir -p /home/vivin/Projects/phd/resources/seeds/$subject/fuzz
     cp -a $container_nfs_subject_directory/seeds/\$RUN_NAME/. /home/vivin/Projects/phd/resources/seeds/$subject/fuzz/
     log "Done copying seeds"
+
+    if [[ -d "$container_nfs_subject_directory/dictionary/\$RUN_NAME" ]]; then
+      log "Copying dictionary..."
+      mkdir -p /home/vivin/Projects/phd/resources/seeds/$subject/dictionary
+      cp -a $container_nfs_subject_directory/dictionary/\$RUN_NAME/. /home/vivin/Projects/phd/resources/seeds/$subject/dictionary/
+    fi
 
     # Since we don't copy over the symlinks created for binary directories with colons (we do this because when linking
     # the linker has issues with paths containing colons) dynamically linked binaries have issues finding their shared

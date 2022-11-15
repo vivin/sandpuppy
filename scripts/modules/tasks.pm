@@ -103,7 +103,7 @@ my $subjects = {
             fuzz             => create_fuzz_task(\&libpng::get_fuzz_command),
             pod_fuzz_command => create_pod_fuzz_command_task(\&libpng::get_fuzz_command)
         },
-        fuzz_time   => 180
+        fuzz_time   => $fuzz_config->{libpng}->{fuzz_time}
     },
     readelf     => {
         binary_name => "readelf",
@@ -112,7 +112,7 @@ my $subjects = {
             fuzz             => create_fuzz_task(\&readelf::get_fuzz_command),
             pod_fuzz_command => create_pod_fuzz_command_task(\&readelf::get_fuzz_command)
         },
-        fuzz_time   => 600
+        fuzz_time   => $fuzz_config->{readelf}->{fuzz_time}
     },
     libtpms     => {
         binary_name => "readtpmc",
@@ -148,7 +148,7 @@ my $subjects = {
             fuzz             => create_fuzz_task(\&dmg2img::get_fuzz_command),
             pod_fuzz_command => create_pod_fuzz_command_task(\&dmg2img::get_fuzz_command)
         },
-        fuzz_time   => 360
+        fuzz_time   => $fuzz_config->{dmg2img}->{fuzz_time}
     },
     libtins     => {
         binary_name => "readpcap",
@@ -202,7 +202,7 @@ my $subjects = {
             fuzz             => create_fuzz_task(\&pcapplusplus::get_fuzz_command),
             pod_fuzz_command => create_pod_fuzz_command_task(\&pcapplusplus::get_fuzz_command)
         },
-        fuzz_time   => 600
+        fuzz_time   => $fuzz_config->{pcapplusplus}->{fuzz_time}
     },
     jsoncpp     => {
         binary_name => "readjson",
@@ -536,7 +536,16 @@ sub setup_fuzz_eval {
     my $nfs_seeds_dir = utils::get_nfs_subject_directory($experiment_name, $subject, $version) . "/seeds/$run_name";
     if (! -e $nfs_seeds_dir) {
         make_path $nfs_seeds_dir;
-        system("cp -a $RESOURCES/seeds/$subject/fuzz/. $nfs_seeds_dir/")
+    }
+
+    system("cp -a $RESOURCES/seeds/$subject/fuzz/. $nfs_seeds_dir/");
+
+    if (-d "$RESOURCES/seeds/$subject/dictionary") {
+        $log->info("Copying dictionary...");
+        my $nfs_dictionary_dir = utils::get_nfs_subject_directory($experiment_name, $subject, $version) . "/dictionary/$run_name";
+        make_path $nfs_dictionary_dir;
+
+        system("cp -a $RESOURCES/seeds/$subject/dictionary/. $nfs_dictionary_dir/");
     }
 
     foreach my $fuzzer("afl-plain", "aflplusplus-plain", "aflplusplus-lafintel", "aflplusplus-redqueen") {
@@ -678,7 +687,16 @@ sub sandpuppy_fuzz {
     my $nfs_seeds_dir = utils::get_nfs_subject_directory($experiment_name, $subject, $version) . "/seeds/$run_name";
     if (! -e $nfs_seeds_dir) {
         make_path $nfs_seeds_dir;
-        system("cp -a $RESOURCES/seeds/$subject/fuzz/. $nfs_seeds_dir/")
+    }
+
+    system("cp -a $RESOURCES/seeds/$subject/fuzz/. $nfs_seeds_dir/");
+
+    if (-d "$RESOURCES/seeds/$subject/dictionary") {
+        $log->info("Copying dictionary...");
+        my $nfs_dictionary_dir = utils::get_nfs_subject_directory($experiment_name, $subject, $version) . "/dictionary/$run_name";
+        make_path $nfs_dictionary_dir;
+
+        system("cp -a $RESOURCES/seeds/$subject/dictionary/. $nfs_dictionary_dir/");
     }
 
     my $i = 1;

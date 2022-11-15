@@ -268,7 +268,7 @@ sub start_sandpuppy_fuzz {
 
     # Next we will start the sandpuppy fuzzing run
     print "Starting SandPuppy run $run_name (iteration $iteration)...\n";
-    system "scripts/exp.pl $experiment spfuzz $full_subject as $run_name-$iteration";
+    system "scripts/exp.pl $experiment spfuzz $original_subject as $run_name-$iteration";
     if ($? != 0) {
         die "Starting SandPuppy run failed: $!\n";
     }
@@ -462,7 +462,7 @@ sub setup_remote_background_results_analysis_producer {
     }
 
     system "ssh -o StrictHostKeyChecking=no -i /mnt/vivin-nfs/vivin/sandpuppy-pod-key vivin\@vivin.is-a-geek.net " .
-        "\"/home/vivin/Projects/phd/scripts/bg_analyze_results.sh $experiment $full_subject $run_name $iteration\"";
+        "\"/home/vivin/Projects/phd/scripts/bg_analyze_results.sh $experiment $original_subject $run_name $iteration\"";
 }
 
 sub shutdown_remote_background_results_analysis_producer {
