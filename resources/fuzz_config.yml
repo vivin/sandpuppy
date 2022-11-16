@@ -13,9 +13,9 @@ libtpms:
   binary_name: readtpmc
   argument: "@@"
 libpng:
-  fuzz_time: 300
+  fuzz_time: 180
   num_iterations: 12
-  binary_name: readjson
+  binary_name: readpng
   argument: "< @@"
 pcapplusplus:
   fuzz_time: 300
