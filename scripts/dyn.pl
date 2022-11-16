@@ -556,10 +556,21 @@ sub generate_traces_from_staged_tracegen_files {
             }
 
             my $tracegen_command = "$TRACEGEN_BINARY $TRACEGEN_BINARY_ARGUMENT_TEMPLATE";
+            if ($TRACEGEN_BINARY_ARGUMENT_TEMPLATE =~ /</) {
+                # If redirection from STDIN is involved, we will not include it in the command line
+                $tracegen_command = $TRACEGEN_BINARY;
+            }
+
             $tracegen_command =~ s,\@\@,$TRACEGEN_STAGING_DIR/$file,;
 
             my $tracegen_command_pid = fork;
             if (!$tracegen_command_pid) {
+                if ($TRACEGEN_BINARY_ARGUMENT_TEMPLATE =~ /</) {
+                    # We are redirecting STDIN so let us close it and then point it to the actual file.
+                    close STDIN;
+                    open STDIN, "<", "$TRACEGEN_STAGING_DIR/$file"
+                }
+
                 exec $tracegen_command;
             }
             waitpid $tracegen_command_pid, 0;
