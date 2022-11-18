@@ -136,13 +136,13 @@ until ($done) {
     $done = ($total_files - $processed_files) == 0;
 }
 
-$pool->shutdown();
-
 system "touch $RUN_DIR/shutdown_analyze_results_completed";
 until (-e -f "$RUN_DIR/shutdown_analyze_results_completed") {
     print "\nShutting Down\n";
     sleep 1;
 }
+
+$pool->shutdown();
 
 sub iteration_handler {
     my $session = $_[0];

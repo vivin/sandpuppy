@@ -465,7 +465,7 @@ sub setup_remote_background_results_analysis_producer {
     my $NFS_RESULTS_DIR = "$NFS_SUBJECT_DIR/results/$run_name-$iteration";
 
     if (-e "$NFS_RESULTS_DIR/shutdown_analyze_results") {
-        system "rm $NFS_RESULTS_DIR/shutdown_analyze_results";
+        system "rm $NFS_RESULTS_DIR/shutdown_analyze_results"
     }
 
     system "ssh -o StrictHostKeyChecking=no -i /mnt/vivin-nfs/vivin/sandpuppy-pod-key vivin\@vivin.is-a-geek.net " .
@@ -482,15 +482,10 @@ sub shutdown_remote_background_results_analysis_producer {
     }
 
     system "touch $NFS_RESULTS_DIR/shutdown_analyze_results";
-    until (-e -f "$NFS_RESULTS_DIR/shutdown_analyze_results") {
-        print "Waiting for remote background results analysis to start shutting down...\n";
-        sleep 1;
-    }
-    print "Remote background results analysis is shutting down...\n";
 
     # Wait until it has actually shut down
     until (-e -f "$NFS_RESULTS_DIR/shutdown_analyze_results_completed") {
-        print "Waiting for remote background results analysis finish shutting down...\n";
+        print "Waiting for remote background results analysis to finish shutting down...\n";
         sleep 1;
     }
     print "Remote background results analysis has shut down...\n";
