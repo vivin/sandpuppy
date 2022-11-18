@@ -67,7 +67,7 @@ class VariableValueDumpFeedback : public BaseVariableValueFeedback<VariableValue
     void createDumpVariableValueCall(Function* function, StoreInst* store, const std::string& variableName) {
         auto irb = insert_after(*store);
 
-        // If this is a function argument and it is a pointer, we need to safely dereference (i.e., with null checks)
+        // If this is a function argument, and it is a pointer, we need to safely dereference (i.e., with null checks)
         // its value so that we can print it.
         Value* value = store->getValueOperand();
         if (isFunctionArgument(variableName) && value->getType()->isPointerTy()) {

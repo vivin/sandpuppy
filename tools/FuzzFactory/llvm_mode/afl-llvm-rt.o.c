@@ -500,7 +500,7 @@ void __init_vvdump() {
         vvdump_named_pipe_available = true;
     }
 
-    // Unfortunately we can't explicitly close this but it does get automatically closed when program exits
+    // Unfortunately we can't explicitly close this, but it does get automatically closed when program exits
 }
 
 void __dump_variable_value(const char* filename, const char* function_name, const char* variable_name, int declared_line, int modified_line, const char* var_val_format, ...) {

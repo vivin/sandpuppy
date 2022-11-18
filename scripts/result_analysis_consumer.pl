@@ -87,10 +87,15 @@ sub subscribe_handler {
                 $redis, $experiment, $subject, $version, $run_name, $iteration, $session, $input_file, $basic_blocks, $ctime
             ) if $has_new_session_coverage != 0;
         }
+    } elsif ($input_file =~ /,orig/) {
+        analysis::copy_input_for_next_iteration_seeds(
+            $experiment, $subject, $version, $run_name, $iteration, $session, $input_file
+        );
     }
 
-    # Copy file for tracegen if checker thinks it is valid
-    if ($subject_tracegen_checkers->{$subject}->($input_file) != 0) {
+    # Copy file for tracegen if checker thinks it is valid and if it is not an original seed (we already have traces
+    # from it).
+    if ($input_file !~ /,orig/ && $subject_tracegen_checkers->{$subject}->($input_file) != 0) {
         analysis::copy_input_for_tracegen(
             $experiment, $subject, $version, $run_name, $iteration, $session, $input_file
         );

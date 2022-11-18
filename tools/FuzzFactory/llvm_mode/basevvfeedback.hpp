@@ -320,11 +320,11 @@ protected:
 
             // While we're here, let's inspect the users of this var. If this is a pointer, we are particularly
             // interested in users that update the pointer value through pointer arithmetic. In these cases we never
-            // want to report the derefenced value as the value of the var because the pointer actually represents
+            // want to report the de-referenced value as the value of the var because the pointer actually represents
             // multiple values (like an array) instead of a single one. For example, assuming we have an integer pointer
             // *intptr, then *intptr = 10; and *(intptr++) = 10; are actually modifying two separate locations. We only
             // want to report the values of those pointers that have a one-to-one relationship between the pointer and
-            // the value pointed to by it. In this situation it makes sense to report the dereferenced value as the
+            // the value pointed to by it. In this situation it makes sense to report the de-referenced value as the
             // value of the pointer var. So if a pointer variable is ever involved in pointer arithmetic, we will add it
             // to the arithmeticallyModifiedPointers set. Base classes can then decide how they want to deal with such
             // pointers.

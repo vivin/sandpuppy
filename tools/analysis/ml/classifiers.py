@@ -94,7 +94,7 @@ def is_enum(features):
     #        enum_var = value2
     #
     # And so on. Basically the second case is like a switch.
-    if features['num_modified_lines'] == 1 and features['num_unique_values'] <= 255:
+    if features['num_modified_lines'] == 1: # and features['num_unique_values'] <= 65535:
         # Deal with case 1:
         # For now we will limit ourselves to variables that have up to 255 unique values
         return True

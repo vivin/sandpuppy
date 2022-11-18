@@ -135,6 +135,8 @@ until ($done) {
 $pool->shutdown();
 print "\nShutting Down\n";
 
+system "touch $RUN_DIR/shutdown_analyze_results_completed";
+
 sub iteration_handler {
     my $session = $_[0];
     my $input_file = $_[1];

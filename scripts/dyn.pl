@@ -87,10 +87,10 @@ if (! -e -f "$BASE_NFS_PATH/redis-credentials") {
 }
 
 my $remote_redis = Redis->new(
-    server   => "206.206.192.29:31111",
+    server                 => "206.206.192.29:31111",
     conservative_reconnect => 1,
     cnx_timeout            => 900,
-    reconnect              => 900
+    no_auto_connect_on_new => 1
 );
 
 my $fuzz_config = YAML::XS::LoadFile("$BASE_PATH/resources/fuzz_config.yml");
@@ -305,6 +305,8 @@ sub wait_until_iteration_is_done {
     my $iteration = $run_state->{iteration};
     my $start_time = $run_state->{start_time};
 
+    $remote_redis->connect;
+
     # Start up the trace processor in the background so that it can collect traces as the fuzzing run progresses, from
     # novel input that is deemed interesting. Also start up the analyze_result.pl script remotely in the background.
     # This script goes through all inputs that have been generated so far and:
@@ -372,6 +374,11 @@ sub wait_until_iteration_is_done {
     generate_traces_from_staged_tracegen_files();
     waitpid $RUN_ITERATION_TRACEGEN_PIDS->{"$run_name-$iteration"}, 0;
 
+    print "Waiting until trace processor has finished processing all generated traces...\n";
+    monitor_trace_processor_until_done();
+
+    $remote_redis->quit;
+
     update_state({
         phase_status => "finished",
         end_time  => time()
@@ -393,7 +400,7 @@ sub setup_analysis_consumer_pods_if_necessary {
                 print "\n";
             }
 
-            system "kuboid/scripts/pod_create -c 250m -C 4000m -n $consumer_name -i vivin/sandpuppy-analysis " .
+            system "kuboid/scripts/pod_create -c 250m -C 300m -m 500Mi -M 1Gi -n $consumer_name -i vivin/sandpuppy-analysis " .
                 "/home/vivin/Projects/phd/scripts/result_analysis_consumer.pl sandpuppy-analysis-channel";
             $consumers_created++;
         }
@@ -476,10 +483,17 @@ sub shutdown_remote_background_results_analysis_producer {
 
     system "touch $NFS_RESULTS_DIR/shutdown_analyze_results";
     until (-e -f "$NFS_RESULTS_DIR/shutdown_analyze_results") {
-        print "Waiting for remote background results analysis to shutdown...\n";
+        print "Waiting for remote background results analysis to start shutting down...\n";
         sleep 1;
     }
     print "Remote background results analysis is shutting down...\n";
+
+    # Wait until it has actually shut down
+    until (-e -f "$NFS_RESULTS_DIR/shutdown_analyze_results_completed") {
+        print "Waiting for remote background results analysis finish shutting down...\n";
+        sleep 1;
+    }
+    print "Remote background results analysis has shut down...\n";
 }
 
 sub monitor_remote_background_results_analysis_until_done {
@@ -505,6 +519,14 @@ sub monitor_remote_background_results_analysis_until_done {
 
     my $ANALYZE_RESULTS_LOG_FILENAME = "analyze_results.log";
     system "rm $NFS_RESULTS_DIR/$ANALYZE_RESULTS_LOG_FILENAME";
+}
+
+sub monitor_trace_processor_until_done {
+    chomp(my $latest_log = `tail -2 /tmp/vvdproc.log | head -1`);
+    until ($latest_log =~ /, 0 remaining/ && $latest_log =~ /remaining: 0/) {
+        sleep 1;
+        chomp($latest_log = `tail -2 /tmp/vvdproc.log | head -1`);
+    }
 }
 
 sub generate_traces_from_staged_tracegen_files {
@@ -568,8 +590,14 @@ sub generate_traces_from_staged_tracegen_files {
                 if ($TRACEGEN_BINARY_ARGUMENT_TEMPLATE =~ /</) {
                     # We are redirecting STDIN so let us close it and then point it to the actual file.
                     close STDIN;
-                    open STDIN, "<", "$TRACEGEN_STAGING_DIR/$file"
+                    open STDIN, "<", "$TRACEGEN_STAGING_DIR/$file";
                 }
+
+                close STDOUT;
+                open STDOUT, ">", "/dev/null";
+
+                close STDERR;
+                open STDERR, ">", "/dev/null";
 
                 exec $tracegen_command;
             }

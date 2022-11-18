@@ -35,7 +35,17 @@ public:
             std::regex("[/]"),
             "_"
         );
-        std::string basicBlockName = sanitizedFilename + "_" + basicBlock.getName().str() + "_" + std::to_string(basicBlockNumber);
+
+        std::string line = "UNK";
+        for (Instruction &I : basicBlock) {
+            if (I.getDebugLoc()) {
+                line = std::to_string((I.getDebugLoc().getLine()));
+                break;
+            }
+        }
+
+        std::string basicBlockName = sanitizedFilename + "_l" + line + "_" + basicBlock.getName().str() + "_" + std::to_string(basicBlockNumber);
+        //std::string basicBlockName = sanitizedFilename + "_" + basicBlock.getName().str() + "_" + std::to_string(basicBlockNumber);
         std::string basicBlockNameVariableName = "__bbname_" + basicBlockName;
         Value *basicBlockNameValue = getOrCreateGlobalStringVariable(
             basicBlock.getModule(),
