@@ -88,6 +88,10 @@ my $pool = Thread::Pool->new({
     minjobs      => 81920,
 });
 
+if (-e -f "$RUN_DIR/shutdown_analyze_results_completed") {
+    system "rm $RUN_DIR/shutdown_analyze_results_completed";
+}
+
 my $channel_number = 1;
 my $shutdown_requested;
 my $runs_after_shutdown_request = 0;
