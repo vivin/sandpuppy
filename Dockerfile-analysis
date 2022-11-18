@@ -6,9 +6,7 @@ RUN apt-get update \
     && env DEBIAN_FRONTEND="noninteractive" TZ="America/Phoenix" apt-get -y install sudo curl make gcc ssh libbz2-dev libpcap0.8 cpanminus \
     && cpanm install inc::latest inc::Module::Install Redis YAML::XS Log::Simple::Color List::Util Cpanel::JSON::XS Devel::Required@0.15 Thread::Pool
 RUN groupadd -g $GID -o $UNAME && useradd -m -u $UID -g $GID -o -s /bin/bash $UNAME && echo "$UNAME:$UNAME" | chpasswd && adduser $UNAME sudo && echo '%sudo ALL=(ALL) NOPASSWD:ALL' >> /etc/sudoers
-COPY resources/docker/container_bashrc /home/vivin/.bashrc
 COPY resources/binaries /home/vivin/Projects/phd/resources/binaries
-COPY tools/FuzzFactory /home/vivin/Projects/phd/tools/FuzzFactory
 COPY scripts /home/vivin/Projects/phd/scripts
 COPY ["resources/fuzz_config.yml", "/home/vivin/Projects/phd/resources/"]
 RUN chown -R $UNAME:$UNAME /home/vivin
