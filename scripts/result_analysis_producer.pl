@@ -89,16 +89,24 @@ my $channel_number = 1;
 my $shutdown_requested;
 my $runs_after_shutdown_request = 0;
 until($shutdown_requested && $runs_after_shutdown_request > 0) {
+    my $start = time();
+    until(time() - $start >= 150) {
+        sleep 1;
+        print LOG "Waiting ${\(time() - $start)} seconds...\r";
+    }
+
+    print "\n";
+
     $shutdown_requested = -e -f "$RUN_DIR/shutdown_analyze_results";
     if ($shutdown_requested) {
-        print "\nShutdown requested. Will wait for 60 seconds so files are old enough to process and then run one more iteration\n";
+        print LOG "\nShutdown requested. Will wait for 60 seconds so files are old enough to process and then run one more iteration\n";
         $runs_after_shutdown_request++;
 
         my $time = 60;
         do {
             sleep 1;
             $time--;
-            print "$time seconds remaining...\r";
+            print LOG "$time seconds remaining...\r";
         } until ($time == 0);
 
         print "\n";
@@ -113,8 +121,14 @@ until($shutdown_requested && $runs_after_shutdown_request > 0) {
             print LOG $line;
         }
     );
+}
 
-    truncate LOG, 256;
+# This will just tell dyn.pl to go ahead. We will keep waiting below to make sure everything is processed. And dyn.pl
+# will also be doing that. So this script will eventually shut down.
+system "touch $RUN_DIR/shutdown_analyze_results_completed";
+until (-e -f "$RUN_DIR/shutdown_analyze_results_completed") {
+    print LOG "\nShutting Down\n";
+    sleep 1;
 }
 
 my $redis_status_client = Redis->new(
@@ -132,14 +146,8 @@ until ($done) {
     my $processed_files_key = "$experiment:$full_subject:$run_name-$iteration.processed_files";
     my $processed_files = $redis_status_client->get($processed_files_key);
 
-    print "Files remaining to be processed: ${\($total_files - $processed_files)}\r";
+    print LOG "Files remaining to be processed: ${\($total_files - $processed_files)}\r";
     $done = ($total_files - $processed_files) == 0;
-}
-
-system "touch $RUN_DIR/shutdown_analyze_results_completed";
-until (-e -f "$RUN_DIR/shutdown_analyze_results_completed") {
-    print "\nShutting Down\n";
-    sleep 1;
 }
 
 $pool->shutdown();
