@@ -56,13 +56,6 @@ my @redis_client_pool = map {
 my $client_index_queue = Thread::Queue->new();
 $client_index_queue->enqueue((0..$NUM_REDIS_CLIENTS - 1));
 
-my $redis_status_client = Redis->new(
-    server                 => "206.206.192.29:31111",
-    conservative_reconnect => 1,
-    cnx_timeout            => 900,
-    reconnect              => 900
-);
-
 my $fuzz_config = YAML::XS::LoadFile("$BASE_PATH/resources/fuzz_config.yml");
 my $NUM_CONSUMERS = $fuzz_config->{__global__}->{num_consumers};
 
@@ -123,6 +116,13 @@ until($shutdown_requested && $runs_after_shutdown_request > 0) {
 
     truncate LOG, 256;
 }
+
+my $redis_status_client = Redis->new(
+    server                 => "206.206.192.29:31111",
+    conservative_reconnect => 1,
+    cnx_timeout            => 900,
+    reconnect              => 900
+);
 
 my $done = 0;
 until ($done) {
