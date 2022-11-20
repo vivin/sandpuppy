@@ -494,6 +494,7 @@ sub shutdown_remote_background_results_analysis_producer {
 sub monitor_remote_background_results_analysis_until_done {
     my $iteration = $run_state->{iteration};
 
+    my $start = time();
     my $remaining_files;
     do {
         my $total_files = $remote_redis->get("$experiment:$full_subject:$run_name-$iteration.total_files");
@@ -505,7 +506,7 @@ sub monitor_remote_background_results_analysis_until_done {
 
         # Sometimes these guys go down. Bring them back up if necessary.
         setup_analysis_consumer_pods_if_necessary();
-    } until ($remaining_files == 0);
+    } until (($remaining_files == 0) || (time() - $start >= 600));
 
     print "\n";
 

@@ -138,6 +138,7 @@ my $redis_status_client = Redis->new(
     reconnect              => 900
 );
 
+my $start = time();
 my $done = 0;
 until ($done) {
     my $total_files_key = "$experiment:$full_subject:$run_name-$iteration.total_files";
@@ -147,7 +148,7 @@ until ($done) {
     my $processed_files = $redis_status_client->get($processed_files_key);
 
     print LOG "Files remaining to be processed: ${\($total_files - $processed_files)}\r";
-    $done = ($total_files - $processed_files) == 0;
+    $done = (($total_files - $processed_files) == 0) || (time() - $start >= 600);
 }
 
 $pool->shutdown();
