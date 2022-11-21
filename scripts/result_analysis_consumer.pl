@@ -23,12 +23,14 @@ my $CHANNEL_NAME = "sandpuppy-analysis-channel";
 my $REDIS_HOST = $ENV{REDIS_SERVICE_HOST};
 my $REDIS_PORT = $ENV{REDIS_SERVICE_PORT};
 
+srand time;
+
 my $subject_tracegen_checkers = {
     libpng       => create_wrapped_checker("libpng", \&passthru),
     libtpms      => create_wrapped_checker("libtpms", \&passthru),
-    pcapplusplus => create_wrapped_checker("pcapplusplus", \&passthru),
-    dmg2img      => create_wrapped_checker("dmg2img", \&passthru),
-    readelf      => create_wrapped_checker("readelf", \&passthru),
+    pcapplusplus => create_wrapped_checker("pcapplusplus", \&sampling_passthru),
+    dmg2img      => create_wrapped_checker("dmg2img", \&sampling_passthru),
+    readelf      => create_wrapped_checker("readelf", \&sampling_passthru),
     jsoncpp      => create_wrapped_checker("jsoncpp", \&jsoncpp::check_input_is_valid_json)
 };
 
@@ -115,6 +117,17 @@ sub create_wrapped_checker {
         my $input_file = $_[0];
         return analysis::check_if_input_processed_successfully($subject, $input_file) && $checker->($input_file);
     }
+}
+
+sub sampling_passthru {
+    my $input_file = $_[0];
+
+    if ($input_file =~ /\+cov/) {
+        return 1;
+    }
+
+    my $val = int(rand(10));
+    return $val == 4 || $val == 6; # only pass through 20% otherwise
 }
 
 sub passthru {
