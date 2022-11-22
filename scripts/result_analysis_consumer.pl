@@ -126,8 +126,8 @@ sub sampling_passthru {
         return 1;
     }
 
-    my $val = int(rand(10));
-    return $val == 4 || $val == 6; # only pass through 20% otherwise
+    my $val = int(rand(20));
+    return $val == 4; # only pass through 5% otherwise
 }
 
 sub passthru {
