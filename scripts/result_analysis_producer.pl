@@ -90,7 +90,7 @@ my $shutdown_requested;
 my $runs_after_shutdown_request = 0;
 until($shutdown_requested && $runs_after_shutdown_request > 0) {
     my $start = time();
-    until(time() - $start >= 150) {
+    until(time() - $start >= 90) {
         sleep 1;
         print LOG "Waiting ${\(time() - $start)} seconds...\r";
     }
