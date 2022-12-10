@@ -60,7 +60,7 @@ my $state_machine = {
     "sandpuppy_fuzz,started"       => \&wait_until_iteration_is_done,
     "sandpuppy_fuzz,finished"      => \&analyze_traces,
     "sandpuppy_fuzz,completed"     => sub {
-        print "All iterations finished! Exiting...";
+        print "All iterations finished! Exiting...\n";
         exit 0;
     }
 };
@@ -79,6 +79,11 @@ my $version;
 if ($full_subject =~ /:/) {
     ($subject, $version) = split(/:/, $full_subject);
     $full_subject =~ s/:/-/;
+}
+
+my $use_asan = defined $ARGV[3] && $ARGV[3] eq "with" && defined $ARGV[4] && $ARGV[4] eq "asan";
+if ($use_asan) {
+    $restart_continue = $ARGV[5];
 }
 
 my $BASE_NFS_PATH = utils::get_base_nfs_path();
@@ -266,9 +271,16 @@ sub start_sandpuppy_fuzz {
 
     setup_analysis_consumer_pods_if_necessary();
 
+    my $with_asan_text = "";
+    my $with_asan_cmd = "";
+    if ($use_asan) {
+        $with_asan_text = "with asan ";
+        $with_asan_cmd = "with asan";
+    }
+
     # Next we will start the sandpuppy fuzzing run
-    print "Starting SandPuppy run $run_name (iteration $iteration)...\n";
-    system "scripts/exp.pl $experiment spfuzz $original_subject as $run_name-$iteration";
+    print "Starting SandPuppy run $run_name $with_asan_text(iteration $iteration)...\n";
+    system "scripts/exp.pl $experiment spfuzz $original_subject as $run_name-$iteration $with_asan_cmd";
     if ($? != 0) {
         die "Starting SandPuppy run failed: $!\n";
     }
@@ -366,8 +378,12 @@ sub wait_until_iteration_is_done {
         print "$time seconds remaining...\r";
     } until ($time == 0);
 
+    $remote_redis->quit;  # Can take a while for the producer to shut down, so we quit and the reconnect below
+
     print "\nShutting down remote background results-analysis and waiting for it to complete...\n";
     shutdown_remote_background_results_analysis_producer();
+
+    $remote_redis->connect;
     monitor_remote_background_results_analysis_until_done();
 
     print "Generating traces from remaining seeds if any...\n";
@@ -484,7 +500,14 @@ sub shutdown_remote_background_results_analysis_producer {
     system "touch $NFS_RESULTS_DIR/shutdown_analyze_results";
 
     # Wait until it has actually shut down
+    my $last_generated_traces_time = time();
     until (-e -f "$NFS_RESULTS_DIR/shutdown_analyze_results_completed") {
+        if (time() - $last_generated_traces_time >= 60) {
+            # Generate traces from tracegen files (if any)
+            generate_traces_from_staged_tracegen_files();
+            $last_generated_traces_time = time();
+        }
+
         print "Waiting for remote background results analysis to finish shutting down...\n";
         sleep 1;
     }
@@ -495,8 +518,15 @@ sub monitor_remote_background_results_analysis_until_done {
     my $iteration = $run_state->{iteration};
 
     my $start = time();
+    my $last_generated_traces_time = $start;
     my $remaining_files;
     do {
+        if (time() - $last_generated_traces_time >= 60) {
+            # Generate traces from tracegen files (if any)
+            generate_traces_from_staged_tracegen_files();
+            $last_generated_traces_time = time();
+        }
+
         my $total_files = $remote_redis->get("$experiment:$full_subject:$run_name-$iteration.total_files");
         my $processed_files = $remote_redis->get("$experiment:$full_subject:$run_name-$iteration.processed_files");
         $remaining_files = $total_files - $processed_files;
@@ -532,7 +562,7 @@ sub generate_traces_from_staged_tracegen_files {
     my $tracegen_pid = $RUN_ITERATION_TRACEGEN_PIDS->{"$run_name-$iteration"};
     if (defined $tracegen_pid && kill 0, $tracegen_pid) {
         if (!defined $wait_for_existing && !waitpid $tracegen_pid, WNOHANG) {
-            print "Tracegen (pid: $tracegen_pid) is already running for $run_name-$iteration\n";
+            print "\nTracegen (pid: $tracegen_pid) is already running for $run_name-$iteration\n";
             return;
         }
 

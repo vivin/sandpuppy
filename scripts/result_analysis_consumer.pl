@@ -28,9 +28,9 @@ srand time;
 my $subject_tracegen_checkers = {
     libpng       => create_wrapped_checker("libpng", \&passthru),
     libtpms      => create_wrapped_checker("libtpms", \&passthru),
-    pcapplusplus => create_wrapped_checker("pcapplusplus", \&sampling_passthru),
-    dmg2img      => create_wrapped_checker("dmg2img", \&sampling_passthru),
-    readelf      => create_wrapped_checker("readelf", \&sampling_passthru),
+    pcapplusplus => create_wrapped_checker("pcapplusplus", create_sampling_passthru(.05)),
+    dmg2img      => create_wrapped_checker("dmg2img", create_sampling_passthru(.01)),
+    readelf      => create_wrapped_checker("readelf", create_sampling_passthru(.02)),
     jsoncpp      => create_wrapped_checker("jsoncpp", \&jsoncpp::check_input_is_valid_json)
 };
 
@@ -119,15 +119,25 @@ sub create_wrapped_checker {
     }
 }
 
-sub sampling_passthru {
-    my $input_file = $_[0];
+sub create_sampling_passthru {
+    my $num_desired_outcomes = $_[0] * 100;
 
-    if ($input_file =~ /\+cov/) {
-        return 1;
+    my $num_total_outcomes = 100;
+    if ($num_total_outcomes % $num_desired_outcomes == 0) {
+        $num_total_outcomes /= $num_desired_outcomes;
+        $num_desired_outcomes = 1;
     }
 
-    my $val = int(rand(10));
-    return $val == 7 # only pass through 7% otherwise
+    my @desired_outcomes = map { int(rand($num_total_outcomes)) } (1..$num_desired_outcomes);
+    return sub {
+        my $input_file = $_[0];
+
+        if ($input_file =~ /\+cov/) {
+            return 1;
+        }
+
+        return grep /^${\(int(rand($num_total_outcomes)))}$/, @desired_outcomes;
+    }
 }
 
 sub passthru {
