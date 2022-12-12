@@ -28,7 +28,7 @@ srand time;
 my $subject_tracegen_checkers = {
     libpng       => create_wrapped_checker("libpng", \&passthru),
     libtpms      => create_wrapped_checker("libtpms", \&passthru),
-    pcapplusplus => create_wrapped_checker("pcapplusplus", create_sampling_passthru(.05)),
+    pcapplusplus => create_wrapped_checker("pcapplusplus", create_sampling_passthru(.02)),
     dmg2img      => create_wrapped_checker("dmg2img", create_sampling_passthru(.01)),
     readelf      => create_wrapped_checker("readelf", create_sampling_passthru(.02)),
     jsoncpp      => create_wrapped_checker("jsoncpp", \&jsoncpp::check_input_is_valid_json)
