@@ -3,7 +3,7 @@ ARG UNAME=vivin
 ARG UID=1000
 ARG GID=1000
 RUN apt-get update \
-    && env DEBIAN_FRONTEND="noninteractive" TZ="America/Phoenix" apt-get -y install sudo curl make gcc ssh libbz2-dev libpcap0.8 cpanminus \
+    && env DEBIAN_FRONTEND="noninteractive" TZ="America/Phoenix" apt-get -y install sudo curl make gcc ssh libbz2-dev libpcap0.8 cpanminus libxcb-shm0 libasound2 libsdl2-2.0-0 libsndio7.0 libxv1 \
     && cpanm install inc::latest inc::Module::Install Redis YAML::XS Log::Simple::Color List::Util Cpanel::JSON::XS Devel::Required@0.15 Thread::Pool
 RUN groupadd -g $GID -o $UNAME && useradd -m -u $UID -g $GID -o -s /bin/bash $UNAME && echo "$UNAME:$UNAME" | chpasswd && adduser $UNAME sudo && echo '%sudo ALL=(ALL) NOPASSWD:ALL' >> /etc/sudoers
 COPY resources/binaries /home/vivin/Projects/phd/resources/binaries

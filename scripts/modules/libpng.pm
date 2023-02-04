@@ -139,7 +139,7 @@ sub get_fuzz_command {
         $exec_context,
         utils::merge($options, {
             asan_memory_limit => 20971597,
-            hang_timeout    => $waypoints =~ /vvdump/ ? 1000 : 0,
+            hang_timeout    => $waypoints =~ /vvdump/ ? 10000 : 10000,
             no_splicing     => $waypoints =~ /vvdump/ ? 1 : 0,
             seeds_directory => "$RESOURCES/seeds/libpng",
             dictionary_file => "$RESOURCES/seeds/libpng/dictionary/png.dict"

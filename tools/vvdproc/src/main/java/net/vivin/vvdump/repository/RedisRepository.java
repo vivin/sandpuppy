@@ -8,6 +8,9 @@ import org.redisson.client.codec.StringCodec;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Repository;
 
+import javax.annotation.PostConstruct;
+import java.util.Collections;
+import java.util.HashSet;
 import java.util.Set;
 import java.util.function.Function;
 
@@ -27,6 +30,11 @@ public class RedisRepository implements TraceRepository {
     private static final String VARIABLE_VALUE_TRACE_KEY_FORMAT = "%s:%s:%s:%s:%s:%s:%d:%s:%s:%d";
     private static final String VARIABLE_VALUE_TRACE_VALUE_FORMAT = "%s,%d,%s";
 
+    private static final String FIXED_CLASS_VARIABLES_SET_KEY_FORMAT = "%s:%s:%s:%s.fixed_class_variables";
+    private static final String FIXED_CLASS_VARIABLES_SET_VALUE_FORMAT = "%s::%s::%s:%s:%d";
+
+    private Set<String> fixedClassVariablesSet = null;
+
     private final Set<Function<FullTraceItem, Pair<String, String>>> itemToEntryFunctions = Set.of(
         this::getSubjectFileEntry,
         this::getSubjectFileFunctionEntry,
@@ -44,10 +52,47 @@ public class RedisRepository implements TraceRepository {
 
     @Override
     public void insertFullTraceItem(FullTraceItem fullTraceItem) {
+        if (!shouldInsertItem(fullTraceItem)) {
+            return;
+        }
+
         this.itemToEntryFunctions.forEach(function -> {
             final var entry = function.apply(fullTraceItem);
             redissonClient.getSet(entry.getLeft(), StringCodec.INSTANCE).add(entry.getRight());
         });
+    }
+
+    private boolean shouldInsertItem(FullTraceItem fullTraceItem) {
+        initializeFixedClassVariablesSetIfNecessary(fullTraceItem);
+
+        return !this.fixedClassVariablesSet.contains(String.format(
+            FIXED_CLASS_VARIABLES_SET_VALUE_FORMAT,
+            fullTraceItem.getFilename(),
+            fullTraceItem.getFunctionName(),
+            fullTraceItem.getVariableType(),
+            fullTraceItem.getVariableName(),
+            fullTraceItem.getDeclaredLine()
+        ));
+    }
+
+    private void initializeFixedClassVariablesSetIfNecessary(FullTraceItem fullTraceItem) {
+        if (this.fixedClassVariablesSet != null) {
+            return;
+        }
+
+        var setName = String.format(
+            FIXED_CLASS_VARIABLES_SET_KEY_FORMAT,
+            fullTraceItem.getExperimentName(),
+            fullTraceItem.getSubject(),
+            fullTraceItem.getBinaryContext(),
+            fullTraceItem.getExecContext()
+        );
+        if (this.redissonClient.getKeys().countExists(setName) == 0) {
+            this.fixedClassVariablesSet = Collections.emptySet();
+            return;
+        }
+
+        this.fixedClassVariablesSet = this.redissonClient.getSet(setName, StringCodec.INSTANCE);
     }
 
     private Pair<String, String> getSubjectFileEntry(FullTraceItem fullTraceItem) {

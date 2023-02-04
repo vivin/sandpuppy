@@ -16,7 +16,7 @@ def main(experiment: str, subject: str, binary: str = None, execution: str = Non
         print(f"Deleting {experiment}:{subject}:{binary}...")
         redis_trace_db.delete_experiment_subject_binary(client, experiment, subject, binary)
     else:
-        print(f"Deleting {experiment}:{subject}:{binary}:{experiment}...")
+        print(f"Deleting {experiment}:{subject}:{binary}:{execution}...")
         redis_trace_db.delete_experiment_subject_binary_execution(client, experiment, subject, binary, execution)
 
 

@@ -12,6 +12,8 @@ use analysis;
 use utils;
 use jsoncpp;
 
+$| = 1;
+
 my $BASE_PATH = glob "~/Projects/phd";
 my $SCRIPT_NAME = basename $0;
 

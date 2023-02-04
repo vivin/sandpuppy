@@ -55,7 +55,8 @@ public class EndTraceMessage implements Entity {
         EXEC_CONTEXT,
         PID,
         EXIT_STATUS,
-        INPUT_SIZE;
+        INPUT_SIZE,
+        INPUT_TYPE;
 
         private static class IndexHolder {
             private static int index = 0;

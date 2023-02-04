@@ -78,7 +78,7 @@ foreach my $fuzzer(@fuzzers) {
 
         print "[" . (++$i) . "/$num_sessions] Processing inputs in session $session...\n";
 
-        chomp (my $num_files = `ls -f $dir | grep -v "^\\." | grep -v ",sync:" | wc -l`);
+        chomp (my $num_files = `ls -f $dir | grep -v "^\\." | grep -v ",sync:" | grep "+cov" | wc -l`);
         my $count = 0;
         open FILES, "ls -f $dir |";
         while (my $file = <FILES>) {

@@ -71,6 +71,8 @@ add_executable(PhD
         tools/FuzzFactory/llvm_mode/waypoints-vvmax2-rt.c
         tools/FuzzFactory/llvm_mode/waypoints-bbprint-pass.cc
         tools/FuzzFactory/llvm_mode/waypoints-bbprint-rt.c
+        tools/FuzzFactory/llvm_mode/waypoints-fnprint-pass.cc
+        tools/FuzzFactory/llvm_mode/waypoints-fnprint-rt.c
         tools/FuzzFactory/afl-analyze.c
         tools/FuzzFactory/afl-as.c
         tools/FuzzFactory/afl-as.h

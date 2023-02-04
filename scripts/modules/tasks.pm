@@ -25,6 +25,7 @@ use libtins;
 use lavam;
 use pcapplusplus;
 use jsoncpp;
+use ffmpeg;
 
 my $log = Log::Simple::Color->new;
 
@@ -212,6 +213,15 @@ my $subjects = {
             pod_fuzz_command => create_pod_fuzz_command_task(\&jsoncpp::get_fuzz_command)
         },
         fuzz_time   => $fuzz_config->{jsoncpp}->{fuzz_time}
+    },
+    ffmpeg     => {
+        binary_name => "ffmpeg",
+        tasks       => {
+            build            => \&ffmpeg::build,
+            fuzz             => create_fuzz_task(\&ffmpeg::get_fuzz_command),
+            pod_fuzz_command => create_pod_fuzz_command_task(\&ffmpeg::get_fuzz_command)
+        },
+        fuzz_time   => $fuzz_config->{ffmpeg}->{fuzz_time}
     }
 };
 
@@ -289,6 +299,7 @@ sub create_fuzz_task {
             open STDERR, ">&", \*STDOUT    or exit 1;
         }
 
+        system ("env");
         # Need to run in shell using exec otherwise it runs it as sh -c $fuzz_command and the pid we get is of sh. So
         # when we try to kill it, it doesn't work.
         exec "exec $fuzz_command";
@@ -1135,7 +1146,7 @@ sub build_sandpuppy_targets {
             $target->{waypoints},
             $target->{name} . ($options->{use_asan} ? "-asan" : ""),
             {
-                use_existing           => 1,
+                use_existing           => ($target->{waypoints} ne "vvmax"),
                 backup                 => 0,
                 m32                    => $options->{use_asan},
                 clang_waypoint_options => {
@@ -1263,8 +1274,8 @@ sub generate_pod_information_for_target {
         target_id           => $target->{id},
         startup_script      => $startup_script,
         startup_script_name => "$target->{id}.$run_name",
-        create_command      => "kuboid/scripts/pod_create -n \"$pod_name\" -s /tmp/sandpuppy.existing -i vivin/sandpuppy $pod_command",
-        resume_command      => "kuboid/scripts/pod_create -n \"$pod_name\" -s /tmp/sandpuppy.existing -i vivin/sandpuppy $pod_command resume",
+        create_command      => "kuboid/scripts/pod_create -c 250m -n \"$pod_name\" -s /tmp/sandpuppy.existing -i vivin/sandpuppy $pod_command",
+        resume_command      => "kuboid/scripts/pod_create -c 250m -n \"$pod_name\" -s /tmp/sandpuppy.existing -i vivin/sandpuppy $pod_command resume",
         sort_key            => ($is_main_target ? "a" : $target->{name}) # "a" so that main target is always first
     };
 }

@@ -294,6 +294,8 @@ sub build_fuzz_command {
     if ($use_asan) {
         $ENV_VARS{ASAN_OPTIONS} = "abort_on_error=1:detect_leaks=0:symbolize=0:exitcode=86:allocator_may_return_null=1";
         $fuzz_command .= " -m " . ($asan_memory_limit ? $asan_memory_limit : $ASAN_MEMORY_LIMIT); # Hard to estimate on 64 bit; let's set it to 15 gig.
+    } else {
+        $fuzz_command .= " -m $ASAN_MEMORY_LIMIT"
     }
 
     if ($hang_timeout) {
@@ -317,6 +319,11 @@ sub build_fuzz_command {
     if (defined $binary_arguments) {
         $fuzz_command .= " $binary_arguments";
     }
+
+    foreach my $x(keys(%ENV_VARS)) {
+        print ("  $x ==> $ENV_VARS{$x}\n");
+    }
+    print ("$fuzz_command\n");
 
     return ($fuzz_command, \%ENV_VARS);
 }

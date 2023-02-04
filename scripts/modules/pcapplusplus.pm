@@ -126,7 +126,7 @@ sub get_fuzz_command {
         $exec_context,
         utils::merge($options, {
             asan_memory_limit => 40971597,
-            hang_timeout     => $waypoints =~ /vvdump/ ? "100000+" : 5000,
+            hang_timeout     => $waypoints =~ /vvdump/ ? "100000+" : 10000,
             slow_target      => $waypoints =~ /vvdump/ ? 1 : 0,
             seeds_directory  => "$RESOURCES/seeds/$subject",
             binary_arguments => "\@\@"

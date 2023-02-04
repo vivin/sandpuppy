@@ -223,24 +223,26 @@ sub analyze_traces {
         phase_status   => "started"
     });
 
+    my $SUBJECT_PATH = utils::get_subject_directory($experiment, $subject, $version);
+
     my $iteration = $run_state->{iteration};
     if ($iteration > 0) {
-        my $suffix = ($iteration > 1) ? "$run_name-${\($iteration - 1)}" : "$run_name-initial_tracegen";
+        my $suffix = ($iteration > 1) ? "$run_name-${\($iteration - 1)}" : "$run_name-initial";
 
         print "Backing up previous trace-analysis results...\n";
-        my $SUBJECT_PATH = utils::get_subject_directory($experiment, $subject, $version);
-        system "mv $SUBJECT_PATH/results/$TRACEGEN_EXEC_CONTEXT $SUBJECT_PATH/results/$TRACEGEN_BIN_CONTEXT.$suffix";
+        system "mv $SUBJECT_PATH/results/$TRACEGEN_EXEC_CONTEXT $SUBJECT_PATH/results/$TRACEGEN_EXEC_CONTEXT.$suffix";
+        system "mkdir $SUBJECT_PATH/results/$TRACEGEN_EXEC_CONTEXT";
         system "mv $SUBJECT_PATH/results/sandpuppy_interesting_variables.yml $SUBJECT_PATH/results/sandpuppy_interesting_variables.yml.$suffix";
         system "mv $SUBJECT_PATH/results/sandpuppy-target-name-to-id.yml $SUBJECT_PATH/results/sandpuppy-target-name-to-id.yml.$suffix";
         system "mv $SUBJECT_PATH/results/sandpuppy-vvmax-variables.txt $SUBJECT_PATH/results/sandpuppy-vvmax-variables.txt.$suffix";
-        system "mkdir $SUBJECT_PATH/results/$TRACEGEN_EXEC_CONTEXT";
+        system "mv $SUBJECT_PATH/results/classification_output.txt $SUBJECT_PATH/results/classification_output.txt.$suffix";
 
         print "Analyzing traces for run $run_name, iteration $iteration...\n";
     } else {
         print "Analyzing traces after initial trace-gathering run for $run_name...\n";
     }
 
-    system "python tools/analysis/analyze_vvtraces.py $experiment $full_subject $TRACEGEN_BIN_CONTEXT $TRACEGEN_EXEC_CONTEXT";
+    system "bash -c \"set -o pipefail; python tools/analysis/analyze_vvtraces.py $experiment $full_subject $TRACEGEN_BIN_CONTEXT $TRACEGEN_EXEC_CONTEXT use_fixed_class_list | tee $SUBJECT_PATH/results/classification_output.txt\"";
     if ($? != 0) {
         die "Trace analysis exited with an error: $!\n";
     }
@@ -416,7 +418,7 @@ sub setup_analysis_consumer_pods_if_necessary {
                 print "\n";
             }
 
-            system "kuboid/scripts/pod_create -c 250m -C 300m -m 500Mi -M 1Gi -n $consumer_name -i vivin/sandpuppy-analysis " .
+            system "kuboid/scripts/pod_create -c 150m -C 200m -m 128Mi -M 8192Mi -n $consumer_name -i vivin/sandpuppy-analysis " .
                 "/home/vivin/Projects/phd/scripts/result_analysis_consumer.pl sandpuppy-analysis-channel";
             $consumers_created++;
         }
@@ -431,7 +433,7 @@ sub setup_analysis_consumer_pods_if_necessary {
             sleep 1;
 
             # Restart error pods if any
-            chomp(@errored_pods = `kubectl get pods | grep "sandpuppy-analysis-consumer" | grep Error | awk '{ print \$1; }'`);
+            chomp(@errored_pods = `kubectl get pods | grep "sandpuppy-analysis-consumer" | grep "Error\\|Completed\\|OOMKilled" | awk '{ print \$1; }'`);
             foreach my $errored_pod(@errored_pods) {
                 my $consumer = $errored_pod;
                 $consumer =~ s/sandpuppy-analysis-consumer-//;
@@ -635,7 +637,7 @@ sub generate_traces_from_staged_tracegen_files {
             # Write the ending trace
             my $NAMED_PIPE = "/tmp/vvdump";
             open TRACEGEN, ">>", $NAMED_PIPE;
-            print TRACEGEN "$experiment:$full_subject:$TRACEGEN_BIN_CONTEXT:$TRACEGEN_EXEC_CONTEXT:$tracegen_command_pid:$exit_status:$input_size:end\n";
+            print TRACEGEN "$experiment:$full_subject:$TRACEGEN_BIN_CONTEXT:$TRACEGEN_EXEC_CONTEXT:$tracegen_command_pid:$exit_status:$input_size:new_coverage:end\n";
             close TRACEGEN;
 
             system "mv $TRACEGEN_STAGING_DIR/$file $TRACEGEN_ITERATION_DIR";

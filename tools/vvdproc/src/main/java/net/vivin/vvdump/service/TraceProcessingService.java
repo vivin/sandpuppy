@@ -20,8 +20,10 @@ import java.io.FileNotFoundException;
 import java.io.FileReader;
 import java.io.IOException;
 import java.io.UncheckedIOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.security.SecureRandom;
 import java.text.DecimalFormat;
 import java.time.Duration;
 import java.util.ArrayDeque;
@@ -29,11 +31,14 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Queue;
+import java.util.Random;
 import java.util.Set;
+import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.LongAdder;
 
@@ -46,9 +51,16 @@ public class TraceProcessingService {
     private static final int PROCESS_TRACE_EXECUTOR_NUM_THREADS = 12;
     private static final int TRACE_ITEM_EXECUTOR_NUM_THREADS = 512;
     private static final int NUM_TRACE_COMPONENTS = 13;
-    private static final int NUM_END_TRACE_COMPONENTS = 8;
+    private static final int NUM_END_TRACE_COMPONENTS = 9;
     private static final String END_TRACE_MARKER = "__$VVDUMP_END$__";
     private static final DecimalFormat df = new DecimalFormat("0.00");
+
+    private static final String NEW_COVERAGE = "new_coverage";
+    private static final String TUPLE_COUNT_INCREASE = "tuple_count_increase";
+    private static final String CALIBRATE_CASE = "calibrate_case";
+    private static final String UNINTERESTING = "uninteresting";
+
+    private static final SecureRandom rand = new SecureRandom(UUID.randomUUID().toString().getBytes(StandardCharsets.UTF_8));
 
     @Value("${vvdump.named-pipe-path}")
     private String namedPipePath;
@@ -150,22 +162,21 @@ public class TraceProcessingService {
 
                     var exitStatus = components[EndTraceMessage.Components.EXIT_STATUS.index];
                     var pid = Integer.parseInt(components[EndTraceMessage.Components.PID.index]);
+                    var inputType = components[EndTraceMessage.Components.INPUT_TYPE.index];
 
                     // Uncomment and then get rid of the else block (or leave it in; doesn't matter) if you want to
                     // insert ALL traces, even crashes and hangs etc.
                     // if (!"killed".equals(exitStatus) && pids.contains(pid)) {
-                    if ("success".equals(exitStatus) && pids.contains(pid)) {
-                        pids.remove(pid);
+                    boolean pidExists = pids.remove(pid);
+                    var processTrace = processTraces.remove(pid);
+                    if (pidExists && shouldSaveTraces(exitStatus, inputType)) {
                         processTraceExecutor.submit(new ProcessTraceTask(
-                            new ProcessTrace(processTraces.remove(pid), line),
+                            new ProcessTrace(processTrace, line),
                             dataDirectory,
                             traceItemInsertionExecutor,
                             traceRepository,
                             metrics
                         ));
-                    } else {
-                        pids.remove(pid);
-                        processTraces.remove(pid);
                     }
                 } else {
                     log.warn("Malformed line: {}", line);
@@ -208,6 +219,14 @@ public class TraceProcessingService {
             df.format(totalTraceItems / (actualTotalProcessingTime / (1000d * TRACE_ITEM_EXECUTOR_NUM_THREADS))),
             df.format((actualTotalProcessingTime / (1d * TRACE_ITEM_EXECUTOR_NUM_THREADS)) / totalTraceItems)
         );
+    }
+
+    private boolean shouldSaveTraces(String exitStatus, String inputType) {
+        if (!"success".equals(exitStatus)) {
+            return false;
+        }
+
+        return inputType.equals(NEW_COVERAGE) || inputType.equals(CALIBRATE_CASE) || inputType.equals(TUPLE_COUNT_INCREASE);
     }
 
     private void shutdownExecutorAndMonitor(ExecutorService executor) {

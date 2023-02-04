@@ -8,12 +8,12 @@ def main(experiment, subject, version, full_subject, run_name):
     print(f"Subject: {full_subject}")
     print(f"Run Name: {run_name}\n")
 
-    basic_blocks = set()
-    print(f"Loading basic blocks from resources/{subject}-basic-blocks.txt...", end="")
-    for line in open(f"resources/{subject}-basic-blocks.txt"):
-        basic_blocks.add(line.strip())
+    #basic_blocks = set()
+    #print(f"Loading basic blocks from resources/{subject}-basic-blocks.txt...", end="")
+    #for line in open(f"resources/{subject}-basic-blocks.txt"):
+    #    basic_blocks.add(line.strip())
 
-    print(f"{len(basic_blocks)} blocks")
+    #print(f"{len(basic_blocks)} blocks")
 
     baseline_coverage = set()
     print(f"Loading baseline coverage resources/{subject}-baseline-coverage.txt...", end="")
@@ -22,7 +22,7 @@ def main(experiment, subject, version, full_subject, run_name):
 
     print(f"{len(baseline_coverage)} blocks")
 
-    client = redis.Redis(host='localhost', port=6379, db=0)
+    client = redis.Redis(host='localhost', port=7971, db=0)
 
     coverage_data = dict()
     coverage_data_over_time = dict()
@@ -101,6 +101,9 @@ def main(experiment, subject, version, full_subject, run_name):
             print(f"    Hour {hour}: {len(hour_coverage)}")
 
         print("")
+
+    for bb in overall_coverage:
+        print(f"__#BB#__: {bb}")
 
 
 def calculate_improvement(baseline_coverage, coverage):

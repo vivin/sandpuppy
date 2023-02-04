@@ -18,6 +18,7 @@ from itertools import combinations
 from functools import partial
 from cassandra.auth import PlainTextAuthProvider
 from cassandra.cluster import Cluster
+from threading import Lock
 
 from db import cassandra_trace_db, redis_trace_db
 from ml import feature_extractor, classifiers
@@ -264,9 +265,10 @@ def classify_variables(experiment: str, subject: str, binary: str, execution: st
         print(f"Retrieving traces for {num_retrieved_variables} variables and classifying...")
 
     done = threading.Event()
-    with concurrent.futures.ThreadPoolExecutor(max_workers=512) as thread_pool_executor,\
+    with concurrent.futures.ThreadPoolExecutor(max_workers=256) as thread_pool_executor,\
          concurrent.futures.ProcessPoolExecutor(max_workers=12) as process_pool_executor:
 
+        lock = Lock()
         counts = {'processed': 0}
         
         def retrieve_traces_callback(future, _variable):
@@ -304,29 +306,74 @@ def classify_variables(experiment: str, subject: str, binary: str, execution: st
             # Delete the future to free up memory
             del future
 
-            counts['processed'] += 1
-            if counts['processed'] % 10 != 0 and counts['processed'] % 5 != 0:
-                print(".", end='', flush=True)
-                gc.collect()
-            elif counts['processed'] % 10 == 0:
-                print(counts['processed'], end='', flush=True)
-            elif counts['processed'] % 5 == 0:
-                print("o", end='', flush=True)
+            if action == "use_fixed_class_list" and variable_class != "zero_traces":
+                # Check if class has changed since last time (assuming it was classified last time)
+                if redis_trace_db.is_variable_classified(client, experiment, subject, binary, execution, _variable):
+                    previous_class = redis_trace_db.get_variable_classification_data(
+                        client, experiment, subject, binary, execution, _variable
+                    )['class']
+                    if previous_class == variable_class:
+                        redis_trace_db.add_to_fixed_class_variables_list(
+                            client, experiment, subject, binary, execution, _variable
+                        )
+
+                redis_trace_db.save_classified_variable_data(client, experiment, subject, binary, execution, _variable)
+
+            increment_processed_count()
+
+        def retrieve_saved_classification_callback(future, _variable):
+            saved_variable = future.result()
+
+            for key in saved_variable:
+                _variable[key] = saved_variable[key]
+
+            _filename = _variable['filename']
+            _function = _variable['function']
+            variable_class = _variable['class']
+            variables_by_filename_and_function[_filename][_function][variable_class].append(_variable)
+
+            del future
+            increment_processed_count()
+
+        def increment_processed_count():
+            with lock:
+                counts['processed'] += 1
+                if counts['processed'] % 10 != 0 and counts['processed'] % 5 != 0:
+                    print(".", end='', flush=True)
+                    gc.collect()
+                elif counts['processed'] % 10 == 0:
+                    print(counts['processed'], end='', flush=True)
+                elif counts['processed'] % 5 == 0:
+                    print("o", end='', flush=True)
 
             if counts['processed'] == num_retrieved_variables:
                 done.set()
 
         for variable in retrieved_variables:
             # If we are classifying from saved traces, go ahead and just use the process pool executor to do that.
-            # Otherwise, use the thread pool executor to retrieve the traces from the database. The callback will
-            # save the traces to disk, delete them from memory, and then submit a task to the process pool executor
-            # to classify from saved traces.
+            # If this variable's class is fixed, we do not need to load traces or classify it. We can just load up
+            # the previous classification data.
+            # If neither of the above is true, use the thread pool executor to retrieve the traces from the database.
+            # The callback will save the traces to disk, delete them from memory, and then submit a task to the process
+            # pool executor to classify from saved traces.
             if action == "classify_from_saved":
                 process_pool_executor.submit(
                     classify_variable_using_saved_traces,
                     path=analysis_data_path,
                     variable=variable
                 ).add_done_callback(partial(classify_callback, _variable=variable))
+            elif action == "use_fixed_class_list" and \
+                 redis_trace_db.is_fixed_class_variable(client, experiment, subject, binary, execution, variable):
+
+                thread_pool_executor.submit(
+                    redis_trace_db.get_variable_classification_data,
+                    client=client,
+                    experiment=experiment,
+                    subject=subject,
+                    binary=binary,
+                    execution=execution,
+                    variable=variable
+                ).add_done_callback(partial(retrieve_saved_classification_callback, _variable=variable))
             else:
                 thread_pool_executor.submit(
                     redis_trace_db.retrieve_variable_value_traces_information,
@@ -720,6 +767,7 @@ if __name__ == "__main__":
     if len(sys.argv) < 5:
         print("Syntax: {script} <experiment> <subject> <binary> <execution> "
               "[(classify|graph|identify_interesting)_from_saved]".format(script=sys.argv[0]))
+        exit(1)
     else:
         if len(sys.argv) < 6:
             action = None

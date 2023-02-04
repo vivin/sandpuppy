@@ -2760,7 +2760,7 @@ static void write_with_gap(void* mem, u32 len, u32 skip_at, u32 skip_len) {
 }
 
 
-static void write_vvdump_end_trace(u8 fault, u32 input_size) {
+static void write_vvdump_end_trace(u8 fault, u32 input_size, u8* input_type) {
     if (!vvdump_named_pipe_available || !vvdump_env_vars_available) {
         //DEBUG("failed writing end trace! pipe avail: %d env avail: %d\n", vvdump_named_pipe_available, vvdump_env_vars_available);
         return;
@@ -2794,14 +2794,15 @@ static void write_vvdump_end_trace(u8 fault, u32 input_size) {
     }
 
     u8 *vvdump_end_trace = alloc_printf(
-        "%s:%s:%s:%s:%d:%s:%d:end\n",
+        "%s:%s:%s:%s:%d:%s:%d:%s:end\n",
         experiment_name,
         subject,
         binary_context,
         exec_context,
         last_child_pid,
         fault_str,
-        input_size
+        input_size,
+        input_type
     );
 
     write(vvdump_fd, vvdump_end_trace, strlen((char *) vvdump_end_trace));
@@ -2899,7 +2900,7 @@ static u8 calibrate_case(char** argv, struct queue_entry* q, u8* use_mem,
 
     //DEBUG("\nbefore stage(%d) calibrate_case->run_target. last_child_pid is %d\n", stage_cur, last_child_pid);
     fault = run_target(argv, use_tmout);
-    write_vvdump_end_trace(fault, q->len);
+    write_vvdump_end_trace(fault, q->len, "calibrate_case");
     //DEBUG("after stage(%d) calibrate_case->run_target. last_child_pid is %d\n\n", stage_cur, last_child_pid);
 
     /* stop_soon is set by the handler for Ctrl+C. When it's pressed,
@@ -3410,6 +3411,7 @@ static u8* describe_op(u8 hnb) {
   }
 
   if (hnb == 2) strcat(ret, ",+cov");
+  if (hnb == 1) strcat(ret, ",+tci");
 
   return ret;
 
@@ -3477,6 +3479,24 @@ static void save_as_perf_input(void * mem, u32 len) {
 
 }
 
+static void write_vvdump_end_trace_hnb(u8 hnb, u8 fault, u32 len) {
+    if (hnb == 2) {
+        write_vvdump_end_trace(fault, len, "new_coverage");
+    } else if (hnb == 1) {
+        write_vvdump_end_trace(fault, len, "tuple_count_increase");
+    } else {
+        write_vvdump_end_trace(fault, len, "uninteresting");
+    }
+}
+
+static void write_end_trace_before_stop(u32 len, u8 fault) {
+    u8 hnb = 0;
+    if (fault == crash_mode || fault == FAULT_FAILURE) {
+        hnb = has_new_bits(virgin_bits);
+    }
+
+    write_vvdump_end_trace_hnb(hnb, fault, len);
+}
 
 /* Check if the result of an execve() during routine fuzzing is interesting,
    save or queue the input test case for further analysis if so. Returns 1 if
@@ -3514,6 +3534,8 @@ static u8 save_if_interesting(char** argv, void* mem, u32 len, u8 fault) {
     fn = alloc_printf("%s/queue/id_%06u", out_dir, queued_paths);
 
 #endif /* ^!SIMPLE_FILES */
+
+    write_vvdump_end_trace_hnb(hnb, fault, len);
 
     if (!hnb && (!dsf_enabled || !dsf_changed)) {
         if (crash_mode) total_crashes++;
@@ -3564,6 +3586,7 @@ static u8 save_if_interesting(char** argv, void* mem, u32 len, u8 fault) {
       total_tmouts++;
 
       if (unique_hangs >= KEEP_UNIQUE_HANG) {
+          write_vvdump_end_trace(fault, len, "uninteresting");
           return keeping;
       }
 
@@ -3576,6 +3599,7 @@ static u8 save_if_interesting(char** argv, void* mem, u32 len, u8 fault) {
 #endif /* ^WORD_SIZE_64 */
 
         if (!has_new_bits(virgin_tmout)) {
+            write_vvdump_end_trace(fault, len, "uninteresting");
             return keeping;
         }
 
@@ -3594,7 +3618,6 @@ static u8 save_if_interesting(char** argv, void* mem, u32 len, u8 fault) {
         write_to_testcase(mem, len);
         //DEBUG("\nbefore save_if_interesting->run_target. last_child_pid is %d\n", last_child_pid);
         new_fault = run_target(argv, hang_tmout);
-        write_vvdump_end_trace(new_fault, len);
         //DEBUG("after save_if_interesting->run_target. last_child_pid is %d\n\n", last_child_pid);
 
         /* A corner case that one user reported bumping into: increasing the
@@ -3606,6 +3629,7 @@ static u8 save_if_interesting(char** argv, void* mem, u32 len, u8 fault) {
         }
 
         if (stop_soon || new_fault != FAULT_TMOUT) {
+            write_vvdump_end_trace(fault, len, "uninteresting");
             return keeping;
         }
 
@@ -3641,6 +3665,7 @@ keep_as_crash:
       total_crashes++;
 
       if (unique_crashes >= KEEP_UNIQUE_CRASH) {
+          write_vvdump_end_trace(fault, len, "uninteresting");
           return keeping;
       }
 
@@ -3653,6 +3678,7 @@ keep_as_crash:
 #endif /* ^WORD_SIZE_64 */
 
         if (!has_new_bits(virgin_crash)) {
+            write_vvdump_end_trace(fault, len, "uninteresting");
             return keeping;
         }
 
@@ -3682,9 +3708,11 @@ keep_as_crash:
     case FAULT_ERROR: FATAL("Unable to execute target application");
 
     default:
+        write_vvdump_end_trace(fault, len, "uninteresting");
         return keeping;
-
   }
+
+  write_vvdump_end_trace(fault, len, "uninteresting");
 
   /* If we're here, we apparently want to save the crash or hang
      test case, too. */
@@ -4944,6 +4972,7 @@ static u8 trim_case(char** argv, struct queue_entry* q, u8* in_buf) {
 
       //DEBUG("\nbefore stage(%d) trim_case->run_target. last_child_pid is %d\n", stage_cur, last_child_pid);
       fault = run_target(argv, exec_tmout);
+      write_vvdump_end_trace(fault, q->len, "trim");
       //DEBUG("after stage(%d) trim_case->run_target. last_child_pid is %d\n\n", stage_cur, last_child_pid);
       trim_execs++;
 
@@ -4989,8 +5018,6 @@ static u8 trim_case(char** argv, struct queue_entry* q, u8* in_buf) {
 
       if (!(trim_exec++ % stats_update_freq)) show_stats();
       stage_cur++;
-
-      write_vvdump_end_trace(fault, q->len);
     }
 
     remove_len >>= 1;
@@ -5045,10 +5072,10 @@ EXP_ST u8 common_fuzz_stuff(char** argv, u8* out_buf, u32 len) {
   write_to_testcase(out_buf, len);
   //DEBUG("\nbefore common_fuzz_stuff->run_target. last_child_pid is %d\n", last_child_pid);
   fault = run_target(argv, exec_tmout);
-  write_vvdump_end_trace(fault, len);
   //DEBUG("after common_fuzz_stuff->run_target. last_child_pid is %d\n\n", last_child_pid);
 
   if (stop_soon) {
+      write_end_trace_before_stop(fault, len);
       return 1;
   }
 
@@ -5056,6 +5083,7 @@ EXP_ST u8 common_fuzz_stuff(char** argv, u8* out_buf, u32 len) {
 
     if (subseq_tmouts++ > TMOUT_LIMIT) {
       cur_skipped_paths++;
+      write_vvdump_end_trace(fault, len, "uninteresting");
       return 1;
     }
 
@@ -5068,6 +5096,7 @@ EXP_ST u8 common_fuzz_stuff(char** argv, u8* out_buf, u32 len) {
 
      skip_requested = 0;
      cur_skipped_paths++;
+     write_vvdump_end_trace(fault, len, "uninteresting");
      return 1;
 
   }
@@ -7202,9 +7231,9 @@ static void sync_fuzzers(char** argv) {
 
         //DEBUG("\nbefore sync_fuzzers->run_target. last_child_pid is %d\n", last_child_pid);
         fault = run_target(argv, exec_tmout);
-        write_vvdump_end_trace(fault, st.st_size);
         //DEBUG("after sync_fuzzers->run_target. last_child_pid is %d\n\n", last_child_pid);
         if (stop_soon) {
+            write_end_trace_before_stop(fault, st.st_size);
             return;
         }
 

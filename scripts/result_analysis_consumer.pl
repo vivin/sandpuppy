@@ -26,12 +26,13 @@ my $REDIS_PORT = $ENV{REDIS_SERVICE_PORT};
 srand time;
 
 my $subject_tracegen_checkers = {
-    libpng       => create_wrapped_checker("libpng", \&passthru),
-    libtpms      => create_wrapped_checker("libtpms", \&passthru),
-    pcapplusplus => create_wrapped_checker("pcapplusplus", create_sampling_passthru(.02)),
-    dmg2img      => create_wrapped_checker("dmg2img", create_sampling_passthru(.01)),
-    readelf      => create_wrapped_checker("readelf", create_sampling_passthru(.02)),
-    jsoncpp      => create_wrapped_checker("jsoncpp", \&jsoncpp::check_input_is_valid_json)
+    libpng       => create_subject_file_checker("libpng", create_sampling_checker(.01, \&passthru)),
+    libtpms      => create_subject_file_checker("libtpms", create_sampling_checker(.01, \&passthru)),
+    pcapplusplus => create_subject_file_checker("pcapplusplus", create_sampling_checker(.001, \&passthru)), # .001
+    dmg2img      => create_subject_file_checker("dmg2img", create_sampling_checker(.01, \&passthru)), #.01
+    readelf      => create_subject_file_checker("readelf", create_sampling_checker(.02, \&passthru)), #.02
+    jsoncpp      => create_subject_file_checker("jsoncpp", create_sampling_checker(.1, \&jsoncpp::check_input_is_valid_json)),
+    ffmpeg       => create_subject_file_checker("ffmpeg", create_sampling_checker(.01, \&passthru)) #.01
 };
 
 my $redis = Redis->new(
@@ -110,7 +111,7 @@ sub subscribe_handler {
     print "Done in $elapsed ms...\n";
 }
 
-sub create_wrapped_checker {
+sub create_subject_file_checker {
     my $subject = $_[0];
     my $checker = $_[1];
     return sub {
@@ -119,24 +120,51 @@ sub create_wrapped_checker {
     }
 }
 
-sub create_sampling_passthru {
-    my $num_desired_outcomes = $_[0] * 100;
+sub create_sampling_checker {
+    my $probability = $_[0];
+    my $checker = $_[1];
 
-    my $num_total_outcomes = 100;
-    if ($num_total_outcomes % $num_desired_outcomes == 0) {
-        $num_total_outcomes /= $num_desired_outcomes;
-        $num_desired_outcomes = 1;
+    my $num_total_outcomes = 1;
+    my $num_desired_outcomes = 0;
+    until ($probability - int($probability) == 0) {
+        $num_total_outcomes *= 10;
+        $probability *= 10;
+
+        $num_desired_outcomes = $probability;
     }
 
-    my @desired_outcomes = map { int(rand($num_total_outcomes)) } (1..$num_desired_outcomes);
+    if ($num_desired_outcomes % 2 == 0 || $num_desired_outcomes % 5 == 0) {
+        my $divisor = ($num_desired_outcomes % 2 == 0) ? 2 : 5;
+        until ($num_desired_outcomes % $divisor != 0 || $num_total_outcomes % $divisor != 0) {
+            $num_desired_outcomes /= $divisor;
+            $num_total_outcomes /= $divisor;
+        }
+    }
+
+    my @desired_outcomes = ();
+    until (scalar @desired_outcomes == $num_desired_outcomes) {
+        my $number = int(rand($num_total_outcomes));
+        if (! grep /^$number$/, @desired_outcomes) {
+            push @desired_outcomes, $number;
+        }
+    }
+
     return sub {
         my $input_file = $_[0];
 
         if ($input_file =~ /\+cov/) {
-            return 1;
+            return $checker->($input_file);
         }
 
-        return grep /^${\(int(rand($num_total_outcomes)))}$/, @desired_outcomes;
+        if ($input_file !~ /\+tci/) {
+            return 0;
+        }
+
+        if (grep /^${\(int(rand($num_total_outcomes)))}$/, @desired_outcomes) {
+            return $checker->($input_file);
+        }
+
+        return 0;
     }
 }
 

@@ -1,10 +1,15 @@
 ---
 __global__:
   num_consumers: 333
-  hours_per_iteration: 6
+  hours_per_iteration: 4
+ffmpeg:
+  fuzz_time: 600
+  num_iterations: 6
+  binary_name: ffmpeg
+  argument: "-threads 1 -i @@ -threads 1 -f null /dev/null"
 jsoncpp:
-  fuzz_time: 300
-  num_iterations: 3
+  fuzz_time: 3600
+  num_iterations: 6
   binary_name: readjson
   argument: "@@"
 libtpms:
@@ -13,13 +18,13 @@ libtpms:
   binary_name: readtpmc
   argument: "@@"
 libpng:
-  fuzz_time: 180
+  fuzz_time: 3600
   num_iterations: 6
   binary_name: readpng
   argument: "< @@"
 pcapplusplus:
-  fuzz_time: 180
-  num_iterations: 8
+  fuzz_time: 3600
+  num_iterations: 6
   binary_name: readpcap
   argument: "@@"
 dmg2img:
@@ -28,7 +33,7 @@ dmg2img:
   binary_name: dmg2img
   argument: "@@"
 readelf:
-  fuzz_time: 300
+  fuzz_time: 900
   num_iterations: 6
   binary_name: readelf
   argument: "-a @@"

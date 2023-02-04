@@ -1,4 +1,6 @@
+import json
 import re
+import numpy as np
 from itertools import zip_longest
 
 FETCH_SIZE = 2000
@@ -13,6 +15,19 @@ INPUT_SIZE = 1
 TIMESTAMP = 0
 MODIFIED_LINE = 1
 VARIABLE_VALUE = 2
+
+
+class CustomEncoder(json.JSONEncoder):
+    def default(self, obj):
+        if isinstance(obj, np.integer):
+            return int(obj)
+        if isinstance(obj, np.floating):
+            return float(obj)
+        if isinstance(obj, np.ndarray):
+            return obj.tolist()
+        if isinstance(obj, set):
+            return list(obj)
+        return super(CustomEncoder, self).default(obj)
 
 
 # iterate a list in batches of size n
@@ -51,6 +66,13 @@ def get_subject_file_function_variables_of_type(client, subject, filename, funct
                 'name': variable_fields[VARIABLE_NAME],
                 'fqn': "{filename}::{function}::{variable_type}:{variable_name}:{declared_line}".format(
                     filename=re.sub("^.*/", "", filename),
+                    function=function,
+                    variable_type=variable_type,
+                    variable_name=variable_fields[VARIABLE_NAME],
+                    declared_line=variable_fields[DECLARED_LINE]
+                ),
+                'long_fqn': "{filename}::{function}::{variable_type}:{variable_name}:{declared_line}".format(
+                    filename=filename,
                     function=function,
                     variable_type=variable_type,
                     variable_name=variable_fields[VARIABLE_NAME],
@@ -120,6 +142,39 @@ def retrieve_variable_value_traces_information(variable, client, experiment, sub
     # Need to wrap with list(...) otherwise stupid multiprocessing doesn't work
     traces_info['traces'] = list(traces_by_pid.values())
     return traces_info
+
+
+def save_classified_variable_data(client, experiment, subject, binary, execution, variable):
+    client.hset(
+        f"{experiment}:{subject}:{binary}:{execution}.classified",
+        variable['long_fqn'], json.dumps(variable, cls=CustomEncoder)
+    )
+
+
+def is_variable_classified(client, experiment, subject, binary, execution, variable):
+    return client.hexists(
+        f"{experiment}:{subject}:{binary}:{execution}.classified",
+        variable['long_fqn']
+    ) > 0
+
+
+def get_variable_classification_data(client, experiment, subject, binary, execution, variable):
+    _variable = json.loads(client.hget(
+        f"{experiment}:{subject}:{binary}:{execution}.classified",
+        variable['long_fqn']
+    ))
+
+    _variable['traces_info']['modified_lines'] = set(_variable['traces_info']['modified_lines'])
+    _variable['features']['values_set'] = set(_variable['features']['values_set'])
+    return _variable
+
+
+def add_to_fixed_class_variables_list(client, experiment, subject, binary, execution, variable):
+    client.sadd(f"{experiment}:{subject}:{binary}:{execution}.fixed_class_variables", variable['long_fqn'])
+
+
+def is_fixed_class_variable(client, experiment, subject, binary, execution, variable):
+    return client.sismember(f"{experiment}:{subject}:{binary}:{execution}.fixed_class_variables", variable['long_fqn'])
 
 
 def delete_experiment_subject_binary(client, experiment, subject, binary):
