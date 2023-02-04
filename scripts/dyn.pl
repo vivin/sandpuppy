@@ -418,7 +418,8 @@ sub setup_analysis_consumer_pods_if_necessary {
                 print "\n";
             }
 
-            system "kuboid/scripts/pod_create -c 150m -C 200m -m 128Mi -M 8192Mi -n $consumer_name -i vivin/sandpuppy-analysis " .
+            #kuboid/scripts/pod_create -c 150m -C 200m -m 128Mi -M 8192Mi
+            system "kuboid/scripts/pod_create -c 250m -n $consumer_name -i vivin/sandpuppy-analysis " .
                 "/home/vivin/Projects/phd/scripts/result_analysis_consumer.pl sandpuppy-analysis-channel";
             $consumers_created++;
         }
