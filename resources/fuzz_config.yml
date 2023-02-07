@@ -3,7 +3,7 @@ __global__:
   num_consumers: 100
   hours_per_iteration: 4
 ffmpeg:
-  fuzz_time: 600
+  fuzz_time: 3600
   num_iterations: 6
   binary_name: ffmpeg
   argument: "-threads 1 -i @@ -threads 1 -f null /dev/null"
