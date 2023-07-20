@@ -1,0 +1,11 @@
+{
+    "arr": [1, 2, 3],
+    "strarr": ["one", "two"],
+    "obj": {
+        "num": 1,
+        "str": "string",
+        "arr": [1, 2],
+        "strarr": ["one", "two"],
+        "bool": true
+    }
+}
